@@ -32,6 +32,7 @@ local function mock(kind, name)
 	function mt.SetGradient(self, dir, c1, c2) self.gradient = { dir, c1, c2 } end
 	function mt.SetRotation(self, r) self.rotation = r end
 	function mt.SetScale(self, v) self.scale = v end
+	function mt.IsForbidden() return false end
 	function mt.SetPoint(self, ...) self.point = { ... } end
 	function mt.SetFrameStrata(self, v) self.strata = v end
 	function mt.GetFrameStrata(self) return self.strata end
@@ -70,6 +71,7 @@ local function mock(kind, name)
 	function mt.CreateFontString(self) local t = mock("FontString"); t.parent = self; return t end
 	function mt.CreateLine(self) local t = mock("Line"); t.parent = self; return t end
 	function mt.SetScale(self, v) self.scale = v end
+	function mt.IsForbidden() return false end
 	function mt.GetScale(self) return self.scale or 1 end
 	return setmetatable(o, mt)
 end
@@ -136,7 +138,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -751,6 +753,80 @@ cardsUp = 0
 for _, fr in ipairs(frames) do if fr.parent == QuestLineageToasts and fr.text and fr.shown then cardsUp = cardsUp + 1 end end
 Eq(cardsUp, 1, "but a place with no location says so")
 QL.ClearToasts()
+QL.ClearArrow()
+
+-- Current quest window and nameplates ------------------------------------------------------------
+-- put The Gathering in the log with two objectives: question Bob, collect ribs (dropped by boars)
+local savedLog = C_QuestLog
+local ribs = 2
+C_QuestLog = {
+	GetNumQuestLogEntries = function() return 2 end,
+	GetInfo = function(i) return { questID = i == 1 and 2 or 3, isHeader = false } end,
+	IsComplete = function() return false end,
+	IsQuestFlaggedCompleted = function(id) return id == 1 end,
+	GetQuestObjectives = function(id)
+		if id ~= 3 then return {} end
+		return {
+			{ text = "Bob questioned: 0/1", numFulfilled = 0, numRequired = 1, finished = false },
+			{ text = "Boar Ribs: " .. ribs .. "/5", numFulfilled = ribs, numRequired = 5, finished = false },
+		}
+	end,
+}
+QL.ResetContext()
+QL.SetArrowTarget(3)
+QL.RefreshCurrent()
+local cur = QuestLineageCurrent
+Check(cur and cur.shown, "current quest window shown")
+Eq(cur.title.text, "The Gathering", "the arrow's quest is current")
+Check(cur.state.text:find("In your log", 1, true), "its stage: " .. cur.state.text)
+Eq(cur.rows[1].count.text, "0/1", "first objective counter")
+Eq(cur.rows[2].count.text, "2/5", "ribs 2 of 5")
+Check(cur.rows[2].text.text:find("Boar Ribs", 1, true), "objective text")
+local rows = QL.ObjectiveRows(3, QL.Context())
+Eq(rows[1].task.id, 100, "Bob's row matched to the creature task")
+Eq(rows[2].task.id, 501, "the ribs row matched to the item task")
+-- progress: the ribs counter goes up, the row flashes
+ribs = 3
+QL.ResetContext()
+Eq(cur.rows[2].count.text, "3/5", "counter updated")
+Check(cur.rows[2].flashT > 0, "the row flashes")
+-- folding
+cur.scripts.OnClick(cur, "RightButton")
+Eq(cur.rows[1].shown, false, "right-click folds the objectives")
+cur.scripts.OnClick(cur, "RightButton")
+Eq(cur.rows[1].shown, true, "and unfolds")
+-- nameplates: a boar drops the ribs, Bob is to be questioned
+local plates = {}
+local function plate(unit) plates[unit] = plates[unit] or mock("Frame"); plates[unit].namePlateUnitToken = unit; return plates[unit] end
+C_NamePlate = {
+	GetNamePlateForUnit = function(unit) return plate(unit) end,
+	GetNamePlates = function() local out = {} for _, p in pairs(plates) do out[#out + 1] = p end return out end,
+}
+local guids = { nameplate1 = "Creature-0-0-0-0-102-0001", nameplate2 = "Creature-0-0-0-0-100-0002", nameplate3 = "Creature-0-0-0-0-206-0003" }
+UnitGUID = function(unit) return guids[unit] end
+for _, fn in ipairs(QL.events.NAME_PLATE_UNIT_ADDED) do fn("NAME_PLATE_UNIT_ADDED", "nameplate1"); fn("NAME_PLATE_UNIT_ADDED", "nameplate2"); fn("NAME_PLATE_UNIT_ADDED", "nameplate3") end
+local function badgeOf(unit)
+	for _, fr in ipairs(frames) do if fr.parent == plates[unit] and fr.text and fr.icon then return fr end end
+end
+Eq(badgeOf("nameplate1").text.text, "3/5", "the boar's plate counts the ribs")
+Eq(badgeOf("nameplate2").text.text, "0/1", "Bob's plate counts the questioning")
+Eq(badgeOf("nameplate3"), nil, "no badge on a creature no quest needs")
+ribs = 5
+C_QuestLog.GetQuestObjectives = function(id)
+	if id ~= 3 then return {} end
+	return {
+		{ text = "Bob questioned: 0/1", numFulfilled = 0, numRequired = 1, finished = false },
+		{ text = "Boar Ribs: 5/5", numFulfilled = 5, numRequired = 5, finished = true },
+	}
+end
+QL.ResetContext()
+Eq(badgeOf("nameplate1").shown, false, "done: the boar's badge goes")
+QL.Set("nameplates", false)
+Eq(badgeOf("nameplate2").shown, false, "the setting hides badges")
+QL.Set("nameplates", true)
+Eq(#QL.errors, 0, "current quest and plates without errors: " .. table.concat(QL.errors, " | "))
+C_QuestLog = savedLog
+QL.ResetContext()
 QL.ClearArrow()
 
 -- Minimap button -------------------------------------------------------------------------------

@@ -19,6 +19,8 @@ local ROWS = {
 	{ key = "mapRoute", label = "Route on the world map" },
 	{ key = "quickBar", label = "\"Where?\" bar under the arrow (trainers, vendors, services)" },
 	{ key = "toasts", label = "Messages in a notification window (off: in the chat)" },
+	{ key = "currentQuest", label = "Current quest window (stage and objectives)" },
+	{ key = "nameplates", label = "Quest counters on nameplates" },
 	{ key = "tooltip", label = "Chain line on NPC tooltips" },
 	{ key = "logButton", label = "Chain button in the quest log" },
 	{ key = "detailButton", label = "Chain button and warnings on the quest offer window" },

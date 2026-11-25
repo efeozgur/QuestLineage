@@ -33,6 +33,9 @@ QL.defaults = {
 	mapRoute = true,      -- the route (or the arrow's quest) drawn on the world map
 	quickBar = true,      -- the "Where?" quick bar under the arrow
 	toasts = true,        -- results and errors as notification cards (off: in the chat)
+	currentQuest = true,  -- the current quest window
+	currentCollapsed = false, -- its objectives folded
+	nameplates = true,    -- quest badges and counters on objective creatures' nameplates
 }
 
 -- SavedVariables can be missing on a cold start: always go through DB().

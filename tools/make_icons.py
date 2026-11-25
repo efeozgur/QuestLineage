@@ -202,6 +202,16 @@ SERVICES = {
 }
 
 
+def quest_mark():
+    """The nameplate badge: a filled circle with an exclamation mark cut out (tinted in game)."""
+    img, d = canvas()
+    d.ellipse((s(2), s(2), s(62), s(62)), fill=W)
+    clear = (0, 0, 0, 0)
+    d.rounded_rectangle((s(27), s(12), s(37), s(40)), radius=s(4), fill=clear)
+    d.ellipse((s(27), s(44), s(37), s(54)), fill=clear)
+    save(img, "quest_mark.tga")
+
+
 def logo():
     """The addon's own icon (the AddOns list, ## IconTexture): in colour, not tinted by the game.
     A dark rounded tile with a family tree in the accent gradient: one quest above, two below."""
@@ -235,6 +245,7 @@ def logo():
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     logo()
+    quest_mark()
     quests()
     chains()
     shield()

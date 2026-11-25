@@ -28,6 +28,8 @@ MapRoute.lua
 Services.lua
 QuickBar.lua
 Toast.lua
+Current.lua
+Plates.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua
