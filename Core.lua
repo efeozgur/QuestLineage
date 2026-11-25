@@ -46,6 +46,7 @@ QL.defaults = {
 	questsHideChains = true, -- the main window's Quests tab leaves chain quests to the Chains tab
 	hideGameTracker = false, -- hide the game's own quest tracker (QuestLineage's window replaces it)
 	questAreas = true,    -- the current quest's objective areas on the minimap and world map
+	questAreasOthers = true, -- the other logged quests' areas too (soft, one colour per quest)
 	hideGameAreas = false, -- hide the game's own (blue) quest area on the minimap
 	questCard = true,     -- QuestLineage's quest card when an NPC offers a quest
 	questCardStory = false, -- its story section open

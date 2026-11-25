@@ -80,6 +80,8 @@ local ROWS = {
 		label = "When I walk into another quest's area", note = "The areas the map rings show, for every quest in your log." },
 	{ key = "nearbyCooldown", page = "tracking", group = "Other quests nearby",
 		slider = { min = 1, max = 15, text = "The same quest's card again after %d min" }, note = "However it came up: target, nameplate or area." },
+	{ key = "questAreasOthers", page = "maps", group = "Quests", parent = "questAreas",
+		label = "Other quests' areas too", note = "Softer rings, one colour per quest; the current quest's stay bright on top." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 }

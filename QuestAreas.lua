@@ -117,13 +117,50 @@ function QL.QuestAreas(id, ctx)
 	return out
 end
 
-local current = {} -- the areas being drawn, recomputed now and then
+-- The areas being drawn, recomputed now and then: the other quests' first (soft, one colour per
+-- quest, setting questAreasOthers), the current quest's last so they sit on top.
+local current = {}
+local others, othersAt, othersFor = {}, -999, nil
+local OTHERS_EVERY = 10 -- seconds between two rebuilds of the other quests' areas
+local OTHER_COLORS = {
+	{ 0.96, 0.62, 0.30 }, { 0.40, 0.78, 0.98 }, { 0.93, 0.47, 0.70 }, { 0.62, 0.86, 0.38 },
+	{ 0.98, 0.84, 0.36 }, { 0.70, 0.60, 0.98 }, { 0.45, 0.90, 0.80 }, { 0.98, 0.50, 0.45 },
+}
 
-local function recompute()
+local function clock() return (GetTime and GetTime()) or 0 end
+
+local function rebuildOthers(ctx, currentId)
+	others = {}
+	local ids = {}
+	for id in pairs(ctx.log or {}) do
+		if id ~= currentId and not (ctx.complete and ctx.complete[id]) then ids[#ids + 1] = id end
+	end
+	table.sort(ids)
+	for k, id in ipairs(ids) do
+		local ok, list = pcall(QL.QuestAreas, id, ctx)
+		if ok then
+			local c = OTHER_COLORS[(k - 1) % #OTHER_COLORS + 1]
+			for _, a in ipairs(list or {}) do
+				a.color, a.other = c, true
+				others[#others + 1] = a
+			end
+		end
+	end
+	othersAt, othersFor = clock(), currentId
+end
+
+local function recompute(force)
 	current = {}
 	if QL.DB().questAreas == false then return end
-	local ok, list = pcall(QL.QuestAreas, QL.CurrentQuest and QL.CurrentQuest())
-	if ok then current = list end
+	local ctx = QL.Context()
+	local id = QL.CurrentQuest and QL.CurrentQuest(ctx)
+	if QL.DB().questAreasOthers ~= false then
+		if force or othersFor ~= id or clock() - othersAt > OTHERS_EVERY then rebuildOthers(ctx, id) end
+		for _, a in ipairs(others) do current[#current + 1] = a end
+	end
+	local ok, list = pcall(QL.QuestAreas, id, ctx)
+	if ok then for _, a in ipairs(list or {}) do current[#current + 1] = a end end
+	QL.drawnAreas = current
 end
 
 -- Minimap ---------------------------------------------------------------------------------------------
@@ -210,15 +247,15 @@ local function drawMinimap()
 					local p = mmPart(n)
 					p.disc:SetSize(fit * 2, fit * 2)
 					p.disc:ClearAllPoints(); p.disc:SetPoint("CENTER", Minimap, "CENTER", cx, cy)
-					p.disc:SetVertexColor(c[1], c[2], c[3], 0.16)
+					p.disc:SetVertexColor(c[1], c[2], c[3], a.other and 0.07 or 0.16)
 					p.ring:SetSize(fit * 2, fit * 2)
 					p.ring:ClearAllPoints(); p.ring:SetPoint("CENTER", Minimap, "CENTER", cx, cy)
-					p.ring:SetVertexColor(c[1], c[2], c[3], 0.8)
+					p.ring:SetVertexColor(c[1], c[2], c[3], a.other and 0.45 or 0.8)
 					p.disc:Show(); p.ring:Show()
 					QL.minimapAreaHits[#QL.minimapAreaHits + 1] = { x = cx, y = cy, r = fit, area = a }
 				end
 			end
-			if dist > edge * 0.9 then
+			if dist > edge * 0.9 and not a.other then
 				-- beyond (or at) the edge: a mark on the rim pointing at it
 				rims = rims + 1
 				local d = rimPart(rims)
@@ -286,14 +323,15 @@ local function drawWorldMap()
 			p.glow:SetVertexColor(c[1], c[2], c[3], 0.22)
 			p.disc:SetSize(r * 2, r * 2)
 			p.disc:ClearAllPoints(); p.disc:SetPoint("CENTER", wm, "TOPLEFT", px, py)
-			p.disc:SetVertexColor(c[1], c[2], c[3], 0.18)
+			p.disc:SetVertexColor(c[1], c[2], c[3], a.other and 0.07 or 0.18)
 			p.ring:SetSize(r * 2, r * 2)
 			p.ring:ClearAllPoints(); p.ring:SetPoint("CENTER", wm, "TOPLEFT", px, py)
-			p.ring:SetVertexColor(c[1], c[2], c[3], 0.9)
-			p.glow:Show(); p.disc:Show(); p.ring:Show()
+			p.ring:SetVertexColor(c[1], c[2], c[3], a.other and 0.5 or 0.9)
+			p.disc:Show(); p.ring:Show()
+			p.glow:SetShown(not a.other)
 			QL.worldAreaHits[#QL.worldAreaHits + 1] = { x = x, y = y, rx = r / cw, ry = r / ch, area = a }
 			-- one label per objective, on its biggest area
-			if not labelled[a.label or ""] then
+			if not a.other and not labelled[a.label or ""] then
 				labelled[a.label or ""] = true
 				p.label:SetText((a.label or "") .. (a.count and ("  " .. QL.Theme.Hex(c) .. a.count .. "|r") or ""))
 				p.label:SetScale(1 / zoom)
@@ -392,12 +430,20 @@ local function showAreaTip(owner, list)
 	local T, C = QL.Theme, QL.Theme.C
 	local tip = QL.Tip()
 	tip:SetOwner(owner, "ANCHOR_CURSOR")
+	-- the current quest's rings first, then the smallest
+	table.sort(list, function(x, y) return (x.other and 1 or 0) < (y.other and 1 or 0) end)
 	local first = list[1]
+	local several = false
+	for _, a in ipairs(list) do if a.questId ~= first.questId then several = true end end
 	for _, a in ipairs(list) do
 		local c = a.color or C.accent
-		tip:AddLine("●  " .. (a.label or "?") .. (a.count and ("   " .. a.count) or ""), c[1], c[2], c[3])
+		local line = "●  " .. (a.label or "?") .. (a.count and ("   " .. a.count) or "")
+		if several then line = line .. "   " .. T.Hex(C.muted) .. QL.QuestTitle(a.questId) .. "|r" end
+		tip:AddLine(line, c[1], c[2], c[3])
 	end
-	tip:AddLine(L("Objective of %s"):format(QL.QuestTitle(first.questId)), C.muted[1], C.muted[2], C.muted[3])
+	if not several then
+		tip:AddLine(L("Objective of %s"):format(QL.QuestTitle(first.questId)), C.muted[1], C.muted[2], C.muted[3])
+	end
 	tip:AddLine(" ")
 	QL.FillQuestTooltip(tip, first.questId)
 	tip:Show()
@@ -499,6 +545,6 @@ for _, m in ipairs({ "STATE_CHANGED", "ARROW_CHANGED", "INDEX_READY" }) do
 	QL.On(m, function() pcall(QL.RefreshQuestAreas) end)
 end
 QL.On("SETTING_CHANGED", function(key)
-	if key == "questAreas" then pcall(QL.RefreshQuestAreas) end
+	if key == "questAreas" or key == "questAreasOthers" then othersAt = -999; pcall(QL.RefreshQuestAreas) end
 	if key == "hideGameAreas" then pcall(QL.ApplyGameAreas) end
 end)

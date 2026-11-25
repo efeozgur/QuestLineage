@@ -1340,6 +1340,36 @@ Eq(blob.ring, 0, "the game's ring hidden")
 Eq(blob.inside, 0, "and its fill")
 QL.Set("hideGameAreas", false)
 Eq(blob.ring, 1, "shown again")
+-- another quest's rings: with Second Steps current, The Gathering's area is drawn softly and its
+-- tooltip names The Gathering
+QL.SetArrowTarget(2)
+QL.RefreshQuestAreas()
+local otherArea
+for _, ar in ipairs(QL.drawnAreas or {}) do if ar.questId == 3 then otherArea = ar end end
+Check(otherArea, "The Gathering's ring is drawn while another quest is current")
+Eq(otherArea.other, true, "as another quest's ring")
+Minimap.IsMouseOver = function() return true end
+Minimap.IsVisible = function() return true end
+Minimap.GetCenter = function() return 100, 100 end
+local oh = QL.minimapAreaHits[1]
+GetCursorPosition = function() return 100 + oh.x, 100 + oh.y end
+QL.HoverMinimapAreas()
+local otext = {}
+for i = 1, QL.Tip():NumLines() do otext[#otext + 1] = QL.Tip().lines[i].text or "" end
+otext = table.concat(otext, " / ")
+Check(otext:find("The Gathering", 1, true), "its own quest in the tooltip: " .. otext)
+Check(otext:find("Objective of The Gathering", 1, true), "whose objective it is, not the current quest's")
+QL.Tip():Hide()
+Minimap.IsMouseOver, Minimap.IsVisible, Minimap.GetCenter = nil, nil, nil
+GetCursorPosition = function() return 0, 0 end
+-- the setting
+QL.Set("questAreasOthers", false)
+local any3 = false
+for _, ar in ipairs(QL.drawnAreas or {}) do if ar.questId == 3 then any3 = true end end
+Eq(any3, false, "other quests' rings off in the settings")
+QL.Set("questAreasOthers", true)
+QL.SetArrowTarget(3)
+QL.RefreshQuestAreas()
 -- folding
 cur.scripts.OnClick(cur, "RightButton")
 Eq(cur.rows[1].shown, false, "right-click folds the objectives")
