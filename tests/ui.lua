@@ -213,6 +213,30 @@ Eq(QL.ArrowQuest(), 5, "a tree card points the arrow")
 Eq(QuestLineageArrow.shown, true, "the arrow shows")
 QL.ClearArrow()
 
+-- Class: the warrior's class quests, open ones by level -----------------------------------------
+CLASS_ICON_TCOORDS = { WARRIOR = { 0, 0.25, 0, 0.25 } }
+RAID_CLASS_COLORS = { WARRIOR = { r = 0.78, g = 0.61, b = 0.43 } }
+QL.ShowPage("class")
+local cp = f.classPage
+Eq(cp.shown, true, "class page shown")
+Eq(f.classTab.active, true, "class rail button active")
+Eq(f.questsTab.active, false, "the others not")
+Eq(f.classTab.bar.shown, true, "accent bar on the active rail button")
+Eq(cp.zone.text, "Warrior", "class name")
+Eq(cp.icon.shown, true, "class emblem")
+local crows = {}
+for _, r in ipairs(cp.list.rows) do if r.shown then crows[#crows + 1] = r end end
+Eq(#crows, 2, "a class chain and a single class quest")
+Eq(crows[1].questId, 22, "the lowest level first: Shield Lesson")
+Eq(crows[1].chip.text, "Available", "level 4, takeable at 5")
+Eq(crows[2].questId, 20, "then the level 10 chain")
+Eq(crows[2].chip.text, "Level too low", "level 10 needed")
+Check(cp.sub.text:find("3 quests", 1, true), "class summary: " .. cp.sub.text)
+crows[1].scripts.OnClick(crows[1])
+Eq(f.inspector.hero.title.text, "Shield Lesson", "a class row opens its quest")
+Eq(QL.ArrowQuest(), 22, "and points the arrow")
+QL.ClearArrow()
+
 -- Search: as you type -------------------------------------------------------------------------------
 QL.ShowPage("search")
 local sp = f.searchPage

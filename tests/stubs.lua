@@ -28,6 +28,11 @@ local QUESTS = {
 	[11] = { zoneOrSort = 14, name = "Loop A", questLevel = 10, nextQuestInChain = 12, preQuestSingle = { 12 } },
 	[12] = { zoneOrSort = 14, name = "Loop B", questLevel = 10, preQuestSingle = { 11 } },
 	[14] = { zoneOrSort = 220, name = "Plains Hunt", questLevel = 4, requiredLevel = 1 },
+	[20] = { zoneOrSort = 1637, name = "Warrior's Trial", questLevel = 10, requiredLevel = 10, requiredClasses = 1 },
+	[21] = { zoneOrSort = 1637, name = "Warrior's Reward", questLevel = 10, requiredLevel = 10, requiredClasses = 1, preQuestSingle = { 20 } },
+	[22] = { zoneOrSort = 1637, name = "Shield Lesson", questLevel = 4, requiredLevel = 4, requiredClasses = 1 },
+	[23] = { zoneOrSort = 1637, name = "Arcane Study", questLevel = 4, requiredLevel = 4, requiredClasses = 128 },
+	[24] = { zoneOrSort = 1637, name = "Every Class", questLevel = 4, requiredLevel = 4, requiredClasses = 1535 },
 	[15] = { zoneOrSort = 215, name = "Plains Feast", questLevel = 6, requiredLevel = 3, preQuestSingle = { 14 } },
 }
 local NPCS = {

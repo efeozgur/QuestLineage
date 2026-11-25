@@ -286,6 +286,46 @@ function T.Tooltip()
 end
 QL.Tip = function() return T.Tooltip() end
 
+-- A navigation rail button: an icon over a small label; active = accent icon, an accent bar
+-- on the left and a tinted ground. Same SetLabel / SetActive / .label / .active as T.Button.
+function T.RailButton(parent, icon, w, h)
+	local C = T.C
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(w or 64, h or 62)
+	b.bg = T.Fill(b, { 0, 0, 0, 0 })
+	b.bar = b:CreateTexture(nil, "ARTWORK")
+	b.bar:SetTexture(WHITE)
+	b.bar:SetPoint("TOPLEFT", 0, -8); b.bar:SetPoint("BOTTOMLEFT", 0, 8)
+	b.bar:SetWidth(3)
+	T.Gradient(b.bar, "VERTICAL", C.accent2, C.accent)
+	b.bar:Hide()
+	b.icon = b:CreateTexture(nil, "ARTWORK")
+	b.icon:SetTexture(icon)
+	b.icon:SetSize(22, 22)
+	b.icon:SetPoint("TOP", 0, -11)
+	b.label = T.Text(b, 10, C.muted)
+	b.label:SetPoint("BOTTOM", 0, 9)
+	b.label:SetJustifyH("CENTER")
+	function b:SetLabel(text) self.label:SetText(text) end
+	local function paint(self, hover)
+		local on = self.active
+		color(self.bg, on and C.rowActive or (hover and C.rowHover or { 0, 0, 0, 0 }))
+		local ic = on and C.accent or (hover and C.text or C.muted)
+		self.icon:SetVertexColor(ic[1], ic[2], ic[3], 1)
+		local tc = on and C.text or (hover and C.text or C.muted)
+		self.label:SetTextColor(tc[1], tc[2], tc[3], 1)
+		self.bar:SetShown(on and true or false)
+	end
+	function b:SetActive(on)
+		self.active = on and true or false
+		paint(self, false)
+	end
+	b:SetScript("OnEnter", function(self) paint(self, true) end)
+	b:SetScript("OnLeave", function(self) paint(self, false) end)
+	b:SetActive(false)
+	return b
+end
+
 -- Flat button: label, hover lift, an "active" state with an accent underline.
 function T.Button(parent, w, h)
 	local C = T.C

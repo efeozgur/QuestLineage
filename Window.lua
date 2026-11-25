@@ -1,16 +1,18 @@
 -- The QuestLineage window.
 --
---  ┌ header ─ logo · title ─────────────────────────────────────────────── × ┐
---  │ sidebar             │ chain: first quest    38% ▬▬▬░ │ detail panel    │
---  │ [This zone][Search] ├────────────────────────────────┤ (Inspector.lua) │
---  │ Durotar             │                                │  3D giver       │
---  │ 6 chains            │   family tree (Tree.lua)       │  objective      │
---  │ ▌chain row  ▬▬▬░░   │                                │  tasks, people  │
---  │  chain row  ▬░░░░   ├────────────────────────────────┤  rewards, chain │
---  │  ...                │ legend                         │  actions        │
---  └─────────────────────┴────────────────────────────────┴─────────────────┘
+--  ┌ header ─ logo · title ──────────────────────────────────────────────────── × ┐
+--  │ rail │ list                │ chain: first quest  +XP ▬▬░ │ detail panel    │
+--  │ ≡    │ Durotar             ├─────────────────────────────┤ (Inspector.lua) │
+--  │ Görev│ 12 quests · 3 log   │                             │  3D giver       │
+--  │ ∞    │ ▌quest row   +450   │  family tree (Tree.lua)     │  objective      │
+--  │ Zinc.│  quest row   +300   │                             │  tasks, people  │
+--  │ ◆    │  ...                ├─────────────────────────────┤  rewards, chain │
+--  │ Sınıf│                     │ legend                      │  actions        │
+--  │ ⌕ Ara│                     │                             │                 │
+--  └──────┴─────────────────────┴─────────────────────────────┴─────────────────┘
 --
--- "This zone" lists the chains that have a quest in the player's zone (Zone.lua), the ones in
+-- The rail on the left picks the list: Quests (normal quests, most XP first), Chains (this zone),
+-- Class (the character's class quests) and Search. "Chains" lists the chains that have a quest in the player's zone (Zone.lua), the ones in
 -- progress first; it follows the player from zone to zone. "Search" finds quests by name or
 -- id as you type. Picking either opens that quest's family tree in the middle and its details
 -- on the right. Each part renders under pcall: an error is recorded (/ql errors) and flagged in
@@ -21,8 +23,8 @@
 
 local _, QL = ...
 
-local W, H = 1280, 740
-local HEADER_H, SIDEBAR_W, INFO_H, LEGEND_H, INSPECTOR_W = 52, 300, 76, 34, 360
+local W, H = 1320, 740
+local HEADER_H, RAIL_W, SIDEBAR_W, INFO_H, LEGEND_H, INSPECTOR_W = 52, 64, 292, 76, 34, 344
 local ZONE_ROW_H, SEARCH_ROW_H = 66, 50
 
 local win
@@ -120,51 +122,11 @@ local function selectRow(r, on)
 	r.mark:SetShown(on)
 end
 
--- Sidebar: This zone ----------------------------------------------------------------------
-
-local function renderZone()
+-- Chain rows (the Chains and Class pages): the chain's first quest, levels, done count, XP
+-- still to earn, its state, the distance to the quest the row opens, and a progress bar.
+-- rows = { { entry = QL.GroupChains entry, progress = QL.ChainProgress }, ... }
+local function fillChainRows(list, rows, ctx)
 	local T, C = QL.Theme, QL.Theme.C
-	local page = win.zonePage
-	local list = page.list
-	local area, _, name = QL.PlayerZone()
-	page.zone:SetText(name or L("Unknown zone"))
-	if QL.DataStatus() ~= "ok" then
-		page.sub:SetText(L("QuestieDB is missing."))
-		hideRows(list, 1)
-		return
-	end
-	if not QL.IndexReady() then
-		page.sub:SetText(L("Building the chain index..."))
-		hideRows(list, 1)
-		QL.WhenIndexed(QL.RenderWindow)
-		return
-	end
-	local ctx = QL.Context()
-	local chains = area and QL.ZoneChains(area, ctx) or {}
-	local rows = {}
-	for _, entry in ipairs(chains) do
-		rows[#rows + 1] = { entry = entry, progress = QL.ChainProgress(entry, ctx) }
-	end
-	local order = QL.CHAIN_STATE_ORDER
-	table.sort(rows, function(a, b)
-		local sa, sb = order[a.progress.state] or 9, order[b.progress.state] or 9
-		if sa ~= sb then return sa < sb end
-		local la, lb = a.entry.minLevel or 0, b.entry.minLevel or 0
-		if la ~= lb then return la < lb end
-		return a.entry.head < b.entry.head
-	end)
-	local open, quests = 0, 0
-	for _, row in ipairs(rows) do
-		if row.progress.state ~= "done" then open = open + 1 end
-		quests = quests + row.entry.size
-	end
-	if not area then
-		page.sub:SetText(L("No quest data for this zone."))
-	elseif #rows == 0 then
-		page.sub:SetText(L("No quest chains in this zone."))
-	else
-		page.sub:SetText(L("%d chains · %d open · %d quests"):format(#rows, open, quests))
-	end
 	for i, row in ipairs(rows) do
 		local r = listRow(list, i, ZONE_ROW_H)
 		r.arrowOnClick = true -- a chain row points the arrow at the quest it opens
@@ -210,7 +172,112 @@ local function renderZone()
 	list:SetContentHeight(#rows * ZONE_ROW_H + 8)
 end
 
+-- Sidebar: This zone ----------------------------------------------------------------------
+
+local function renderZone()
+	local T, C = QL.Theme, QL.Theme.C
+	local page = win.zonePage
+	local list = page.list
+	local area, _, name = QL.PlayerZone()
+	page.zone:SetText(name or L("Unknown zone"))
+	if QL.DataStatus() ~= "ok" then
+		page.sub:SetText(L("QuestieDB is missing."))
+		hideRows(list, 1)
+		return
+	end
+	if not QL.IndexReady() then
+		page.sub:SetText(L("Building the chain index..."))
+		hideRows(list, 1)
+		QL.WhenIndexed(QL.RenderWindow)
+		return
+	end
+	local ctx = QL.Context()
+	local chains = area and QL.ZoneChains(area, ctx) or {}
+	local rows = {}
+	for _, entry in ipairs(chains) do
+		rows[#rows + 1] = { entry = entry, progress = QL.ChainProgress(entry, ctx) }
+	end
+	local order = QL.CHAIN_STATE_ORDER
+	table.sort(rows, function(a, b)
+		local sa, sb = order[a.progress.state] or 9, order[b.progress.state] or 9
+		if sa ~= sb then return sa < sb end
+		local la, lb = a.entry.minLevel or 0, b.entry.minLevel or 0
+		if la ~= lb then return la < lb end
+		return a.entry.head < b.entry.head
+	end)
+	local open, quests = 0, 0
+	for _, row in ipairs(rows) do
+		if row.progress.state ~= "done" then open = open + 1 end
+		quests = quests + row.entry.size
+	end
+	if not area then
+		page.sub:SetText(L("No quest data for this zone."))
+	elseif #rows == 0 then
+		page.sub:SetText(L("No quest chains in this zone."))
+	else
+		page.sub:SetText(L("%d chains · %d open · %d quests"):format(#rows, open, quests))
+	end
+	fillChainRows(list, rows, ctx)
+end
+
 -- Sidebar: Search ---------------------------------------------------------------------------
+
+-- Sidebar: Class (the character's class quests: chains and single quests; open ones first, by
+-- level; completed ones last) ----------------------------------------------------------------
+
+local function renderClass()
+	local T, C = QL.Theme, QL.Theme.C
+	local page = win.classPage
+	local list = page.list
+	local info = QL.PlayerClass()
+	page.zone:SetText(info.name)
+	page.zone:SetTextColor(info.color[1], info.color[2], info.color[3], 1)
+	if info.coords and page.icon then
+		page.icon:SetTexture("Interface\\TargetingFrame\\UI-Classes-Circles")
+		page.icon:SetTexCoord(info.coords[1], info.coords[2], info.coords[3], info.coords[4])
+		page.icon:Show()
+	elseif page.icon then
+		page.icon:Hide()
+	end
+	if QL.DataStatus() ~= "ok" then
+		page.sub:SetText(L("QuestieDB is missing."))
+		hideRows(list, 1)
+		return
+	end
+	if not QL.IndexReady() then
+		page.sub:SetText(L("Building the chain index..."))
+		hideRows(list, 1)
+		QL.WhenIndexed(QL.RenderWindow)
+		return
+	end
+	local ctx = QL.Context()
+	local rows = {}
+	for _, entry in ipairs(QL.ClassChains(ctx)) do
+		rows[#rows + 1] = { entry = entry, progress = QL.ChainProgress(entry, ctx) }
+	end
+	table.sort(rows, function(a, b)
+		local da, db = a.progress.state == "done", b.progress.state == "done"
+		if da ~= db then return db end
+		local la, lb = a.entry.minLevel or 0, b.entry.minLevel or 0
+		if la ~= lb then return la < lb end
+		return a.entry.head < b.entry.head
+	end)
+	local open, now, quests, xpLeft = 0, 0, 0, 0
+	for _, row in ipairs(rows) do
+		if row.progress.state ~= "done" then open = open + 1 end
+		if row.progress.state == "available" or row.progress.state == "active" then now = now + 1 end
+		quests = quests + row.entry.size
+		xpLeft = xpLeft + QL.ChainXP(row.entry.ids, ctx).remaining
+	end
+	if #rows == 0 then
+		page.sub:SetText(L("No class quests found for your class."))
+	else
+		local text = L("%d quests · %d open · %d to do now"):format(quests, open, now)
+		if xpLeft > 0 then text = text .. "  ·  " .. T.Hex(C.accent) .. "+" .. QL.XPText(xpLeft) .. "|r" end
+		page.sub:SetText(text)
+	end
+	fillChainRows(list, rows, ctx)
+end
 
 -- Sidebar: Quests (normal quests: the log, and what this zone offers now; most XP first) ------
 
@@ -446,17 +513,21 @@ function QL.RenderWindow(animate)
 	local page = QL.DB().page or "quests"
 	win.questsTab:SetLabel(L("Quests"))
 	win.zoneTab:SetLabel(L("Chains"))
+	win.classTab:SetLabel(L("Class"))
 	win.searchTab:SetLabel(L("Search"))
 	win.questsTab:SetActive(page == "quests")
 	win.zoneTab:SetActive(page == "zone")
+	win.classTab:SetActive(page == "class")
 	win.searchTab:SetActive(page == "search")
 	win.questsPage:SetShown(page == "quests")
 	win.zonePage:SetShown(page == "zone")
+	win.classPage:SetShown(page == "class")
 	win.searchPage:SetShown(page == "search")
 	win.headerSub:SetText(L("Quest chains"))
 	win.legend:SetText(legendText())
 	if page == "quests" then safe("quest list", renderQuests)
 	elseif page == "zone" then safe("zone list", renderZone)
+	elseif page == "class" then safe("class list", renderClass)
 	else safe("search", renderSearch) end
 	if animate == nil then animate = win.shownFocus ~= focusId end
 	win.shownFocus = focusId
@@ -524,27 +595,40 @@ local function createWindow()
 	f.errorFlag:SetJustifyH("RIGHT")
 	f.errorFlag:Hide()
 
-	-- sidebar
+	-- navigation rail: one icon button per list
+	local rail = CreateFrame("Frame", nil, f)
+	rail:SetPoint("TOPLEFT", 0, -HEADER_H)
+	rail:SetPoint("BOTTOMLEFT")
+	rail:SetWidth(RAIL_W)
+	T.Fill(rail, C.header)
+	T.Line(rail, C.line, "RIGHT")
+	local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
+	local y = -8
+	for _, item in ipairs({
+		{ "questsTab", "nav_quests", "quests" },
+		{ "zoneTab", "nav_chains", "zone" },
+		{ "classTab", "nav_class", "class" },
+		{ "searchTab", "nav_search", "search" },
+	}) do
+		local b = T.RailButton(rail, MEDIA .. item[2], RAIL_W - 1, 62)
+		b:SetPoint("TOPLEFT", 0, y)
+		local key = item[3]
+		b:SetScript("OnClick", function() QL.ShowPage(key) end)
+		f[item[1]] = b
+		y = y - 64
+	end
+
+	-- the list panel
 	local side = CreateFrame("Frame", nil, f)
-	side:SetPoint("TOPLEFT", 0, -HEADER_H)
-	side:SetPoint("BOTTOMLEFT")
+	side:SetPoint("TOPLEFT", RAIL_W, -HEADER_H)
+	side:SetPoint("BOTTOMLEFT", RAIL_W, 0)
 	side:SetWidth(SIDEBAR_W)
 	T.Fill(side, C.sidebar)
 	T.Line(side, C.line, "RIGHT")
-	local tabW = (SIDEBAR_W - 32 - 12) / 3
-	f.questsTab = T.Button(side, tabW, 30)
-	f.questsTab:SetPoint("TOPLEFT", 16, -16)
-	f.questsTab:SetScript("OnClick", function() QL.ShowPage("quests") end)
-	f.zoneTab = T.Button(side, tabW, 30)
-	f.zoneTab:SetPoint("LEFT", f.questsTab, "RIGHT", 6, 0)
-	f.zoneTab:SetScript("OnClick", function() QL.ShowPage("zone") end)
-	f.searchTab = T.Button(side, tabW, 30)
-	f.searchTab:SetPoint("LEFT", f.zoneTab, "RIGHT", 6, 0)
-	f.searchTab:SetScript("OnClick", function() QL.ShowPage("search") end)
 
 	local function page()
 		local pg = CreateFrame("Frame", nil, side)
-		pg:SetPoint("TOPLEFT", 0, -58)
+		pg:SetPoint("TOPLEFT", 0, -10)
 		pg:SetPoint("BOTTOMRIGHT", -1, 0)
 		return pg
 	end
@@ -571,6 +655,18 @@ local function createWindow()
 	end
 	f.questsPage = zonePage()
 	f.zonePage = zonePage()
+	-- the class page: the class's emblem beside its name
+	local cp = zonePage()
+	cp.icon = cp:CreateTexture(nil, "ARTWORK")
+	cp.icon:SetSize(30, 30)
+	cp.icon:SetPoint("TOPLEFT", 16, -6)
+	cp.zone:ClearAllPoints()
+	cp.zone:SetPoint("TOPLEFT", 54, -8)
+	cp.zone:SetPoint("RIGHT", cp, "RIGHT", -16, 0)
+	cp.sub:ClearAllPoints()
+	cp.sub:SetPoint("TOPLEFT", 18, -40)
+	cp.sub:SetPoint("RIGHT", cp, "RIGHT", -16, 0)
+	f.classPage = cp
 
 	local sp = page()
 	sp.input = T.Input(sp, SIDEBAR_W - 32, 34)
@@ -598,7 +694,7 @@ local function createWindow()
 
 	-- main: info bar
 	local main = CreateFrame("Frame", nil, f)
-	main:SetPoint("TOPLEFT", SIDEBAR_W, -HEADER_H)
+	main:SetPoint("TOPLEFT", RAIL_W + SIDEBAR_W, -HEADER_H)
 	main:SetPoint("BOTTOMRIGHT", -INSPECTOR_W, 0)
 	f.main = main
 

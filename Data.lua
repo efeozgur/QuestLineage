@@ -82,7 +82,7 @@ end
 
 -- index.rewards[questId] = item ids the quest can give (from each item's questRewards)
 local function newIndex()
-	return { dependents = {}, names = {}, byZone = {}, rewards = {} }
+	return { dependents = {}, names = {}, byZone = {}, rewards = {}, byClass = {} }
 end
 
 local function indexItem(index, itemId)
@@ -118,6 +118,23 @@ local function indexOne(index, id)
 	if type(name) ~= "string" then return end
 	index.names[#index.names + 1] = { id, name:lower() }
 	indexZones(index, id)
+	-- class quests: a class mask naming at most three classes
+	local mask = QL.Q(id, "requiredClasses")
+	if type(mask) == "number" and mask > 0 then
+		local bits, bit, m = {}, 1, mask
+		while m > 0 and #bits <= 3 do
+			if m % 2 == 1 then bits[#bits + 1] = bit end
+			m = math.floor(m / 2)
+			bit = bit * 2
+		end
+		if m == 0 and #bits >= 1 and #bits <= 3 then
+			for _, b in ipairs(bits) do
+				local list = index.byClass[b]
+				if not list then list = {}; index.byClass[b] = list end
+				list[#list + 1] = id
+			end
+		end
+	end
 	local dep = index.dependents
 	local function add(p, kind)
 		local list = dep[p]

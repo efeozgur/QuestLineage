@@ -179,6 +179,10 @@ local TR = {
 	["Reset position"] = "Konumu sıfırla",
 	["The arrow turns here as a preview while this page is open. Drag it to move it."] = "Bu sayfa açıkken ok önizleme olarak döner. Taşımak için sürükle.",
 	["Arrow preview"] = "Ok önizlemesi",
+	-- class page
+	["Class"] = "Sınıf",
+	["No class quests found for your class."] = "Sınıfın için sınıf görevi bulunamadı.",
+	["%d quests · %d open · %d to do now"] = "%d görev · %d açık · %d şimdi yapılabilir",
 }
 QL.TR = TR
 

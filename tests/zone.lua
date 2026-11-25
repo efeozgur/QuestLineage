@@ -67,3 +67,27 @@ Eq(p.state, "done", "every open quest done (7 closed)")
 Eq(p.total, 7, "closed quest not counted")
 
 print("zone: ok")
+
+-- Class quests: a mask naming up to three classes; the warrior's (class bit 1)
+QL.ResetData()
+QL.BuildIndexNow()
+local wq = {}
+for _, id in ipairs(QL.ClassQuests(1)) do wq[id] = true end
+Check(wq[20] and wq[21] and wq[22], "the warrior's quests")
+Check(not wq[23], "a mage quest is not the warrior's")
+Check(not wq[24], "a quest open to every class is no class quest")
+local cc = QL.ClassChains(QL.TestContext())
+Eq(#cc, 2, "a two-quest class chain and a single class quest")
+local sizes = {}
+for _, e in ipairs(cc) do sizes[e.head] = e.size end
+Eq(sizes[20], 2, "Warrior's Trial heads its chain")
+Eq(sizes[22], 1, "a single class quest is kept")
+Check(QL.ClassChains(QL.TestContext()) == cc, "cached")
+Eq(#QL.ClassChains(QL.TestContext({ classFlag = 2 })), 0, "no paladin quests in the fixture")
+UnitClass = function() return "Savaşçı", "WARRIOR", 1 end
+RAID_CLASS_COLORS = { WARRIOR = { r = 0.78, g = 0.61, b = 0.43 } }
+local pc = QL.PlayerClass()
+Eq(pc.name, "Savaşçı", "class name from the client")
+Eq(pc.color[1], 0.78, "class colour")
+
+print("zone (classes): ok")

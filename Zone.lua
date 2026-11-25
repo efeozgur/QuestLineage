@@ -122,16 +122,17 @@ end
 
 -- The chains with at least one quest in the zone, each once. The grouping is cached per zone
 -- (it only depends on the data and the character's race/class); progress is computed apart.
-function QL.ZoneChains(area, ctx)
-	if not area or not QL.IndexReady() then return {} end
-	local cached = QL.zoneChainCache[area]
-	if cached then return cached end
+-- Group quests into chains, each once: the first quest not yet placed starts a chain and every
+-- quest it reaches is placed. inSet marks the quests the list is about (a zone's, a class's):
+-- the head is one of them when it can be. keepSingles keeps one-quest "chains" too.
+--   -> { { head, ids (by generation), minLevel, maxLevel, size, generations }, ... }
+function QL.GroupChains(questIds, ctx, keepSingles)
 	local hide = QL.DB().hideOther
-	local quests, inZone = {}, {}
-	for _, id in ipairs(QL.ZoneQuests(area)) do
-		if not hide or QL.Eligible(id, ctx) then
+	local quests, inSet = {}, {}
+	for _, id in ipairs(questIds) do
+		if not inSet[id] and (not hide or QL.Eligible(id, ctx)) then
 			quests[#quests + 1] = id
-			inZone[id] = true
+			inSet[id] = true
 		end
 	end
 	table.sort(quests, function(a, b)
@@ -145,11 +146,11 @@ function QL.ZoneChains(area, ctx)
 			local chain = QL.BuildChain(q, ctx)
 			if chain then
 				for _, id in ipairs(chain.order) do assigned[id] = true end
-				if chain.total >= 2 then
-					-- head: a first-generation quest, one of this zone's if there is one
+				if chain.total >= 2 or keepSingles then
+					-- head: a first-generation quest, one of the set's if there is one
 					local head
 					for _, id in ipairs(chain.layers[1]) do
-						if inZone[id] and (not head or (QL.QuestLevel(id) or 0) < (QL.QuestLevel(head) or 0)) then head = id end
+						if inSet[id] and (not head or (QL.QuestLevel(id) or 0) < (QL.QuestLevel(head) or 0)) then head = id end
 					end
 					head = head or chain.layers[1][1]
 					local lo, hi
@@ -172,8 +173,54 @@ function QL.ZoneChains(area, ctx)
 			end
 		end
 	end
+	return list
+end
+
+function QL.ZoneChains(area, ctx)
+	if not area or not QL.IndexReady() then return {} end
+	local cached = QL.zoneChainCache[area]
+	if cached then return cached end
+	local list = QL.GroupChains(QL.ZoneQuests(area), ctx)
 	QL.zoneChainCache[area] = list
 	return list
+end
+
+-- Class quests -------------------------------------------------------------------------------------
+-- A class quest is one whose class mask names at most three classes, the character's among them
+-- (Data.lua indexes them as index.byClass[class bit]).
+--   QL.ClassQuests(classFlag) -> quest ids
+--   QL.ClassChains(ctx) -> the class's quests grouped into chains (single quests kept), cached
+--   QL.PlayerClass() -> { name, file, color = {r, g, b}, coords = {l, r, t, b} | nil }
+
+function QL.ClassQuests(classFlag)
+	local index = QL.index
+	return index and index.byClass and classFlag and index.byClass[classFlag] or {}
+end
+
+local classCache = {}
+QL.On("INDEX_READY", function() classCache = {} end)
+QL.On("SETTING_CHANGED", function(key) if key == "hideOther" then classCache = {} end end)
+
+function QL.ClassChains(ctx)
+	if not QL.IndexReady() or not ctx.classFlag then return {} end
+	local cached = classCache[ctx.classFlag]
+	if cached then return cached end
+	local list = QL.GroupChains(QL.ClassQuests(ctx.classFlag), ctx, true)
+	classCache[ctx.classFlag] = list
+	return list
+end
+
+function QL.PlayerClass()
+	local name, file = nil, nil
+	if UnitClass then
+		local ok, n, f = pcall(UnitClass, "player")
+		if ok then name, file = n, f end
+	end
+	local color = { 1, 1, 1 }
+	local c = file and ((C_ClassColor and C_ClassColor.GetClassColor and C_ClassColor.GetClassColor(file)) or (RAID_CLASS_COLORS and RAID_CLASS_COLORS[file]))
+	if type(c) == "table" and c.r then color = { c.r, c.g, c.b } end
+	local coords = file and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[file]
+	return { name = name or "?", file = file, color = color, coords = coords }
 end
 
 -- Normal quests: every quest in the log (wherever it is) and every quest of the zone this
