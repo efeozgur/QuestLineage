@@ -60,7 +60,7 @@ end
 
 local function showTip(owner, key)
 	local tip = QL.Tip()
-	tip:SetOwner(owner, "ANCHOR_TOP")
+	tip:SetOwner(owner, "ANCHOR_BOTTOM")
 	tip:AddLine(labelOf(key), 1, 1, 1)
 	local list = QL.NearestServices(key, 3)
 	if #list == 0 then
@@ -180,7 +180,7 @@ local function build()
 	more:SetScript("OnEnter", function(self)
 		enter(self)
 		local tip = QL.Tip()
-		tip:SetOwner(self, "ANCHOR_TOP")
+		tip:SetOwner(self, "ANCHOR_BOTTOM")
 		tip:AddLine(L("More: every trainer, vendor and service"), 1, 1, 1)
 		tip:Show()
 	end)
