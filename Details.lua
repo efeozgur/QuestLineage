@@ -484,7 +484,17 @@ function QL.ObjectiveDebug(arg)
 	local tasks = QL.QuestTasks(id)
 	QL.Chat(("database tasks: %d"):format(#tasks))
 	for _, t in ipairs(tasks) do QL.Chat(("   %s %s: %s"):format(t.kind, tostring(t.id), tostring(t.name or t.text))) end
-	QL.Chat(("rows shown: %d"):format(#(QL.ObjectiveRows and QL.ObjectiveRows(id, QL.Context()) or {})))
+	QL.Chat(("rows for it: %d"):format(#(QL.ObjectiveRows and QL.ObjectiveRows(id, QL.Context()) or {})))
+	-- the current quest window, as drawn
+	local cur = rawget(_G, "QuestLineageCurrent")
+	if cur then
+		local drawn = 0
+		for _, r in ipairs(cur.rows or {}) do if r:IsShown() then drawn = drawn + 1 end end
+		QL.Chat(("current window: quest %s%s · objectives folded: %s · rows drawn: %d · height %.0f"):format(
+			tostring(cur.questId), cur.questId and (" (" .. QL.QuestTitle(cur.questId) .. ")") or "",
+			tostring(QL.DB().currentCollapsed and true or false), drawn, cur:GetHeight() or 0))
+		if QL.DB().currentCollapsed then QL.Chat(QL.L("The objectives are folded: right-click the window to open them.")) end
+	end
 end
 
 function QL.RewardItems(id)

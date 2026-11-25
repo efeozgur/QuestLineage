@@ -1320,8 +1320,12 @@ Eq(blob.ring, 1, "shown again")
 -- folding
 cur.scripts.OnClick(cur, "RightButton")
 Eq(cur.rows[1].shown, false, "right-click folds the objectives")
+Eq(cur.foldHint.shown, true, "and says so")
+Check(cur.foldHint.text:find("objectives hidden", 1, true), "how many are hidden: " .. cur.foldHint.text)
+QL.ObjectiveDebug()
 cur.scripts.OnClick(cur, "RightButton")
 Eq(cur.rows[1].shown, true, "and unfolds")
+Eq(cur.foldHint.shown, false, "the line goes")
 -- nameplates: a boar drops the ribs, Bob is to be questioned
 local plates = {}
 local function plate(unit) plates[unit] = plates[unit] or mock("Frame"); plates[unit].namePlateUnitToken = unit; return plates[unit] end

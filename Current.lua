@@ -174,6 +174,9 @@ local function build()
 	frame.state = T.Text(frame, 11, C.muted)
 	frame.state:SetPoint("LEFT", frame.stateDot, "RIGHT", 7, 0)
 	frame.state:SetPoint("RIGHT", frame.progress, "LEFT", -8, 0)
+	frame.foldHint = T.Text(frame, 10, C.dim)
+	frame.foldHint:SetPoint("TOPLEFT", 14, -74)
+	frame.foldHint:Hide()
 	frame.bar = T.Bar(frame, 3)
 	frame.bar:SetPoint("TOPLEFT", 14, -64)
 	frame.bar:SetPoint("TOPRIGHT", -14, -64)
@@ -525,6 +528,7 @@ function QL.RefreshCurrent(flashes)
 	local id = QL.CurrentQuest(ctx)
 	local T, C = QL.Theme, QL.Theme.C
 	local currentParts = { frame.label, frame.meta, frame.title, frame.stateDot, frame.state, frame.progress, frame.bar }
+	frame.foldHint:Hide()
 	if not id then
 		-- no current quest: the window shows the log alone (or nothing when the log is empty)
 		frame.questId = nil
@@ -578,8 +582,12 @@ function QL.RefreshCurrent(flashes)
 	frame.bar:SetShown(p ~= nil)
 	frame.completion = p
 
-	-- objectives
-	local rows = QL.DB().currentCollapsed and {} or QL.ObjectiveRows(id, ctx)
+	-- objectives (right-click folds them; then a line says how many are hidden)
+	local all = QL.ObjectiveRows(id, ctx)
+	local folded = QL.DB().currentCollapsed and #all > 0
+	local rows = folded and {} or all
+	frame.foldHint:SetShown(folded)
+	if folded then frame.foldHint:SetText(L("%d objectives hidden · right-click: show"):format(#all)) end
 	local y = -82
 	for i, o in ipairs(rows) do
 		local r = frame.rows[i]
@@ -615,7 +623,7 @@ function QL.RefreshCurrent(flashes)
 		if f[1] == id and frame.rows[f[2]] then frame.rows[f[2]].flashT = 1.2 end
 	end
 	frame.sep:SetShown(#rows > 0)
-	y = y + (#rows > 0 and -4 or 10)
+	y = y + (#rows > 0 and -4 or (folded and -6 or 10))
 	y = drawLog(y, ctx, id)
 	frame:SetHeight(-y + 8)
 	frame:Show()
