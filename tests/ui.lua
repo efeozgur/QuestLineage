@@ -1132,6 +1132,26 @@ ribs = 3
 QL.ResetContext()
 local p2 = QL.QuestCompletion(3, { complete = { [3] = true }, log = { [3] = true }, done = {}, level = 5 })
 Eq(p2.percent, 100, "a quest the game calls complete is 100%")
+-- three objectives: C_QuestLog gives two, the quest log's leader boards all three -> three rows
+C_QuestLog.GetLogIndexForQuestID = function(qid) return qid == 3 and 2 or nil end
+GetNumQuestLeaderBoards = function(index) return index == 2 and 3 or 0 end
+GetQuestLogLeaderBoard = function(i, index)
+	if i == 1 then return "Bob questioned: 0/1", "monster", false end
+	if i == 2 then return "Boar Ribs: 3/5", "item", false end
+	return "Scorpid slain: 4/4", "monster", true
+end
+QL.ResetContext()
+local three = QL.ObjectiveRows(3, QL.Context())
+Eq(#three, 3, "all three objectives")
+Eq(three[3].have, 4, "counter read from the text")
+Eq(three[3].done, true, "and done")
+local shown3 = 0
+for _, r in ipairs(cur.rows) do if r.shown then shown3 = shown3 + 1 end end
+Eq(shown3, 3, "three rows on the window")
+Eq(cur.progress.text, "1/3 objectives · 70%", "7 of 10 units, one objective done")
+QL.ObjectiveDebug(3)
+C_QuestLog.GetLogIndexForQuestID, GetNumQuestLeaderBoards, GetQuestLogLeaderBoard = nil, nil, nil
+QL.ResetContext()
 -- the log list under it: the other logged quest (Second Steps)
 Eq(cur.logHead.shown, true, "Quests header shown")
 Check(cur.logHead.text.text:find("QUESTS", 1, true), "header text: " .. cur.logHead.text.text)

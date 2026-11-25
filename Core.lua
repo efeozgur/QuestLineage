@@ -181,6 +181,8 @@ function QL.Command(msg)
 		else
 			QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart)."))
 		end
+	elseif cmd == "hedef" or cmd == "objectives" then
+		if QL.ObjectiveDebug then QL.ObjectiveDebug(rest) end
 	elseif cmd == "kart" or cmd == "card" then
 		if QL.CardDebug then QL.CardDebug() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
 	elseif cmd == "help" then
@@ -190,6 +192,7 @@ function QL.Command(msg)
 		QL.Chat("/ql arrow [id]  " .. L("arrow status, or point it at a quest"))
 		QL.Chat("/ql lang en|tr  " .. L("interface language"))
 		QL.Chat("/ql kart  " .. L("what the open quest card holds"))
+		QL.Chat("/ql hedef [id]  " .. L("where a quest's objectives come from"))
 		QL.Chat("/ql options  " .. L("settings"))
 	else
 		if QL.Open then QL.Open(msg) end

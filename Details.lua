@@ -427,12 +427,14 @@ function QL.QuestTasks(id)
 	return out
 end
 
-function QL.LiveObjectives(id)
-	local ctx = QL.Context and QL.Context()
-	if not ctx or not ctx.log[id] then return nil end
+-- A logged quest's objectives from the client. Two sources, the longer list wins: C_QuestLog's
+-- GetQuestObjectives, and the quest log's own leader boards (GetNumQuestLeaderBoards /
+-- GetQuestLogLeaderBoard, "Name slain: 3/10"), which classic clients fill in full even where the
+-- other gives only part of the list.
+local function fromObjectives(id)
 	if not (C_QuestLog and C_QuestLog.GetQuestObjectives) then return nil end
 	local list = call(C_QuestLog.GetQuestObjectives, id)
-	if type(list) ~= "table" or #list == 0 then return nil end
+	if type(list) ~= "table" then return nil end
 	local out = {}
 	for _, o in ipairs(list) do
 		if type(o) == "table" then
@@ -440,6 +442,49 @@ function QL.LiveObjectives(id)
 		end
 	end
 	return out
+end
+
+local function fromLeaderBoards(id)
+	if not (GetNumQuestLeaderBoards and GetQuestLogLeaderBoard and QL.QuestLogIndex) then return nil end
+	local index = QL.QuestLogIndex(id)
+	if not index then return nil end
+	local out = {}
+	for i = 1, tonumber(call(GetNumQuestLeaderBoards, index)) or 0 do
+		local text, _, finished = call(GetQuestLogLeaderBoard, i, index)
+		if type(text) == "string" and text ~= "" then
+			local have, need = text:match("(%d+)%s*/%s*(%d+)")
+			local done = finished == true or finished == 1
+			out[#out + 1] = { text = text, have = tonumber(have) or (done and 1 or 0), need = tonumber(need) or 0, done = done }
+		end
+	end
+	return out
+end
+QL.ObjectiveSources = function(id) return fromObjectives(id), fromLeaderBoards(id) end
+
+function QL.LiveObjectives(id)
+	local ctx = QL.Context and QL.Context()
+	if not ctx or not ctx.log[id] then return nil end
+	local a, b = fromObjectives(id), fromLeaderBoards(id)
+	local best = a
+	if b and #b > (a and #a or 0) then best = b end
+	if not best or #best == 0 then return nil end
+	return best
+end
+
+-- /ql hedef [id]: what each source says about a quest's objectives (the current quest by default).
+function QL.ObjectiveDebug(arg)
+	local id = tonumber(arg) or (QL.CurrentQuest and QL.CurrentQuest())
+	if not id then QL.Chat(QL.L("No current quest: /ql hedef <quest id>")); return end
+	QL.Chat(("%s (%d) · %s"):format(QL.QuestTitle(id), id, QL.Context().log[id] and "in the log" or "not in the log"))
+	local a, b = fromObjectives(id), fromLeaderBoards(id)
+	QL.Chat(("C_QuestLog.GetQuestObjectives: %s"):format(a and (#a .. " objectives") or "unavailable"))
+	for _, o in ipairs(a or {}) do QL.Chat(("   %s  %d/%d%s"):format(o.text, o.have, o.need, o.done and " done" or "")) end
+	QL.Chat(("quest log leader boards: %s (log line %s)"):format(b and (#b .. " objectives") or "unavailable", tostring(QL.QuestLogIndex and QL.QuestLogIndex(id))))
+	for _, o in ipairs(b or {}) do QL.Chat(("   %s  %d/%d%s"):format(o.text, o.have, o.need, o.done and " done" or "")) end
+	local tasks = QL.QuestTasks(id)
+	QL.Chat(("database tasks: %d"):format(#tasks))
+	for _, t in ipairs(tasks) do QL.Chat(("   %s %s: %s"):format(t.kind, tostring(t.id), tostring(t.name or t.text))) end
+	QL.Chat(("rows shown: %d"):format(#(QL.ObjectiveRows and QL.ObjectiveRows(id, QL.Context()) or {})))
 end
 
 function QL.RewardItems(id)
