@@ -1,0 +1,134 @@
+-- Interface language and quest text.
+-- English is the default. Turkish is offered while WoWTR (the Turkish translation addon) is
+-- loaded: then the interface strings below, the quest titles and objectives come from WoWTR's
+-- QTR_QuestData, and text is drawn in WoWTR's font so the Turkish letters show.
+-- QL.L(text) returns the translation of an English string, or the string itself.
+
+local _, QL = ...
+
+local TR = {
+	["Chain"] = "Zincir",
+	["Quest chain"] = "Görev zinciri",
+	["Quest Lineage"] = "Görev Soyağacı",
+	["Search: quest name or id"] = "Ara: görev adı veya id",
+	["No quest found for: "] = "Görev bulunamadı: ",
+	["Building the chain index..."] = "Zincir dizini hazırlanıyor...",
+	["QuestieDB is missing: QuestLineage reads its quest data from it."] = "QuestieDB yok: QuestLineage görev verisini ondan okur.",
+	["This quest has no chain."] = "Bu görevin zinciri yok.",
+	["Showing the nearest %d quests of a larger web."] = "Daha büyük bir ağın en yakın %d görevi gösteriliyor.",
+	["%d/%d done"] = "%d/%d tamam",
+	["Level %d"] = "Seviye %d",
+	["Lv %d"] = "Sv %d",
+	["Done"] = "Tamamlandı",
+	["In your log"] = "Günlüğünde",
+	["Ready to turn in"] = "Teslime hazır",
+	["Available"] = "Alınabilir",
+	["Locked"] = "Kilitli",
+	["Level too low"] = "Seviye yetersiz",
+	["Closed"] = "Kapandı",
+	["Not for your character"] = "Karakterin için değil",
+	["Starts: "] = "Veren: ",
+	["Ends: "] = "Teslim: ",
+	["Requires all of: "] = "Hepsi gerekli: ",
+	["Requires one of: "] = "Biri gerekli: ",
+	["Must be on: "] = "Alınmış olmalı: ",
+	["Breadcrumb to: "] = "Şuna yönlendirir: ",
+	["Taking it closes: "] = "Alırsan kapanır: ",
+	["Taking this quest closes for good: "] = "Bu görevi alırsan kalıcı olarak kapanır: ",
+	["This is a breadcrumb to: "] = "Bu görev şuna yönlendiren ön görevdir: ",
+	["Click: center on it · Shift-click: link in chat"] = "Tık: ona odaklan · Shift+tık: sohbete link",
+	["Chain %d/%d"] = "Zincir %d/%d",
+	["next: "] = "sonraki: ",
+	["last step"] = "son halka",
+	["Show this quest's chain"] = "Bu görevin zincirini göster",
+	["Legend: "] = "Açıklama: ",
+	["requires"] = "gerekli",
+	["one of"] = "biri yeter",
+	["breadcrumb"] = "yönlendirme",
+	["must be on"] = "alınmış olmalı",
+	-- settings
+	["Settings"] = "Ayarlar",
+	["Use Turkish (needs WoWTR)"] = "Türkçe kullan (WoWTR gerekir)",
+	["Quest titles, objectives and the interface in Turkish, from WoWTR."] = "Görev adları, hedefler ve arayüz Türkçe (WoWTR'den).",
+	["Chain line on NPC tooltips"] = "NPC ipucunda zincir satırı",
+	["Chain button in the quest log"] = "Görev günlüğünde Zincir butonu",
+	["Chain button and warnings on the quest offer window"] = "Görev kabul penceresinde Zincir butonu ve uyarılar",
+	["Hide quests your race or class can never take"] = "Irkının veya sınıfının alamayacağı görevleri gizle",
+	-- slash
+	["Usage: /ql lang en|tr"] = "Kullanım: /ql lang en|tr",
+	["Turkish needs WoWTR; showing English until it is loaded."] = "Türkçe için WoWTR gerekir; yüklenene kadar İngilizce gösterilir.",
+	["No errors."] = "Hata yok.",
+	["open or close the chain window"] = "zincir penceresini aç/kapat",
+	["show the chain of a quest"] = "bir görevin zincirini göster",
+	["database and language status"] = "veritabanı ve dil durumu",
+	["interface language"] = "arayüz dili",
+	["settings"] = "ayarlar",
+	["QuestieDB: "] = "QuestieDB: ",
+	["Chain index: "] = "Zincir dizini: ",
+	["ready"] = "hazır",
+	["building"] = "hazırlanıyor",
+	["WoWTR: "] = "WoWTR: ",
+	["loaded"] = "yüklü",
+	["not loaded"] = "yüklü değil",
+	["language: "] = "dil: ",
+	["Version: "] = "Sürüm: ",
+	[" errors (/ql errors)"] = " hata (/ql errors)",
+	["Quest #%d"] = "Görev #%d",
+}
+QL.TR = TR
+
+function QL.HasWoWTR()
+	return type(QTR_QuestData) == "table"
+end
+
+function QL.UseTurkish()
+	return QL.DB().lang == "tr" and QL.HasWoWTR()
+end
+
+function QL.L(text)
+	if QL.UseTurkish() then
+		local t = TR[text]
+		if t then return t end
+	end
+	return text
+end
+
+local function wowtr(questId)
+	if not QL.UseTurkish() then return nil end
+	local row = QTR_QuestData[tostring(questId)]
+	return type(row) == "table" and row or nil
+end
+
+-- A quest's title in the chosen language.
+function QL.QuestTitle(questId)
+	local row = wowtr(questId)
+	if row and type(row.Title) == "string" and row.Title ~= "" then return row.Title end
+	local name = QL.Q and QL.Q(questId, "name")
+	if type(name) == "string" and name ~= "" then return name end
+	return QL.L("Quest #%d"):format(questId)
+end
+
+-- A quest's objective text (one string) in the chosen language, or nil.
+function QL.QuestObjectives(questId)
+	local row = wowtr(questId)
+	if row and type(row.Objectives) == "string" and row.Objectives ~= "" then return row.Objectives end
+	local text = QL.Q and QL.Q(questId, "objectivesText")
+	if type(text) == "table" then text = table.concat(text, " ") end
+	if type(text) == "string" and text ~= "" then return text end
+	return nil
+end
+
+-- Fonts: Turkish letters (ş ğ ı İ) need WoWTR's font; English keeps the game's.
+local TR_FONT = "Interface\\AddOns\\WoWTR\\Assets\\Fonts\\frizquadrata_tr.ttf"
+local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
+
+function QL.FontPath()
+	if QL.UseTurkish() then return TR_FONT end
+	return DEFAULT_FONT
+end
+
+function QL.SetFont(fontString, size, flags)
+	if not fontString or not fontString.SetFont then return end
+	local ok = pcall(fontString.SetFont, fontString, QL.FontPath(), size or 12, flags or "")
+	if not ok then pcall(fontString.SetFont, fontString, DEFAULT_FONT, size or 12, flags or "") end
+end

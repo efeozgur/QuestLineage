@@ -1,0 +1,19 @@
+## Interface: 16001
+## Title: QuestLineage
+## Notes: Quest chain trees for World of Warcraft: Forever, built on QuestieDB.
+## Notes-trTR: World of Warcraft: Forever için görev zinciri ağaçları (QuestieDB verisiyle).
+## Author: Özgür
+## Version: 0.1.0
+## X-License: MIT
+## Dependencies: QuestieDB
+## OptionalDeps: WoWTR
+## SavedVariables: QuestLineageDB
+
+Core.lua
+Locale.lua
+Data.lua
+State.lua
+Chain.lua
+TreeFrame.lua
+Hooks.lua
+Options.lua
