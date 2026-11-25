@@ -1164,6 +1164,8 @@ QL.RefreshCurrent()
 Eq(cur.title.text, "Second Steps", "it is the current quest now")
 Eq(cur.logRows[1].questId, 3, "and The Gathering moved to the list")
 Check(cur.logRows[1].sub.text:find("Bob questioned", 1, true), "its first open objective: " .. cur.logRows[1].sub.text)
+Check(cur.logRows[1].sub.text:find("Boar Ribs", 1, true), "and the second one too: " .. cur.logRows[1].sub.text)
+Check((cur.logRows[1].height or 0) >= 36, "the row grows with its lines")
 -- folding the list
 cur.logHead.scripts.OnClick(cur.logHead)
 Eq(cur.logRows[1].shown, false, "the list folds")

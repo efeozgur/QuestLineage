@@ -293,14 +293,24 @@ function QL.LogQuests(ctx, exceptId)
 end
 
 -- A quest's first open objective and its overall progress (0..1, nil without counters).
+-- Every objective of a logged quest as lines (open ones first in the list's colours, done ones in
+-- green with a tick) and the overall share of its counters.
 local function summary(id, ctx)
+	local T, C = QL.Theme, QL.Theme.C
+	local g = T.STATUS.done
 	local rows = QL.ObjectiveRows(id, ctx)
-	local have, need, first = 0, 0, nil
+	local have, need = 0, 0
+	local lines = {}
 	for _, o in ipairs(rows) do
 		if o.need and o.need > 0 then have = have + math.min(o.have or 0, o.need); need = need + o.need end
-		if not first and not o.done then first = o end
+		local full = o.done or (o.need and o.need > 0 and (o.have or 0) >= o.need)
+		if full then
+			lines[#lines + 1] = T.Hex(g) .. "✓ " .. (o.text or "") .. "|r"
+		else
+			lines[#lines + 1] = T.Hex(C.accent) .. "•|r " .. (o.text or "")
+		end
 	end
-	return first, need > 0 and (have / need) or nil
+	return lines, need > 0 and (have / need) or nil
 end
 
 local function logRow(i)
@@ -317,6 +327,8 @@ local function logRow(i)
 	r.right:SetPoint("TOPRIGHT", -14, -5)
 	r.right:SetJustifyH("RIGHT")
 	r.sub = T.Text(r, 10, C.muted)
+	if r.sub.SetWordWrap then r.sub:SetWordWrap(true) end
+	r.sub:SetJustifyV("TOP")
 	r.sub:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
 	r.sub:SetPoint("RIGHT", r, "RIGHT", -14, 0)
 	r.bar = T.Bar(r, 2)
@@ -469,7 +481,7 @@ local function drawLog(y, ctx, currentId)
 		r.title:SetText(QL.QuestTitle(id))
 		local isReady = ctx.complete[id]
 		r.title:SetTextColor(unpack(isReady and { ready[1], ready[2], ready[3] } or (QL.TitleColor(id, ctx) or C.text)))
-		local first, frac = summary(id, ctx)
+		local lines, frac = summary(id, ctx)
 		if isReady then
 			r.right:SetText(L("Ready"))
 			r.right:SetTextColor(ready[1], ready[2], ready[3], 1)
@@ -479,7 +491,7 @@ local function drawLog(y, ctx, currentId)
 			local level = QL.QuestLevel(id)
 			r.right:SetText(level and QL.LevelMarkup(id, ctx) or "")
 			r.right:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
-			r.sub:SetText(first and (first.text or "") or "")
+			r.sub:SetText(table.concat(lines, "\n"))
 		end
 		if frac and not isReady then
 			r.bar:Show()
@@ -487,8 +499,13 @@ local function drawLog(y, ctx, currentId)
 		else
 			r.bar:Hide()
 		end
+		-- the row grows with its objective lines
+		r.sub:SetWidth(math.max(60, (frame:GetWidth() or 300) - 30 - 14))
+		local subH = ((r.sub:GetText() or "") ~= "") and (r.sub:GetStringHeight() or 12) or 0
+		local h = math.max(LOG_ROW_H, 4 + 15 + 2 + subH + 10)
+		r:SetHeight(h)
 		r:Show()
-		y = y - LOG_ROW_H
+		y = y - h
 	end
 	return y
 end
