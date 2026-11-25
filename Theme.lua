@@ -248,6 +248,19 @@ function T.Tooltip()
 		fs:Show()
 	end
 	function tip:NumLines() return self.n end
+	-- beside the cursor (bottom-left corner just right of and above it), kept on the screen
+	function tip:PlaceAtCursor()
+		local x, y = 0, 0
+		if GetCursorPosition then x, y = GetCursorPosition() end
+		local s = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+		x, y = (x or 0) / s, (y or 0) / s
+		local sw = (UIParent and UIParent.GetWidth and UIParent:GetWidth()) or 1920
+		local w, h = self:GetWidth() or 0, self:GetHeight() or 0
+		if type(sw) == "number" and type(w) == "number" and x + 16 + w > sw then x = x - w - 32 end
+		if type(h) == "number" and y - h < 0 then y = h end
+		self:ClearAllPoints()
+		self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x + 16, y + 8)
+	end
 	function tip:Show()
 		if self.n == 0 then self:Hide(); return end
 		-- width: the widest unwrapped line; wrapped lines get a fixed width
@@ -277,6 +290,8 @@ function T.Tooltip()
 			self:SetPoint("TOP", o, "BOTTOM", 0, -6)
 		elseif a == "ANCHOR_TOP" then
 			self:SetPoint("BOTTOM", o, "TOP", 0, 6)
+		elseif a == "ANCHOR_CURSOR" then
+			self:PlaceAtCursor()
 		else
 			self:SetPoint("TOPLEFT", o, "TOPRIGHT", 8, 0)
 		end

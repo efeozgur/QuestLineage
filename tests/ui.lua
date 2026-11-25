@@ -830,6 +830,33 @@ Minimap.GetZoom = function() return 5 end
 QL.RefreshQuestAreas()
 Eq(QL.minimapRimMarks, 1, "beyond the edge: a rim mark")
 Minimap.GetZoom = nil
+QL.RefreshQuestAreas()
+-- hovering an area on the minimap shows the quest beside the cursor
+local hit = QL.minimapAreaHits[1]
+Check(hit ~= nil, "the drawn area can be hovered")
+Eq(QL.AreaAt(QL.minimapAreaHits, hit.x, hit.y), hit.area, "the centre is inside")
+Eq(QL.AreaAt(QL.minimapAreaHits, hit.x + hit.r + 1, hit.y), nil, "just outside is not")
+Eq(QL.AreaAt({ { x = 0, y = 0, r = 10, area = "big" }, { x = 1, y = 0, r = 3, area = "small" } }, 1, 0), "small", "the smallest area wins")
+Eq(QL.AreaAt({ { x = 0.5, y = 0.5, rx = 0.1, ry = 0.05, area = "w" } }, 0.5, 0.57), nil, "world areas are ellipses")
+Minimap.IsMouseOver = function() return true end
+Minimap.IsVisible = function() return true end
+Minimap.GetCenter = function() return 100, 100 end
+local cursorX, cursorY = 100 + hit.x, 100 + hit.y
+GetCursorPosition = function() return cursorX, cursorY end
+QL.HoverMinimapAreas()
+local tip = QL.Tip()
+Eq(tip.shown, true, "tooltip over the area")
+Eq(tip.owner, Minimap, "owned by the minimap")
+local tipText = {}
+for i = 1, tip:NumLines() do tipText[#tipText + 1] = tip.lines[i].text or "" end
+tipText = table.concat(tipText, "\n")
+Check(tipText:find("The Gathering", 1, true), "the quest: " .. tipText)
+Check(tipText:find("Area: Bob  0/1", 1, true), "and the area's objective")
+cursorX = 100 + hit.x + hit.r + 5
+QL.HoverMinimapAreas()
+Eq(tip.shown, false, "hidden when the cursor leaves the area")
+Minimap.IsMouseOver, Minimap.IsVisible, Minimap.GetCenter = nil, nil, nil
+GetCursorPosition = function() return 0, 0 end
 Eq(#QL.errors, 0, "areas without errors: " .. table.concat(QL.errors, " | "))
 -- the game's own blue area
 local blob = {}

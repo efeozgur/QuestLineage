@@ -7,12 +7,16 @@
 --   world map  a filled disc, a ring, a soft glow, and the objective's name and counter above it
 --   minimap    the disc and ring, kept inside the minimap's circle; an area beyond the edge shows
 --              as a small mark on the rim pointing to it
+-- Hovering an area on either map shows the quest in a tooltip beside the cursor (no mouse frames
+-- are added over the maps, so clicks, pings and map dragging work as before: the cursor is
+-- tested against the drawn circles).
 -- Settings: questAreas (on/off), hideGameAreas (the game's own blue quest area on the minimap).
 --
 --   QL.QuestAreas(id, ctx) -> { {map, x, y (0-1), r (yards), color, label, count}, ... }  (pure)
 --   QL.RefreshQuestAreas()
 
 local _, QL = ...
+local L = QL.L
 
 local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
 local LINK = 70          -- yards: spots closer than this form one area
@@ -105,7 +109,7 @@ function QL.QuestAreas(id, ctx)
 			for k, a in ipairs(areas) do
 				if k > MAX_AREAS then break end
 				a.color = colors[(i - 1) % #colors + 1]
-				a.label, a.count = label, count
+				a.label, a.count, a.questId = label, count, id
 				out[#out + 1] = a
 			end
 		end
@@ -176,6 +180,7 @@ local function drawMinimap()
 	for _, p in ipairs(mmParts) do p.disc:Hide(); p.ring:Hide() end
 	for _, d in ipairs(rimParts) do d:Hide() end
 	QL.minimapAreasDrawn, QL.minimapRimMarks = 0, 0 -- what was drawn last (tests read it)
+	QL.minimapAreaHits = {} -- { {x, y, r, area} } in minimap units from its centre
 	if #current == 0 or not Minimap:IsVisible() then return end
 	local map, px, py = QL.PlayerPosition()
 	if not map or not px then return end
@@ -210,6 +215,7 @@ local function drawMinimap()
 					p.ring:ClearAllPoints(); p.ring:SetPoint("CENTER", Minimap, "CENTER", cx, cy)
 					p.ring:SetVertexColor(c[1], c[2], c[3], 0.8)
 					p.disc:Show(); p.ring:Show()
+					QL.minimapAreaHits[#QL.minimapAreaHits + 1] = { x = cx, y = cy, r = fit, area = a }
 				end
 			end
 			if dist > edge * 0.9 then
@@ -258,6 +264,7 @@ end
 
 local function drawWorldMap()
 	for _, p in ipairs(wmParts) do p.glow:Hide(); p.disc:Hide(); p.ring:Hide(); p.label:Hide() end
+	QL.worldAreaHits = {} -- { {x, y, rx, ry, area} } in the shown map's 0-1 coordinates
 	if not wm or #current == 0 then return end
 	local mapID = WorldMapFrame and WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
 	local cw, ch = wm:GetWidth() or 0, wm:GetHeight() or 0
@@ -284,6 +291,7 @@ local function drawWorldMap()
 			p.ring:ClearAllPoints(); p.ring:SetPoint("CENTER", wm, "TOPLEFT", px, py)
 			p.ring:SetVertexColor(c[1], c[2], c[3], 0.9)
 			p.glow:Show(); p.disc:Show(); p.ring:Show()
+			QL.worldAreaHits[#QL.worldAreaHits + 1] = { x = x, y = y, rx = r / cw, ry = r / ch, area = a }
 			-- one label per objective, on its biggest area
 			if not labelled[a.label or ""] then
 				labelled[a.label or ""] = true
@@ -310,12 +318,16 @@ local function ensureWorld()
 	-- just under the route overlay, so the route and its badges stay on top
 	wm:SetFrameLevel(((level and level.startLevel) or (canvas:GetFrameLevel() + 2100)) - 1)
 	local since = 0
+	local hoverT = 0
 	wm:SetScript("OnUpdate", function(_, elapsed)
 		since = since + (elapsed or 0)
-		if since < 0.5 then return end
-		since = 0
-		pcall(drawWorldMap)
+		hoverT = hoverT + (elapsed or 0)
+		if since >= 0.5 then since = 0; pcall(drawWorldMap) end
+		if hoverT >= 0.05 then hoverT = 0; pcall(QL.HoverWorldAreas) end
 	end)
+	if wm.SetScript and WorldMapFrame.HookScript then
+		WorldMapFrame:HookScript("OnHide", function() hover("world", wm, nil) end)
+	end
 	if hooksecurefunc and WorldMapFrame.SetMapID then
 		hooksecurefunc(WorldMapFrame, "SetMapID", function() pcall(drawWorldMap) end)
 	end
@@ -333,6 +345,94 @@ function QL.ApplyGameAreas()
 			pcall(Minimap[m], Minimap, v)
 		end
 	end
+end
+
+-- Hover --------------------------------------------------------------------------------------------------
+
+-- The smallest area under a point. hits: {x, y, r} or {x, y, rx, ry}.
+function QL.AreaAt(hits, x, y)
+	local best, bestSize
+	for _, h in ipairs(hits or {}) do
+		local rx, ry = h.rx or h.r, h.ry or h.r
+		if rx and ry and rx > 0 and ry > 0 then
+			local dx, dy = (x - h.x) / rx, (y - h.y) / ry
+			if dx * dx + dy * dy <= 1 and (not bestSize or rx * ry < bestSize) then
+				best, bestSize = h.area, rx * ry
+			end
+		end
+	end
+	return best
+end
+
+local hovered = { minimap = nil, world = nil } -- the area each map's tooltip shows
+
+local function showAreaTip(owner, a)
+	local tip = QL.Tip()
+	tip:SetOwner(owner, "ANCHOR_CURSOR")
+	QL.FillQuestTooltip(tip, a.questId)
+	local c = a.color or QL.Theme.C.accent
+	tip:AddLine(" ")
+	tip:AddLine(L("Area: ") .. (a.label or "") .. (a.count and ("  " .. a.count) or ""), c[1], c[2], c[3])
+	tip:AddLine(L("Click the quest window or the arrow to go there"), 0.5, 0.5, 0.5, true)
+	tip:Show()
+end
+
+local function hover(which, owner, a)
+	local tip = QL.Tip()
+	if a then
+		if hovered[which] ~= a or tip.owner ~= owner or not tip:IsShown() then
+			hovered[which] = a
+			showAreaTip(owner, a)
+		else
+			tip:PlaceAtCursor() -- follow the cursor
+		end
+	elseif hovered[which] then
+		hovered[which] = nil
+		if tip.owner == owner then tip:Hide() end
+	end
+end
+
+local function mouseOver(f)
+	if not (f and f.IsMouseOver and f.IsVisible) then return false end
+	local ok, over = pcall(f.IsMouseOver, f)
+	return ok and over == true and f:IsVisible() == true
+end
+
+-- The cursor over the minimap, in minimap units from its centre (x right, y up).
+local function minimapCursor()
+	local cx, cy = Minimap:GetCenter()
+	if type(cx) ~= "number" or type(cy) ~= "number" then return nil end
+	local x, y = GetCursorPosition()
+	local s = Minimap:GetEffectiveScale() or 1
+	return x / s - cx, y / s - cy
+end
+
+function QL.HoverMinimapAreas()
+	local a
+	if #current > 0 and mouseOver(Minimap) and GetCursorPosition then
+		local x, y = minimapCursor()
+		if x then a = QL.AreaAt(QL.minimapAreaHits, x, y) end
+	end
+	hover("minimap", Minimap, a)
+end
+
+-- The cursor over the world map, in the shown map's 0-1 coordinates.
+local function worldCursor()
+	local sc = WorldMapFrame and WorldMapFrame.ScrollContainer
+	if sc and sc.GetNormalizedCursorPosition then
+		local ok, x, y = pcall(sc.GetNormalizedCursorPosition, sc)
+		if ok and type(x) == "number" and type(y) == "number" then return x, y end
+	end
+	return nil
+end
+
+function QL.HoverWorldAreas()
+	local a
+	if wm and #current > 0 and WorldMapFrame and mouseOver(WorldMapFrame.ScrollContainer or WorldMapFrame) then
+		local x, y = worldCursor()
+		if x then a = QL.AreaAt(QL.worldAreaHits, x, y) end
+	end
+	hover("world", wm, a)
 end
 
 -- Wiring ------------------------------------------------------------------------------------------------
@@ -353,7 +453,7 @@ QL.Event("PLAYER_LOGIN", function()
 			since = since + (elapsed or 0)
 			again = again + (elapsed or 0)
 			if again >= 2 then again = 0; recompute() end -- objectives move on, the current quest changes
-			if since >= 0.05 then since = 0; pcall(drawMinimap) end
+			if since >= 0.05 then since = 0; pcall(drawMinimap); pcall(QL.HoverMinimapAreas) end
 		end)
 	end
 	if WorldMapFrame and WorldMapFrame.HookScript then
