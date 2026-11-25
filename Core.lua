@@ -24,6 +24,8 @@ QL.defaults = {
 	logButton = true,     -- Chain button in the quest log
 	detailButton = true,  -- Chain button and warnings on the quest offer window
 	hideOther = true,     -- leave out quests this race/class can never take
+	minimapButton = true, -- the button on the minimap's rim
+	minimapAngle = 215,   -- where on the rim, in degrees
 }
 
 -- SavedVariables can be missing on a cold start: always go through DB().

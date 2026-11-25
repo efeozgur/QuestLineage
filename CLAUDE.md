@@ -9,7 +9,7 @@ QuestLineage is a WoW addon (Lua 5.1, Interface 16001, client 1.60.1 "World of W
 - **No third-party code is copied in.** Polestar (GPL) and Queston Forever (All Rights Reserved) may only be looked at for ideas. QuestLineage stays MIT.
 - Client calls are guarded (`pcall`, nil checks): frame names and APIs are not verified on every Forever build. Hooks are post-hooks only (`hooksecurefunc`, `HookScript`, `TooltipDataProcessor`).
 - Every file must load with a bare namespace table and no client (tests do this).
-- Colours: palette and status entries carry a label in slot 4; never pass one straight to `SetVertexColor`/`SetTextColor` as alpha (go through `QL.Theme.Color`, which only takes a numeric slot 4). The real client errors on it; the test mock now does too.
+- Colours: palette and status entries carry a label in slot 4; never pass one straight to `SetVertexColor`/`SetTextColor` as alpha (go through `QL.Theme.Color`, which only takes a numeric slot 4). The real client errors on it; the test mock now does too. Never call `SetVertexColor` on a texture after `T.Gradient`: it overwrites the gradient's vertex colours (that painted the detail panel's backdrop white in game); the mock models this.
 
 ## Layout (load order = `QuestLineage.toc`)
 
@@ -24,6 +24,7 @@ QuestLineage is a WoW addon (Lua 5.1, Interface 16001, client 1.60.1 "World of W
 - `Tree.lua`: the family-tree canvas (`QL.Tree.New(canvas)`, `tree:Draw(chain, focus, animate, minW, minH)`): generations top to bottom, centred (`QL.CardPos`, `QL.CanvasSize`), lines as stem / shared bar / drop; a newly focused quest unfolds generation by generation. Also `QL.FillQuestTooltip`.
 - `Inspector.lua`: the detail panel (`QL.Inspector.New(parent)`, `:Show(id, chain)`, `:Clear`): hero with the giver in 3D (`PlayerModel:SetCreature`, idle; icon fallback), sections Objective / Story / Tasks (live progress or database tasks with frozen 3D portraits and item icons) / Start / Turn in / Rewards (XP, reputation, item tiles with quality borders) / Comes after / Leads to / Closes for good, and buttons. Pooled parts laid out top to bottom.
 - `Window.lua`: the window: header, sidebar with "This zone" (chains of the player's zone, in progress first, follows zone changes) and "Search" (as you type) tabs, info bar (title, level, generations, % done), tree area (wheel / Shift+wheel / drag), legend, empty states. `QL.Open`, `QL.ToggleWindow`, `QL.RenderWindow(animate)`, `QL.ShowPage`. Setting `page` remembers the tab.
+- `MinimapButton.lua`: button on the minimap rim (left click window, right click settings, drag round the rim; settings `minimapButton`, `minimapAngle`; `QL.MinimapPosition(angle)`).
 - `Hooks.lua`: quest log button, NPC tooltip line, quest offer strip (`QL.SummaryText`).
 - `Options.lua`: settings page (`QL.OpenOptions`).
 

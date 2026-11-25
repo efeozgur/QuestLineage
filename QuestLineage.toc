@@ -20,5 +20,6 @@ Theme.lua
 Tree.lua
 Inspector.lua
 Window.lua
+MinimapButton.lua
 Hooks.lua
 Options.lua

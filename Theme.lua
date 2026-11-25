@@ -43,6 +43,7 @@ T.C = {
 	dim       = { 0.400, 0.435, 0.494, 1 },
 	accent    = { 0.239, 0.839, 0.776, 1 }, -- teal
 	accent2   = { 0.545, 0.486, 0.965, 1 }, -- violet
+	heroTop   = { 0.100, 0.098, 0.165, 1 }, -- the detail panel's backdrop, deep muted indigo
 	danger    = { 0.973, 0.443, 0.443, 1 },
 	track     = { 1, 1, 1, 0.07 },
 }
@@ -164,13 +165,17 @@ function T.Text(parent, size, c, layer)
 	return fs
 end
 
+-- SetGradient writes the texture's vertex colours, so nothing may call SetVertexColor on it
+-- afterwards: a SetVertexColor(1, 1, 1, 1) here once painted every gradient plain white in game.
 function T.Gradient(tex, direction, c1, c2)
+	local a1 = type(c1[4]) == "number" and c1[4] or 1
+	local a2 = type(c2[4]) == "number" and c2[4] or 1
 	if CreateColor and tex.SetGradient then
-		local ok = pcall(tex.SetGradient, tex, direction, CreateColor(c1[1], c1[2], c1[3], c1[4] or 1), CreateColor(c2[1], c2[2], c2[3], c2[4] or 1))
-		if ok then tex:SetVertexColor(1, 1, 1, 1); return end
+		local ok = pcall(tex.SetGradient, tex, direction, CreateColor(c1[1], c1[2], c1[3], a1), CreateColor(c2[1], c2[2], c2[3], a2))
+		if ok then return end
 	end
 	if tex.SetGradientAlpha then
-		local ok = pcall(tex.SetGradientAlpha, tex, direction, c1[1], c1[2], c1[3], c1[4] or 1, c2[1], c2[2], c2[3], c2[4] or 1)
+		local ok = pcall(tex.SetGradientAlpha, tex, direction, c1[1], c1[2], c1[3], a1, c2[1], c2[2], c2[3], a2)
 		if ok then return end
 	end
 	color(tex, c1)

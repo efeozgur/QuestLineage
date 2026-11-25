@@ -121,6 +121,11 @@ local TR = {
 	["Faction #%d"] = "Fraksiyon #%d",
 	["Starts from an item"] = "Bir eşyayla başlar",
 	["needs %d"] = "en az %d",
+	-- minimap button
+	["Button on the minimap"] = "Mini haritada buton",
+	["Click: open or close"] = "Tık: aç / kapat",
+	["Right-click: settings"] = "Sağ tık: ayarlar",
+	["Drag: move round the minimap"] = "Sürükle: mini harita çevresinde taşı",
 }
 QL.TR = TR
 

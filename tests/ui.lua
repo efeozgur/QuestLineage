@@ -23,7 +23,13 @@ local function mock(kind, name)
 			if v ~= nil and type(v) ~= "number" then error(what .. ": argument " .. i .. " is a " .. type(v), 3) end
 		end
 	end
-	function mt.SetVertexColor(self, ...) numbers("SetVertexColor", ...) end
+	-- As in the client, SetVertexColor overwrites the vertex colours a gradient set.
+	function mt.SetVertexColor(self, ...)
+		numbers("SetVertexColor", ...)
+		self.vertex = { ... }
+		self.gradient = nil
+	end
+	function mt.SetGradient(self, dir, c1, c2) self.gradient = { dir, c1, c2 } end
 	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
 	function mt.SetColorTexture(self, ...) numbers("SetColorTexture", ...) end
 	function mt.SetScript(self, s, fn) self.scripts[s] = fn end
@@ -70,6 +76,7 @@ function CreateFrame(kind, name, parent)
 	return f
 end
 UIParent = mock("Frame", "UIParent")
+Minimap = mock("Frame", "Minimap")
 UISpecialFrames = {}
 GameTooltip = mock("GameTooltip", "GameTooltip")
 GameTooltip.lines = {}
@@ -77,6 +84,7 @@ function GameTooltip:AddLine(t) table.insert(self.lines, t) end
 function GameTooltip:SetOwner() self.lines = {} end
 QuestFrame = mock("Frame", "QuestFrame")
 C_Timer = { After = function(_, fn) fn() end }
+function CreateColor(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 SlashCmdList = {}
 function strsplit(sep, s)
 	local out = {}
@@ -107,7 +115,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -240,6 +248,13 @@ Eq(insp.hero.shown, true, "hero shown")
 Eq(insp.hero.title.text, "The Gathering", "hero title")
 Eq(insp.hero.giver.text, "Bob", "giver named on the hero")
 Eq(insp.hero.model.npcId, 100, "giver shown in 3D")
+-- the backdrop keeps its gradient (a white SetVertexColor after it used to paint it white)
+for _, part in ipairs({ "bg", "glow", "shade" }) do
+	local g = insp.hero[part].gradient
+	Check(g, "hero " .. part .. " keeps its gradient")
+	Check(not (g[3].r == 1 and g[3].g == 1 and g[3].b == 1), "hero " .. part .. " is not white")
+	Check((g[3].r + g[3].g + g[3].b) * (g[3].a or 1) < 1.2, "hero " .. part .. " stays dark")
+end
 local function texts(kind, field)
 	local out = {}
 	for _, o in ipairs(insp.pools[kind] or {}) do
@@ -303,6 +318,25 @@ QL.Open(3)
 Eq(f.inspector.hero.title.text, "Toplanma", "Turkish title in the detail panel")
 Check(f.infoDone.text:find("tamam", 1, true), "Turkish interface text")
 Eq(f.zoneTab.label.text, "Bu bölge", "Turkish tab label")
+
+-- Minimap button -------------------------------------------------------------------------------
+local mb = QuestLineageMinimapButton
+Check(mb and mb.shown, "minimap button shown")
+local x, y = QL.MinimapPosition(0)
+Eq(math.floor(x + 0.5), 80, "angle 0 is right of centre")
+Eq(math.floor(y + 0.5), 0, "angle 0 on the centre line")
+x, y = QL.MinimapPosition(90)
+Eq(math.floor(x + 0.5), 0, "angle 90 above")
+Eq(math.floor(y + 0.5), 80, "angle 90 above")
+local wasShown = f.shown
+mb.scripts.OnClick(mb, "LeftButton")
+Eq(f.shown, not wasShown, "left click toggles the window")
+mb.scripts.OnClick(mb, "LeftButton")
+Eq(f.shown, wasShown, "and back")
+QL.Set("minimapButton", false)
+Eq(mb.shown, false, "the setting hides it")
+QL.Set("minimapButton", true)
+Eq(mb.shown, true, "and shows it again")
 
 -- Slash commands do not error
 QL.Command("status")
