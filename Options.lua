@@ -25,6 +25,8 @@ local ROWS = {
 	{ key = "toasts", label = "Messages in a notification window (off: in the chat)" },
 	{ key = "currentQuest", label = "Current quest window (stage and objectives)" },
 	{ key = "hideGameTracker", label = "Hide the game's own quest tracker" },
+	{ key = "questAreas", label = "Current quest's areas on the minimap and world map" },
+	{ key = "hideGameAreas", label = "Hide the game's own blue quest area on the minimap" },
 	{ key = "tooltip", label = "Chain line on NPC tooltips" },
 	{ key = "logButton", label = "Chain button in the quest log" },
 	{ key = "detailButton", label = "Chain button and warnings on the quest offer window" },

@@ -30,6 +30,7 @@ QuickBar.lua
 Toast.lua
 Current.lua
 Plates.lua
+QuestAreas.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua

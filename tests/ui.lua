@@ -39,7 +39,11 @@ local function mock(kind, name)
 	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
 	function mt.SetColorTexture(self, ...) numbers("SetColorTexture", ...) end
 	function mt.SetScript(self, s, fn) self.scripts[s] = fn end
-	function mt.HookScript(self, s, fn) self.scripts[s] = fn end
+	-- as in the client, hooks run after the script already there
+	function mt.HookScript(self, s, fn)
+		local prev = self.scripts[s]
+		self.scripts[s] = prev and function(...) prev(...); fn(...) end or fn
+	end
 	function mt.GetScript(self, s) return self.scripts[s] end
 	function mt.Show(self)
 		local was = self.shown
@@ -138,7 +142,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -809,6 +813,33 @@ cur.logHead.scripts.OnClick(cur.logHead)
 Eq(cur.logRows[1].shown, true, "and opens")
 QL.SetArrowTarget(3)
 QL.RefreshCurrent()
+-- quest areas: Bob's spot becomes an area (the ribs' boars have no spawns in the fixture)
+local areas = QL.QuestAreas(3, QL.Context())
+Eq(#areas, 1, "one area")
+Eq(areas[1].map, 1411, "on Durotar's map")
+Check(math.abs(areas[1].x - 0.452) < 1e-9, "centred on Bob")
+Eq(areas[1].r, 25, "smallest radius for a single spot")
+Eq(areas[1].label, "Bob", "named after the objective's creature")
+Eq(areas[1].count, "0/1", "with its counter")
+Eq(#QL.QuestAreas(2, QL.Context()), 0, "a quest without objectives has none")
+QL.RefreshQuestAreas()
+Eq(QL.minimapAreasDrawn, 1, "Bob's area drawn on the minimap")
+Eq(QL.minimapRimMarks, 0, "inside the minimap: no rim mark")
+-- zoomed in far: the area lies beyond the rim and shows as a mark on it
+Minimap.GetZoom = function() return 5 end
+QL.RefreshQuestAreas()
+Eq(QL.minimapRimMarks, 1, "beyond the edge: a rim mark")
+Minimap.GetZoom = nil
+Eq(#QL.errors, 0, "areas without errors: " .. table.concat(QL.errors, " | "))
+-- the game's own blue area
+local blob = {}
+Minimap.SetQuestBlobRingAlpha = function(_, v) blob.ring = v end
+Minimap.SetQuestBlobInsideAlpha = function(_, v) blob.inside = v end
+QL.Set("hideGameAreas", true)
+Eq(blob.ring, 0, "the game's ring hidden")
+Eq(blob.inside, 0, "and its fill")
+QL.Set("hideGameAreas", false)
+Eq(blob.ring, 1, "shown again")
 -- folding
 cur.scripts.OnClick(cur, "RightButton")
 Eq(cur.rows[1].shown, false, "right-click folds the objectives")
