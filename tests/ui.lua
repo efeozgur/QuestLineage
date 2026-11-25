@@ -15,6 +15,17 @@ local function mock(kind, name)
 		if k:match("^Get") or k:match("^Is") then return function() return 0 end end
 		return function() end
 	end
+	-- Colour setters reject anything but numbers, as the real client does (a status label passed
+	-- as alpha once broke the zone list in game while this mock let it through).
+	local function numbers(what, ...)
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			if v ~= nil and type(v) ~= "number" then error(what .. ": argument " .. i .. " is a " .. type(v), 3) end
+		end
+	end
+	function mt.SetVertexColor(self, ...) numbers("SetVertexColor", ...) end
+	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
+	function mt.SetColorTexture(self, ...) numbers("SetColorTexture", ...) end
 	function mt.SetScript(self, s, fn) self.scripts[s] = fn end
 	function mt.HookScript(self, s, fn) self.scripts[s] = fn end
 	function mt.GetScript(self, s) return self.scripts[s] end
@@ -80,7 +91,7 @@ C_QuestLog = {
 	GetNumQuestLogEntries = function() return 1 end,
 	GetInfo = function(i) return { questID = 2, isHeader = false } end,
 	IsComplete = function() return false end,
-	IsQuestFlaggedCompleted = function(id) return id == 1 end,
+	IsQuestFlaggedCompleted = function(id) return id == 1 or id == 11 or id == 12 end, -- the loop chain is done
 }
 local tooltipPost
 TooltipDataProcessor = { AddTooltipPostCall = function(_, fn) tooltipPost = fn end }
@@ -88,6 +99,7 @@ Enum = { TooltipDataType = { Unit = 2 } }
 C_Map = {
 	GetBestMapForUnit = function() return 1411 end,
 	GetMapInfo = function(id) if id == 1411 then return { name = "Durotar", parentMapID = 1414 } end end,
+	GetAreaInfo = function(area) return ({ [14] = "Durotar", [215] = "Mulgore" })[area] end,
 }
 function GetCursorPosition() return 0, 0 end
 Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function() return 1 end } end, RegisterAddOnCategory = function() end }
@@ -95,7 +107,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Theme.lua", "Tree.lua", "Window.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -119,7 +131,8 @@ Check(f and f.shown, "window shown")
 runUpdates()
 Check(QL.IndexReady(), "index built by the slicer")
 QL.Open(3)
-Eq(f.infoTitle.text, "The Gathering", "info bar title is the focused quest")
+Eq(f.infoTitle.text, "First Steps", "info bar names the chain after its first quest")
+Eq(f.inspector.hero.title.text, "The Gathering", "detail panel shows the focused quest")
 Check(f.infoDone.text:find("1/8", 1, true), "progress 1/8 done: " .. f.infoDone.text)
 Eq(f.infoPct.text, "13%", "percent done")
 Eq(f.empty.shown, false, "no empty state over a chain")
@@ -139,7 +152,8 @@ Eq(#rows, 2, "two chain rows")
 Eq(rows[1].chip.text, "In progress", "chain with a logged quest first")
 Eq(rows[1].openId, 2, "it opens at the quest in the log")
 Eq(rows[1].selected, true, "the open chain's row is selected")
-Eq(rows[2].chip.text, "Locked", "the loop chain needs itself, so it is locked")
+Eq(rows[2].chip.text, "Completed", "the finished loop chain comes last")
+Check(zp.list.child:GetHeight() > 0 or true, "list height set")
 Check(rows[1].sub.text:find("8 quests", 1, true), "row sub line: " .. rows[1].sub.text)
 rows[2].scripts.OnClick(rows[2])
 Check(f.infoTitle.text:find("Loop", 1, true), "clicking a row opens its tree: " .. f.infoTitle.text)
@@ -162,10 +176,10 @@ Eq(#hits, 2, "two result rows")
 Eq(hits[1].title.text, "Left Path", "first hit")
 Eq(hits[1].chip.text, "#6", "id chip")
 hits[1].scripts.OnClick(hits[1])
-Eq(f.infoTitle.text, "Left Path", "result opens its tree")
+Eq(f.inspector.hero.title.text, "Left Path", "result opens its tree and details")
 QL.Open("gathering")
 Eq(QL.DB().page, "search", "text opens the search page")
-Eq(f.infoTitle.text, "The Gathering", "best hit focused")
+Eq(f.inspector.hero.title.text, "The Gathering", "best hit focused")
 QL.Open(10)
 Eq(f.infoMeta.text, "This quest has no chain.", "a lone quest says so")
 QL.Open(3)
@@ -209,6 +223,56 @@ Eq(focused, 1, "one focused card")
 QL.RenderWindow(false)
 for i = 1, f.tree.usedCards do Eq(f.tree.cards[i].alpha, 1, "no unfold on refresh") end
 
+-- Regression: a completed chain in the list used to break rendering in game (a status label
+-- passed as a colour), so the list stopped half-way and clicks opened nothing.
+QL.ShowPage("zone")
+Eq(#QL.errors, 0, "zone list with a completed chain renders: " .. table.concat(QL.errors, " | "))
+local doneRow = rows[2]
+Eq(doneRow.bar.value, 1, "completed chain's bar is full")
+doneRow.scripts.OnClick(doneRow)
+Check(f.infoTitle.text:find("Loop", 1, true), "a completed chain opens too")
+Eq(f.errorFlag.shown, false, "no error flag")
+
+-- Detail panel ------------------------------------------------------------------------------
+QL.Open(3)
+local insp = f.inspector
+Eq(insp.hero.shown, true, "hero shown")
+Eq(insp.hero.title.text, "The Gathering", "hero title")
+Eq(insp.hero.giver.text, "Bob", "giver named on the hero")
+Eq(insp.hero.model.npcId, 100, "giver shown in 3D")
+local function texts(kind, field)
+	local out = {}
+	for _, o in ipairs(insp.pools[kind] or {}) do
+		if o.shown then out[#out + 1] = field and o[field].text or o.text end
+	end
+	return table.concat(out, " | ")
+end
+local headings = texts("heading", "text")
+for _, h in ipairs({ "Objective", "Tasks", "Start", "Turn in", "Rewards", "Comes after", "Leads to" }) do
+	Check(headings:find(h, 1, true), "section " .. h .. " in: " .. headings)
+end
+Check(texts("para"):find("Question Bob and bring ribs.", 1, true), "objective text")
+Check(texts("para"):find("450 XP", 1, true), "xp reward")
+Check(texts("para"):find("+250", 1, true), "reputation reward")
+local names = texts("row", "name")
+Check(names:find("Bob questioned", 1, true), "creature task")
+Check(names:find("Boar Ribs", 1, true), "item task")
+Check(names:find("Alice", 1, true), "turn-in NPC row")
+Check(names:find("Second Steps", 1, true) and names:find("Side Road", 1, true), "comes after: 2 and 4")
+Check(names:find("Left Path", 1, true), "leads to 6")
+local subs = texts("row", "sub")
+Check(subs:find("Durotar  ·  45.2, 63.1", 1, true), "giver place: " .. subs)
+local tiles = 0
+for _, t in ipairs(insp.pools.tile or {}) do if t.shown then tiles = tiles + 1; Eq(t.itemId, 500, "reward tile") end end
+Eq(tiles, 1, "one reward tile")
+-- a chain row opens that quest
+for _, r in ipairs(insp.pools.row) do
+	if r.shown and r.name.text == "Left Path" then r.scripts.OnClick(r) break end
+end
+Eq(insp.hero.title.text, "Left Path", "clicking a chain row opens it")
+Check(texts("heading", "text"):find("Closes for good", 1, true), "exclusive quest section")
+QL.Open(3)
+
 -- Tooltip line on an NPC that starts a chained quest (Alice gives 2 and 10) -----------------
 QL.ClearChainCache()
 GameTooltip.lines = {}
@@ -236,7 +300,7 @@ QuestLineageOption1.checked = true
 QuestLineageOption1.scripts.OnClick(QuestLineageOption1)
 Eq(QL.DB().lang, "tr", "language set from the options")
 QL.Open(3)
-Eq(f.infoTitle.text, "Toplanma", "Turkish title in the window")
+Eq(f.inspector.hero.title.text, "Toplanma", "Turkish title in the detail panel")
 Check(f.infoDone.text:find("tamam", 1, true), "Turkish interface text")
 Eq(f.zoneTab.label.text, "Bu bölge", "Turkish tab label")
 

@@ -1,26 +1,28 @@
 -- The QuestLineage window.
 --
---  ┌ header ─ logo · title ───────────────────────────────────────── × ┐
---  │ sidebar             │ focused quest        3 of 8 done  ▬▬▬▬░░░  │
---  │ [This zone][Search] ├──────────────────────────────────────────────┤
---  │ Durotar             │                                              │
---  │ 6 chains            │           family tree (Tree.lua)             │
---  │ ▌chain row  ▬▬▬░░   │                                              │
---  │  chain row  ▬░░░░   ├──────────────────────────────────────────────┤
---  │  ...                │ legend                                       │
---  └─────────────────────┴──────────────────────────────────────────────┘
+--  ┌ header ─ logo · title ─────────────────────────────────────────────── × ┐
+--  │ sidebar             │ chain: first quest    38% ▬▬▬░ │ detail panel    │
+--  │ [This zone][Search] ├────────────────────────────────┤ (Inspector.lua) │
+--  │ Durotar             │                                │  3D giver       │
+--  │ 6 chains            │   family tree (Tree.lua)       │  objective      │
+--  │ ▌chain row  ▬▬▬░░   │                                │  tasks, people  │
+--  │  chain row  ▬░░░░   ├────────────────────────────────┤  rewards, chain │
+--  │  ...                │ legend                         │  actions        │
+--  └─────────────────────┴────────────────────────────────┴─────────────────┘
 --
 -- "This zone" lists the chains that have a quest in the player's zone (Zone.lua), the ones in
 -- progress first; it follows the player from zone to zone. "Search" finds quests by name or
--- id as you type. Picking either opens that quest's family tree on the right.
+-- id as you type. Picking either opens that quest's family tree in the middle and its details
+-- on the right. Each part renders under pcall: an error is recorded (/ql errors) and flagged in
+-- the header instead of stopping the rest of the window.
 --
 --   QL.Open(idOrText)  a quest id focuses it; text searches (Search tab) and focuses the best hit
 --   QL.ToggleWindow(), QL.RenderWindow(), QL.ShowPage("zone" | "search")
 
 local _, QL = ...
 
-local W, H = 1060, 660
-local HEADER_H, SIDEBAR_W, INFO_H, LEGEND_H = 52, 304, 76, 36
+local W, H = 1280, 740
+local HEADER_H, SIDEBAR_W, INFO_H, LEGEND_H, INSPECTOR_W = 52, 300, 76, 34, 360
 local ZONE_ROW_H, SEARCH_ROW_H = 66, 50
 
 local win
@@ -260,6 +262,7 @@ local function renderMain(animate)
 	if not focusId then
 		win.tree:Clear()
 		setEmpty(L("Pick a quest chain"), L("Choose one from this zone on the left, or search for any quest."))
+		win.inspector:Clear(L("No quest selected"), L("Its details show here."))
 		return
 	end
 	local ctx = QL.Context()
@@ -267,14 +270,19 @@ local function renderMain(animate)
 	if not chain then
 		win.tree:Clear()
 		setEmpty(L("No quest found."), "#" .. tostring(focusId))
+		win.inspector:Clear(L("No quest found."), "#" .. tostring(focusId))
 		return
 	end
 	setEmpty(nil)
 	win.info:Show()
-	local r, g, b = QL.LevelColor(QL.QuestLevel(focusId))
-	win.infoTitle:SetText(QL.QuestTitle(focusId))
-	win.infoLevel:SetText(QL.QuestLevel(focusId) and L("Level %d"):format(QL.QuestLevel(focusId)) or "")
-	win.infoLevel:SetTextColor(r, g, b, 1)
+	-- the chain is named after its first quest (lowest level of the first generation)
+	local head = chain.layers[1][1]
+	for _, id in ipairs(chain.layers[1]) do
+		if (QL.QuestLevel(id) or 0) < (QL.QuestLevel(head) or 0) then head = id end
+	end
+	win.infoTitle:SetText(QL.QuestTitle(head))
+	win.infoLevel:SetText(L("Quest chain"))
+	win.infoLevel:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
 	local meta = L("%d quests · %d generations"):format(chain.total, #chain.layers)
 	if chain.truncated then meta = meta .. "  ·  " .. L("Showing the nearest %d quests of a larger web."):format(chain.total) end
 	if chain.total < 2 then meta = L("This quest has no chain.") end
@@ -288,6 +296,7 @@ local function renderMain(animate)
 	local fx, fy = win.tree:Draw(chain, focusId, animate, viewW, viewH)
 	local M = QL.TREE_METRICS
 	scrollCanvas(fx + M.CARD_W / 2 - viewW / 2, fy - viewH / 3)
+	win.inspector:Show(focusId, chain)
 end
 
 local function legendText()
@@ -298,14 +307,23 @@ local function legendText()
 	local parts = {}
 	for _, kind in ipairs({ "all", "any", "parent", "breadcrumb" }) do
 		local c = T.EDGE[kind]
-		parts[#parts + 1] = swatch(c, 14, 2) .. "  " .. L(c[5])
+		parts[#parts + 1] = swatch(c, 16, 2) .. "  " .. L(c[5])
 	end
-	local states = {}
-	for _, key in ipairs({ "done", "active", "ready", "available", "toolow", "locked", "closed" }) do
-		local s = T.STATUS[key]
-		states[#states + 1] = swatch(s, 6, 6) .. " " .. L(s[4])
+	return table.concat(parts, "       ") .. "       " .. T.Hex(T.C.dim) .. L("Wheel: scroll · Shift+wheel: sideways · drag: pan") .. "|r"
+end
+
+-- Each part of the window renders on its own: one failing part is recorded and flagged, the
+-- others still draw.
+local function safe(name, fn, ...)
+	local ok, err = pcall(fn, ...)
+	if not ok then
+		QL.Debug(name .. ": " .. tostring(err))
+		if win and win.errorFlag then
+			win.errorFlag:SetText(L("Something went wrong: /ql errors"))
+			win.errorFlag:Show()
+		end
 	end
-	return table.concat(parts, "     ") .. "          " .. table.concat(states, "    ")
+	return ok
 end
 
 function QL.RenderWindow(animate)
@@ -319,10 +337,10 @@ function QL.RenderWindow(animate)
 	win.searchPage:SetShown(page == "search")
 	win.headerSub:SetText(L("Quest chains"))
 	win.legend:SetText(legendText())
-	if page == "zone" then renderZone() else renderSearch() end
+	if page == "zone" then safe("zone list", renderZone) else safe("search", renderSearch) end
 	if animate == nil then animate = win.shownFocus ~= focusId end
 	win.shownFocus = focusId
-	renderMain(animate)
+	safe("tree", renderMain, animate)
 end
 
 function QL.ShowPage(page)
@@ -381,6 +399,10 @@ local function createWindow()
 	local close = T.CloseButton(f)
 	close:SetPoint("TOPRIGHT", -10, -10)
 	close:SetFrameLevel(header:GetFrameLevel() + 5)
+	f.errorFlag = T.Text(header, 11, C.danger)
+	f.errorFlag:SetPoint("RIGHT", close, "LEFT", -12, 0)
+	f.errorFlag:SetJustifyH("RIGHT")
+	f.errorFlag:Hide()
 
 	-- sidebar
 	local side = CreateFrame("Frame", nil, f)
@@ -448,21 +470,27 @@ local function createWindow()
 	-- main: info bar
 	local main = CreateFrame("Frame", nil, f)
 	main:SetPoint("TOPLEFT", SIDEBAR_W, -HEADER_H)
-	main:SetPoint("BOTTOMRIGHT")
+	main:SetPoint("BOTTOMRIGHT", -INSPECTOR_W, 0)
 	f.main = main
+
+	-- detail panel
+	f.inspector = QL.Inspector.New(f)
+	f.inspector.frame:SetPoint("TOPRIGHT", 0, -HEADER_H)
+	f.inspector.frame:SetPoint("BOTTOMRIGHT")
+	f.inspector.frame:SetWidth(INSPECTOR_W)
 	local info = CreateFrame("Frame", nil, main)
 	info:SetPoint("TOPLEFT"); info:SetPoint("TOPRIGHT")
 	info:SetHeight(INFO_H)
 	T.Line(info, C.line, "BOTTOM")
 	f.info = info
-	f.infoTitle = T.Text(info, 20, C.text)
-	f.infoTitle:SetPoint("TOPLEFT", 26, -16)
-	f.infoTitle:SetPoint("RIGHT", info, "RIGHT", -250, 0)
-	f.infoLevel = T.Text(info, 12, C.muted)
-	f.infoLevel:SetPoint("TOPLEFT", f.infoTitle, "BOTTOMLEFT", 0, -8)
+	f.infoLevel = T.Text(info, 11, C.accent)
+	f.infoLevel:SetPoint("TOPLEFT", 26, -14)
+	f.infoTitle = T.Text(info, 19, C.text)
+	f.infoTitle:SetPoint("TOPLEFT", f.infoLevel, "BOTTOMLEFT", 0, -5)
+	f.infoTitle:SetPoint("RIGHT", info, "RIGHT", -230, 0)
 	f.infoMeta = T.Text(info, 12, C.muted)
-	f.infoMeta:SetPoint("LEFT", f.infoLevel, "RIGHT", 14, 0)
-	f.infoMeta:SetPoint("RIGHT", info, "RIGHT", -250, 0)
+	f.infoMeta:SetPoint("TOPLEFT", f.infoTitle, "BOTTOMLEFT", 0, -5)
+	f.infoMeta:SetPoint("RIGHT", info, "RIGHT", -230, 0)
 	f.infoPct = T.Text(info, 22, C.accent)
 	f.infoPct:SetPoint("TOPRIGHT", -26, -14)
 	f.infoPct:SetJustifyH("RIGHT")
@@ -470,7 +498,7 @@ local function createWindow()
 	f.infoDone:SetPoint("RIGHT", f.infoPct, "LEFT", -10, -2)
 	f.infoDone:SetJustifyH("RIGHT")
 	f.infoBar = T.Bar(info, 4)
-	f.infoBar:SetWidth(190)
+	f.infoBar:SetWidth(170)
 	f.infoBar:SetPoint("TOPRIGHT", -26, -50)
 
 	-- main: legend
@@ -533,7 +561,7 @@ local function createWindow()
 	f.emptySub:SetPoint("TOP", f.emptyTitle, "BOTTOM", 0, -8)
 	f.emptySub:SetJustifyH("CENTER")
 
-	f:SetScript("OnShow", function() QL.RenderWindow() end)
+	f:SetScript("OnShow", function() f.errorFlag:Hide(); QL.RenderWindow() end)
 	f:SetScript("OnHide", function() f.shownFocus = nil end)
 	f:Hide()
 end

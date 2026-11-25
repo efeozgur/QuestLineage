@@ -87,7 +87,7 @@ local function questLink(id)
 	return ("|cffffff00|Hquest:%d:%d|h[%s]|h|r"):format(id, level, QL.QuestTitle(id))
 end
 
-local function insertLink(id)
+function QL.InsertQuestLink(id)
 	local link = questLink(id)
 	if ChatEdit_InsertLink and ChatEdit_InsertLink(link) then return end
 	if ChatFrame_OpenChat then ChatFrame_OpenChat(link) end
@@ -235,7 +235,7 @@ function Tree:Card()
 		GameTooltip:Hide()
 	end)
 	n:SetScript("OnClick", function(card)
-		if IsShiftKeyDown and IsShiftKeyDown() then insertLink(card.questId)
+		if IsShiftKeyDown and IsShiftKeyDown() then QL.InsertQuestLink(card.questId)
 		else QL.Open(card.questId) end
 	end)
 	self.cards[self.usedCards] = n

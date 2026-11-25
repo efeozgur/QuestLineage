@@ -15,8 +15,10 @@ Data.lua
 Zone.lua
 State.lua
 Chain.lua
+Details.lua
 Theme.lua
 Tree.lua
+Inspector.lua
 Window.lua
 Hooks.lua
 Options.lua

@@ -80,8 +80,17 @@ end
 -- index.dependents[p] = { {id, kind}, ... }   quests that need p (kind: all | any | parent)
 -- index.names = { {id, lowercase name}, ... }  for the search box
 
+-- index.rewards[questId] = item ids the quest can give (from each item's questRewards)
 local function newIndex()
-	return { dependents = {}, names = {}, byZone = {} }
+	return { dependents = {}, names = {}, byZone = {}, rewards = {} }
+end
+
+local function indexItem(index, itemId)
+	for _, q in ipairs(QL.Ids(QL.I(itemId, "questRewards"))) do
+		local list = index.rewards[q]
+		if not list then list = {}; index.rewards[q] = list end
+		list[#list + 1] = itemId
+	end
 end
 
 -- index.byZone[area] = quest ids: the quest's own zone, and the zones its givers stand in
@@ -135,14 +144,29 @@ function QL.IndexReady()
 	return QL.index ~= nil
 end
 
+-- The index's work: every quest, then every item. -> list of {fn, id}
+local function workList(l)
+	local work = {}
+	for _, job in ipairs({ { l.Quest, indexOne }, { l.Item, indexItem } }) do
+		local entity, fn = job[1], job[2]
+		if entity and entity.GetAllIds then
+			local ok, ids = pcall(entity.GetAllIds)
+			if ok and type(ids) == "table" then
+				for _, id in ipairs(ids) do work[#work + 1] = { fn, id } end
+			end
+		end
+	end
+	return work
+end
+
 -- Builds the whole index at once (tests, or when there is no frame to slice on).
 function QL.BuildIndexNow()
 	local l = resolve()
 	local index = newIndex()
 	if l then
-		local ok, ids = pcall(l.Quest.GetAllIds)
-		if ok and type(ids) == "table" then
-			for _, id in ipairs(ids) do indexOne(index, id) end
+		for _, w in ipairs(workList(l)) do
+			local good, err = pcall(w[1], index, w[2])
+			if not good then QL.Debug("index " .. tostring(w[2]) .. ": " .. tostring(err)) end
 		end
 	end
 	finish(index)
@@ -162,19 +186,16 @@ function QL.WhenIndexed(fn)
 		QL.BuildIndexNow()
 		return
 	end
-	local ok, ids = pcall(l.Quest.GetAllIds)
-	if not ok or type(ids) ~= "table" then
-		QL.BuildIndexNow()
-		return
-	end
+	local ids = workList(l)
 	QL.indexing = true
 	local index, pos = newIndex(), 1
 	local f = CreateFrame("Frame")
 	f:SetScript("OnUpdate", function(self)
 		local last = math.min(pos + PER_FRAME - 1, #ids)
 		for i = pos, last do
-			local good, err = pcall(indexOne, index, ids[i])
-			if not good then QL.Debug("index " .. tostring(ids[i]) .. ": " .. tostring(err)) end
+			local w = ids[i]
+			local good, err = pcall(w[1], index, w[2])
+			if not good then QL.Debug("index " .. tostring(w[2]) .. ": " .. tostring(err)) end
 		end
 		pos = last + 1
 		if pos > #ids then

@@ -69,8 +69,12 @@ T.EDGE = {
 	breadcrumb = { 0.392, 0.455, 0.545, 0.80, "breadcrumb", true },
 }
 
+-- Status colours carry their label in slot 4, so only a number there is an alpha.
+-- (Passing the label as alpha was a real-client error that stopped the zone list half-way.)
 local function color(tex, c)
-	tex:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+	local a = c[4]
+	if type(a) ~= "number" then a = 1 end
+	tex:SetVertexColor(c[1], c[2], c[3], a)
 end
 T.Color = color
 
@@ -226,13 +230,18 @@ function T.Bar(parent, h)
 	bar.fill = bar:CreateTexture(nil, "ARTWORK", nil, 2)
 	bar.fill:SetTexture(WHITE)
 	bar.fill:SetPoint("TOPLEFT"); bar.fill:SetPoint("BOTTOMLEFT")
-	function bar:SetValue(v, c)
-		v = math.max(0, math.min(1, v or 0))
-		local w = (self:GetWidth() or 0) * v
+	-- The fill follows the width: a bar laid out after SetValue (width 0 at first) still fills.
+	local function layout(self)
+		local w = (self:GetWidth() or 0) * (self.value or 0)
 		self.fill:SetWidth(math.max(0.01, w))
-		self.fill:SetShown(v > 0)
+		self.fill:SetShown((self.value or 0) > 0 and w >= 0.5)
+	end
+	function bar:SetValue(v, c)
+		self.value = math.max(0, math.min(1, v or 0))
+		layout(self)
 		if c then color(self.fill, c) else T.Gradient(self.fill, "HORIZONTAL", T.C.accent, T.C.accent2) end
 	end
+	bar:SetScript("OnSizeChanged", layout)
 	return bar
 end
 
