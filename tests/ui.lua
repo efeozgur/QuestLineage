@@ -465,7 +465,25 @@ local qc = QuestLineageQuestCard
 Check(qc and qc.shown, "the card opens on a quest offer")
 Eq(strip.shown, false, "and replaces the offer strip")
 Eq(qc.questId, 6, "for the offered quest")
-Eq(qc.kicker.text, "NEW QUEST", "kicker")
+Check(qc.kicker.text:find("NEW QUEST", 1, true), "kicker")
+Check(qc.kicker.text:find("CHAIN 4/4", 1, true), "a chain quest says so in the kicker: " .. qc.kicker.text)
+-- the chain box
+Eq(qc.sections.chain.shown, true, "chain box shown for a chain quest")
+Eq(qc.sections.chain.head.text, "CHAIN QUEST", "its heading")
+local dots, lit = 0, nil
+for k, d in ipairs(qc.chainBox.dots) do if d.ring.shown then dots = dots + 1 end; if d.status == "here" then lit = k end end
+Eq(dots, 4, "one dot per link")
+Eq(lit, 4, "this quest's link is lit")
+Check(qc.chainBox.line1.text:find("Link 4 of 4", 1, true), "link line: " .. qc.chainBox.line1.text)
+Check(qc.chainBox.line2.text:find("The last link of the chain", 1, true), "the last link: " .. qc.chainBox.line2.text)
+-- show it in the quest list
+local listOpened
+local openBefore = QL.Open
+QL.Open = function(qid) listOpened = qid end
+Eq(qc.showList.label.text, "Show the quest in the quest list", "the list button")
+qc.showList.scripts.OnClick(qc.showList)
+Eq(listOpened, 6, "the main window opens on the offered quest")
+QL.Open = openBefore
 Eq(qc.accept.label.text, "Accept", "the Accept button has its text")
 Eq(qc.decline.label.text, "Decline", "the Decline button has its text")
 Eq(qc.accept.label.shown ~= false, true, "and it is shown")
@@ -506,6 +524,8 @@ function GetQuestID() return 99999 end
 function GetTitleText() return "Unknown Errand" end
 for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
 Eq(qc.title.text, "Unknown Errand", "title from the game")
+Eq(qc.sections.chain.shown, false, "no chain box for a quest outside any chain")
+Eq(qc.kicker.text, "NEW QUEST", "and no chain in the kicker")
 Eq(qc.sections.tasks.shown, false, "no tasks known: the section hides")
 local realObjectives = C_QuestLog.GetQuestObjectives
 C_QuestLog.GetQuestObjectives = function(qid) if qid == 99999 then return { { text = "Wolf slain: 0/6" } } end end

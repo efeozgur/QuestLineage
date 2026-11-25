@@ -5,7 +5,11 @@
 --   sections  the objective (the game's live text, Turkish via WoWTR), what to do (database tasks
 --             with distances), the story (folded), rewards (item tiles with quality borders, money),
 --             the chain ("link 2 of 5 · 3,400 XP"), warnings (quests this closes, breadcrumbs)
---   footer    Accept (AcceptQuest), Decline (DeclineQuest), Chain (opens the main window)
+--   chain     for a chain quest, a violet box right under the hero: the links as dots (done in
+--             green, this one lit and ringed, later ones dim), "link 2 of 5 · 6 quests · XP left",
+--             the next quest; the hero's kicker says "CHAIN 2/5" too
+--   footer    "Show the quest in the quest list" (the main window opens on it, with its chain
+--             tree), Decline (DeclineQuest), Accept (AcceptQuest)
 --
 -- Settings: questCard (on), hideGameQuestFrame (the game's window moved off screen and made
 -- invisible while the card shows: Hide() would end the NPC conversation through its OnHide),
@@ -18,7 +22,8 @@ local _, QL = ...
 local L = QL.L
 
 local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
-local W, HERO_H, MAX_H = 360, 128, 600
+local W, HERO_H, MAX_H, FOOT_H = 360, 128, 640, 96
+local MAX_DOTS = 9
 local QUALITY = {
 	[0] = { 0.62, 0.62, 0.62 }, [1] = { 1, 1, 1 }, [2] = { 0.12, 1, 0 }, [3] = { 0, 0.44, 0.87 },
 	[4] = { 0.64, 0.21, 0.93 }, [5] = { 1, 0.5, 0 },
@@ -199,7 +204,7 @@ local function build()
 	-- body (scrolls when long)
 	local sf = T.Scroll(card)
 	sf:SetPoint("TOPLEFT", 0, -HERO_H - 12)
-	sf:SetPoint("BOTTOMRIGHT", 0, 56)
+	sf:SetPoint("BOTTOMRIGHT", 0, FOOT_H)
 	card.scroll = sf
 	local body = sf.child
 	card.sections = {
@@ -207,13 +212,33 @@ local function build()
 		objective = section(body, L("OBJECTIVE")),
 		tasks = section(body, L("WHAT TO DO")),
 		rewards = section(body, L("REWARDS")),
-		chain = section(body, L("CHAIN")),
+		chain = section(body, L("CHAIN QUEST")),
 		story = section(body, L("STORY")),
 	}
 	card.sections.warn.head:SetTextColor(C.danger[1], C.danger[2], C.danger[3], 1)
 	card.sections.tasks.body:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
 	card.sections.story.body:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
 	card.rewards = CreateFrame("Frame", nil, card.sections.rewards)
+	local box = CreateFrame("Frame", nil, card.sections.chain)
+	box:SetPoint("TOPLEFT", card.sections.chain.head, "BOTTOMLEFT", 0, -6)
+	box:SetWidth(W - 32)
+	box.bg = T.Fill(box, { C.accent2[1], C.accent2[2], C.accent2[3], 0.08 })
+	T.Border(box, { C.accent2[1], C.accent2[2], C.accent2[3], 0.45 })
+	box.edge = box:CreateTexture(nil, "ARTWORK")
+	box.edge:SetTexture(T.WHITE)
+	box.edge:SetPoint("TOPLEFT"); box.edge:SetPoint("BOTTOMLEFT")
+	box.edge:SetWidth(3)
+	T.Gradient(box.edge, "VERTICAL", C.accent2, C.accent)
+	box.dots, box.links = {}, {}
+	box.line1 = T.Text(box, 12, C.text, nil, true)
+	box.line1:SetPoint("TOPLEFT", 14, -48)
+	box.line1:SetPoint("RIGHT", box, "RIGHT", -12, 0)
+	box.line2 = T.Text(box, 11, C.muted)
+	box.line2:SetPoint("TOPLEFT", box.line1, "BOTTOMLEFT", 0, -5)
+	box.line2:SetPoint("RIGHT", box, "RIGHT", -12, 0)
+	if box.line2.SetWordWrap then box.line2:SetWordWrap(true) end
+	card.chainBox = box
+	card.sections.chain.head:SetTextColor(C.accent2[1], C.accent2[2], C.accent2[3], 1)
 	card.tiles = {}
 	-- the story folds: its header toggles it
 	local fold = CreateFrame("Button", nil, card.sections.story)
@@ -227,7 +252,7 @@ local function build()
 	-- footer
 	local foot = CreateFrame("Frame", nil, card)
 	foot:SetPoint("BOTTOMLEFT"); foot:SetPoint("BOTTOMRIGHT")
-	foot:SetHeight(56)
+	foot:SetHeight(FOOT_H)
 	T.Fill(foot, C.header)
 	local line = foot:CreateTexture(nil, "BORDER")
 	line:SetTexture(T.WHITE)
@@ -235,7 +260,7 @@ local function build()
 	line:SetHeight(1)
 	T.Color(line, C.line)
 	card.accept = T.Button(foot, 120, 32)
-	card.accept:SetPoint("RIGHT", -14, 0)
+	card.accept:SetPoint("BOTTOMRIGHT", -14, 12)
 	card.accept:SetLabel(L("Accept"))
 	card.accept:SetActive(true)
 	card.accept:SetScript("OnClick", function()
@@ -251,10 +276,12 @@ local function build()
 		call(DeclineQuest)
 		QL.HideQuestCard()
 	end)
-	card.chainButton = T.Button(foot, 96, 32)
-	card.chainButton:SetPoint("LEFT", 14, 0)
-	card.chainButton:SetLabel(L("Chain"))
-	card.chainButton:SetScript("OnClick", function() if card.questId then QL.Open(card.questId) end end)
+	-- the main window on this quest: its place in the quest list and its chain tree
+	card.showList = T.Button(foot, W - 28, 30)
+	card.showList:SetPoint("TOPLEFT", 14, -10)
+	card.showList:SetLabel(L("Show the quest in the quest list"))
+	card.showList:SetScript("OnClick", function() if card.questId then QL.Open(card.questId) end end)
+	card.chainButton = card.showList -- older name
 
 	-- closing the card while the game's window is hidden ends the conversation (nothing else
 	-- would be left on screen to answer the NPC)
@@ -343,6 +370,111 @@ local function rewards(sec)
 	return n > 0 or #lines > 0, rows * 42 + (rows > 0 and 4 or 0)
 end
 
+-- The chain box: one dot per link (layer) of the chain, joined by lines; done links green, this
+-- quest's link lit with a ring, links still ahead dim. More than MAX_DOTS links: a window round
+-- this one, with faded ends. Returns the box's height.
+function QL.DrawCardChain(id, ctx, summary)
+	local T, C = QL.Theme, QL.Theme.C
+	local box = card.chainBox
+	local chain = QL.BuildChain(id, ctx)
+	local layers = chain and chain.layers or {}
+	local here = summary.index
+	local first, last = 1, #layers
+	if #layers > MAX_DOTS then
+		first = math.max(1, math.min(here - math.floor(MAX_DOTS / 2), #layers - MAX_DOTS + 1))
+		last = first + MAX_DOTS - 1
+	end
+	local n = last - first + 1
+	local inner = W - 32 - 40
+	local gap = n > 1 and inner / (n - 1) or 0
+	local done = T.STATUS.done
+	for _, d in ipairs(box.dots) do d.ring:Hide(); d.fill:Hide() end
+	for _, l in ipairs(box.links) do l:Hide() end
+	local prevX
+	box.lit = nil
+	for k = 1, n do
+		local li = first + k - 1
+		local status = "later"
+		if li == here then
+			status = "here"
+		else
+			local allDone = #layers[li] > 0
+			for _, nid in ipairs(layers[li]) do
+				if chain.nodes[nid].status ~= "done" then allDone = false end
+			end
+			if allDone then status = "done" elseif li < here then status = "before" end
+		end
+		local d = box.dots[k]
+		if not d then
+			d = { ring = box:CreateTexture(nil, "OVERLAY"), fill = box:CreateTexture(nil, "OVERLAY", nil, 1) }
+			d.ring:SetTexture(MEDIA .. "ring")
+			d.fill:SetTexture(MEDIA .. "disc")
+			box.dots[k] = d
+		end
+		local x = 20 + (k - 1) * gap
+		if n == 1 then x = (W - 32) / 2 end
+		local size = status == "here" and 22 or 12
+		d.ring:SetSize(size, size)
+		d.ring:ClearAllPoints(); d.ring:SetPoint("CENTER", box, "TOPLEFT", x, -24)
+		d.fill:SetSize(status == "here" and 12 or 8, status == "here" and 12 or 8)
+		d.fill:ClearAllPoints(); d.fill:SetPoint("CENTER", box, "TOPLEFT", x, -24)
+		local fade = ((k == 1 and first > 1) or (k == n and last < #layers)) and 0.4 or 1
+		if status == "here" then
+			d.ring:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+			d.fill:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+			box.lit = k
+		elseif status == "done" then
+			d.ring:SetVertexColor(done[1], done[2], done[3], 0.9 * fade)
+			d.fill:SetVertexColor(done[1], done[2], done[3], 0.9 * fade)
+		else
+			d.ring:SetVertexColor(C.muted[1], C.muted[2], C.muted[3], 0.7 * fade)
+			d.fill:SetVertexColor(C.muted[1], C.muted[2], C.muted[3], (status == "before" and 0.5 or 0) * fade)
+		end
+		d.ring:Show(); d.fill:Show()
+		d.status = status
+		if prevX then
+			local l = box.links[k - 1]
+			if not l then
+				l = box:CreateTexture(nil, "ARTWORK")
+				l:SetTexture(T.WHITE)
+				l:SetHeight(2)
+				box.links[k - 1] = l
+			end
+			l:ClearAllPoints()
+			l:SetPoint("LEFT", box, "TOPLEFT", prevX + 7, -24)
+			l:SetPoint("RIGHT", box, "TOPLEFT", x - 7, -24)
+			local before = li <= here
+			local c = before and C.accent2 or C.line
+			l:SetVertexColor(c[1], c[2], c[3], before and 0.8 or 0.9)
+			l:Show()
+		end
+		prevX = x
+	end
+	-- the lines under the dots
+	local ids = {}
+	for nid in pairs(chain and chain.nodes or {}) do ids[#ids + 1] = nid end
+	local cx = QL.ChainXP(ids, ctx)
+	local line1 = L("Link %d of %d"):format(summary.index, summary.total) .. "  ·  " .. L("%d quests"):format(summary.size)
+	if cx.remaining > 0 then line1 = line1 .. "  ·  " .. hex(C.accent) .. QL.XPText(cx.remaining) .. "|r" end
+	T.SetFont(box.line1, 12, true)
+	box.line1:SetText(line1)
+	local more = {}
+	if summary.doneCount and summary.doneCount > 0 then
+		more[#more + 1] = hex(done) .. L("%d done"):format(summary.doneCount) .. "|r"
+	end
+	if summary.nextId then
+		more[#more + 1] = L("Next: ") .. hex(C.text) .. QL.QuestTitle(summary.nextId) .. "|r"
+	elseif summary.index == summary.total then
+		more[#more + 1] = hex(C.accent) .. L("The last link of the chain") .. "|r"
+	end
+	box.line2:SetWidth(W - 32 - 26)
+	box.line2:SetText(table.concat(more, "  ·  "))
+	local h = 48 + (box.line1:GetStringHeight() or 14) + 5 + ((#more > 0) and (box.line2:GetStringHeight() or 13) or 0) + 12
+	box:SetHeight(h)
+	box:Show()
+	return h
+end
+
 -- The "what to do" lines: the database's tasks, else the client's objectives for the quest.
 function QL.CardTasks(id, known)
 	local C = QL.Theme.C
@@ -375,7 +507,7 @@ function QL.CardDebug()
 	local id = card.questId
 	QL.Chat(("card: quest %s · known %s · %dx%d · strata %s"):format(tostring(id), tostring(QL.QuestExists(id or 0)),
 		card:GetWidth() or 0, card:GetHeight() or 0, tostring(card:GetFrameStrata())))
-	for _, k in ipairs({ "accept", "decline", "chainButton" }) do
+	for _, k in ipairs({ "accept", "decline", "showList" }) do
 		local b = card[k]
 		local fs = b.label
 		QL.Chat(("%s: shown %s · text '%s' · width %.0f · font %s · alpha %.2f"):format(k, tostring(b:IsVisible()), tostring(fs:GetText()),
@@ -409,7 +541,8 @@ function QL.ShowQuestCard(id)
 	card.answered = false
 
 	-- hero
-	card.kicker:SetText(L("NEW QUEST"))
+	local summary = known and QL.ChainSummary(id, ctx)
+	card.kicker:SetText(L("NEW QUEST") .. (summary and ("  " .. hex(C.accent2) .. "·  " .. L("CHAIN %d/%d"):format(summary.index, summary.total) .. "|r") or ""))
 	local title = known and QL.QuestTitle(id) or (call(GetTitleText) or "?")
 	card.title:SetText(title)
 	card.title:SetTextColor(unpack(known and (QL.TitleColor(id, ctx) or C.text) or C.text))
@@ -447,6 +580,12 @@ function QL.ShowQuestCard(id)
 		warns[#warns + 1] = (w.danger and hex(C.danger) or hex(C.text)) .. w.text .. "|r"
 	end
 	place(s.warn, table.concat(warns, "\n"))
+	if summary then
+		s.chain.head:SetText(L("CHAIN QUEST"))
+		place(s.chain, true, QL.DrawCardChain(id, ctx, summary) + 6)
+	else
+		s.chain:Hide()
+	end
 	local objective = (known and QL.UseTurkish() and QL.QuestObjectives(id)) or call(GetObjectiveText) or (known and QL.QuestObjectives(id))
 	place(s.objective, objective)
 	local tasks = QL.CardTasks(id, known)
@@ -458,18 +597,6 @@ function QL.ShowQuestCard(id)
 	else
 		s.rewards:Hide()
 	end
-	local chainText
-	local summary = known and QL.ChainSummary(id, ctx)
-	if summary then
-		local chain = QL.BuildChain(id, ctx)
-		local ids = {}
-		for nid in pairs(chain and chain.nodes or {}) do ids[#ids + 1] = nid end
-		local cx = QL.ChainXP(ids, ctx)
-		chainText = L("Link %d of %d"):format(summary.index, summary.total) .. "  ·  " .. L("%d quests"):format(summary.size)
-		if cx.remaining > 0 then chainText = chainText .. "  ·  " .. hex(C.accent) .. QL.XPText(cx.remaining) .. "|r" end
-	end
-	place(s.chain, chainText)
-	card.chainButton:SetShown(summary and true or false)
 	local story = (known and QL.QuestDescription(id)) or call(GetQuestText)
 	if story and story ~= "" then
 		local open = QL.DB().questCardStory
@@ -482,15 +609,15 @@ function QL.ShowQuestCard(id)
 
 	card.accept:SetLabel(L("Accept"))
 	card.decline:SetLabel(L("Decline"))
-	card.chainButton:SetLabel(L("Chain"))
-	for _, b in ipairs({ card.accept, card.decline, card.chainButton }) do
+	card.showList:SetLabel(L("Show the quest in the quest list"))
+	for _, b in ipairs({ card.accept, card.decline, card.showList }) do
 		T.SetFont(b.label, 12, true)
 		b.label:SetTextColor(unpack(b == card.accept and C.text or C.muted))
 		b.label:Show()
 	end
 	card.scroll.child:SetWidth(W)
 	card.scroll:SetContentHeight(y)
-	card:SetHeight(math.min(MAX_H, HERO_H + 12 + y + 56))
+	card:SetHeight(math.min(MAX_H, HERO_H + 12 + y + FOOT_H))
 	if QL.DB().hideGameQuestFrame then hideGameFrame() else restoreGameFrame() end
 	placeCard()
 	card.closing = false
