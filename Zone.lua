@@ -225,12 +225,15 @@ end
 
 -- Normal quests: every quest in the log (wherever it is) and every quest of the zone this
 -- character can take now, most XP first (at its level; quests without XP data last).
---   QL.ZoneQuestList(area, ctx) -> { { id, status, xp, inLog }, ... }
-function QL.ZoneQuestList(area, ctx)
+--   QL.ZoneQuestList(area, ctx, opts) -> { { id, status, xp, inLog }, ... }
+-- opts.noChains leaves out quests that belong to a chain (they have the Chains tab).
+function QL.ZoneQuestList(area, ctx, opts)
 	local seen, out = {}, {}
+	local noChains = opts and opts.noChains
 	local function add(id)
 		if seen[id] then return end
 		seen[id] = true
+		if noChains and QL.ChainSummary(id, ctx) then return end
 		local s = QL.NodeStatus(id, ctx)
 		if s == "active" or s == "ready" or s == "available" then
 			out[#out + 1] = { id = id, status = s, xp = QL.QuestXPAt and QL.QuestXPAt(id, ctx.level) or nil, inLog = s ~= "available" }

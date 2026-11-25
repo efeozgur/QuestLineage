@@ -178,6 +178,15 @@ Check(f.infoGain.text:find("Lv 5: 0% » 23%", 1, true), "level 5 from 0% to 23%:
 Eq(f.levelBar.gain.level, 5, "level bar knows the gain")
 
 -- Quests: the log and what the zone offers now, most XP first -------------------------------------
+-- by default chain quests stay out of this list (they have the Chains tab)
+QL.ShowPage("quests")
+local onlyStandalone = {}
+for _, r in ipairs(f.questsPage.list.rows) do if r.shown then onlyStandalone[#onlyStandalone + 1] = r.questId end end
+Eq(#onlyStandalone, 0, "Rumours and Second Steps are both in chains: none listed")
+Eq(#QL.ZoneQuestList(QL.PlayerZone(), QL.Context(), { noChains = false }), 2, "both there without the filter")
+Eq(#QL.errors, 0, "an empty Quests list without errors: " .. table.concat(QL.errors, " | "))
+-- the rest of these tests use the full list
+QL.Set("questsHideChains", false)
 QL.ShowPage("quests")
 local qp = f.questsPage
 Eq(qp.shown, true, "quests page shown")

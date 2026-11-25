@@ -373,7 +373,8 @@ local function renderQuests()
 		return
 	end
 	local ctx = QL.Context()
-	local quests = QL.ZoneQuestList(area, ctx)
+	-- chain quests live in the Chains tab; by default this list is the standalone ones
+	local quests = QL.ZoneQuestList(area, ctx, { noChains = QL.DB().questsHideChains ~= false })
 	local inLog, total = 0, 0
 	for _, q in ipairs(quests) do
 		if q.inLog then inLog = inLog + 1 end

@@ -70,6 +70,8 @@ local ROWS = {
 		label = "A quest I accept becomes the current quest", note = "The arrow turns to it (not while a route runs)." },
 	{ key = "currentLogMax", page = "tracking", group = "Current quest window", parent = "currentQuest",
 		slider = { min = 1, max = 30, text = "Quests in the list: %d" }, note = "How many of your other quests show under the current one; the rest as \"+N more\"." },
+	{ key = "questsHideChains", page = "general", group = "Quest lists",
+		label = "Leave chain quests out of the Quests tab", note = "The Quests tab lists standalone quests; chains have their own tab." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 }
