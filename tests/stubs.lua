@@ -42,6 +42,14 @@ local NPCS = {
 	[101] = { name = "Alice", questStarts = { 2, 10 }, spawns = { [215] = { { 10, 10 } }, [14] = { { 50, 50 } } } },
 	[102] = { name = "Boar", zoneID = 14 },
 	[103] = { name = "Pirate Captain", zoneID = 10029 },
+	-- service NPCs in Durotar (area 14); the player stands at 50, 40 in the UI tests
+	[200] = { name = "Grezz", subName = "Armorer", npcFlags = 4 + 16384, friendlyToFaction = "H", spawns = { [14] = { { 52, 40 } } } },
+	[201] = { name = "Far Smith", subName = "Weaponsmith", npcFlags = 4 + 16384, friendlyToFaction = "H", spawns = { [14] = { { 80, 80 } } } },
+	[202] = { name = "Alliance Smith", subName = "Armorer", npcFlags = 4 + 16384, friendlyToFaction = "A", spawns = { [14] = { { 50, 41 } } } },
+	[203] = { name = "Thrag", subName = "Warrior Trainer", npcFlags = 16, friendlyToFaction = "H", spawns = { [14] = { { 60, 40 } } } },
+	[204] = { name = "Ore Teacher", subName = "Mining Trainer", npcFlags = 16, friendlyToFaction = "AH", spawns = { [14] = { { 55, 45 } } } },
+	[205] = { name = "Innkeeper Grosk", subName = "Innkeeper", npcFlags = 4 + 128, friendlyToFaction = "H", spawns = { [14] = { { 51, 42 } } } },
+	[206] = { name = "Raging Boar", friendlyToFaction = nil, npcFlags = 0, spawns = { [14] = { { 50, 40 } } } },
 }
 
 local function entity(rows)
@@ -66,7 +74,10 @@ LibQuestieDB = {
 	RequireContract = function(v) return v <= 4, v > 4 and "too new" or nil end,
 	Quest = entity(QUESTS),
 	Npc = entity(NPCS),
-	Object = entity({}),
+	Object = entity({
+		[300] = { name = "Mailbox", spawns = { [14] = { { 53, 40 } } } },
+		[301] = { name = "Crate", spawns = { [14] = { { 50, 40 } } } },
+	}),
 	Item = entity({
 		[500] = { name = "Rusty Sword", questRewards = { 3 } },
 		[501] = { name = "Boar Ribs", npcDrops = { 102 } },
@@ -90,7 +101,7 @@ QuestLineageDB = nil
 QTR_QuestData = nil
 
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Services.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 QL.QUESTS = QUESTS

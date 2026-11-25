@@ -337,6 +337,15 @@ function QL.ResetArrowPosition()
 end
 
 function QL.ArrowQuest() return questId end
+
+-- The arrow's frame, built (hidden) on demand: the quick bar sits under it.
+function QL.ArrowFrame()
+	if not frame and CreateFrame then
+		local ok, err = pcall(build)
+		if not ok then QL.Debug("arrow build: " .. tostring(err)) end
+	end
+	return frame
+end
 function QL.ArrowTarget() return target end
 
 QL.On("SETTING_CHANGED", function(key)

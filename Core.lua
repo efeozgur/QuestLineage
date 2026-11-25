@@ -31,6 +31,7 @@ QL.defaults = {
 	arrowScale = 1,       -- the arrow's size
 	arrowGlow = true,     -- the soft glow behind it
 	mapRoute = true,      -- the route (or the arrow's quest) drawn on the world map
+	quickBar = true,      -- the "Where?" quick bar under the arrow
 }
 
 -- SavedVariables can be missing on a cold start: always go through DB().

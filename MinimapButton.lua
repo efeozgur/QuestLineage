@@ -71,6 +71,8 @@ local function build()
 	b:SetScript("OnClick", function(_, mouse)
 		if mouse == "RightButton" then
 			if QL.OpenOptions then QL.OpenOptions() end
+		elseif IsShiftKeyDown and IsShiftKeyDown() then
+			if QL.ToggleQuickBar then QL.ToggleQuickBar() end
 		else
 			QL.ToggleWindow()
 		end
@@ -88,6 +90,7 @@ local function build()
 		tip:AddLine("QuestLineage", 0.24, 0.84, 0.78)
 		tip:AddLine(QL.L("Click: open or close"), 1, 1, 1)
 		tip:AddLine(QL.L("Right-click: settings"), 1, 1, 1)
+		tip:AddLine(QL.L("Shift-click: the \"Where?\" bar"), 1, 1, 1)
 		tip:AddLine(QL.L("Drag: move round the minimap"), 0.6, 0.6, 0.6)
 		tip:Show()
 	end)

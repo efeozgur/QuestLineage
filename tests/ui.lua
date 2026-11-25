@@ -106,6 +106,7 @@ function strsplit(sep, s)
 end
 function hooksecurefunc() end
 function UnitLevel() return 5 end
+function UnitFactionGroup() return "Horde" end
 function UnitRace() return "Human", "Human", 1 end
 function UnitClass() return "Warrior", "WARRIOR", 1 end
 C_QuestLog = {
@@ -134,7 +135,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -622,6 +623,37 @@ Check(hiddenAll, "the setting turns it off")
 QL.Set("mapRoute", true)
 QL.ClearArrow()
 WorldMapFrame.shown = false
+
+-- "Where?" quick bar ------------------------------------------------------------------------------
+local qb = QuestLineageQuickBar
+Check(qb and qb.shown, "the quick bar is up")
+Eq(#qb.buttons, 7, "seven service icons")
+Eq(qb.buttons[1].key, "repair", "repair first")
+qb.buttons[1].scripts.OnClick(qb.buttons[1])
+Eq(QL.ArrowTarget().kind, "place", "the arrow points at a place")
+QL.UpdateArrow()
+Eq(arrow.title.text, "Grezz", "the nearest friendly repairer (not the Alliance smith next to you)")
+Check(arrow.label.text:find("Nearest", 1, true), "why: " .. arrow.label.text)
+-- hover lists the nearest three
+qb.buttons[1].scripts.OnEnter(qb.buttons[1])
+Check(QuestLineageTooltip.lines[2].text:find("Grezz", 1, true), "tooltip lists the nearest: " .. QuestLineageTooltip.lines[2].text)
+qb.buttons[1].scripts.OnLeave(qb.buttons[1])
+-- the more panel
+qb.more.scripts.OnClick(qb.more)
+local qpnl = QuestLineageQuickPanel
+Check(qpnl and qpnl.shown, "more panel open")
+local tiles = 0
+for _, part in ipairs(qpnl.parts) do if part.key then tiles = tiles + 1 end end
+Check(tiles >= 18, "every category has a tile: " .. tiles)
+qb.more.scripts.OnClick(qb.more)
+Eq(qpnl.shown, false, "and closes")
+-- the setting and the minimap Shift-click
+QL.Set("quickBar", false)
+Eq(qb.shown, false, "the setting hides the bar")
+QL.ToggleQuickBar()
+Eq(qb.shown, true, "Shift-click on the minimap button brings it back")
+QL.ClearArrow()
+Eq(#QL.errors, 0, "quick bar without errors: " .. table.concat(QL.errors, " | "))
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton

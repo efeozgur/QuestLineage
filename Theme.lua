@@ -286,6 +286,41 @@ function T.Tooltip()
 end
 QL.Tip = function() return T.Tooltip() end
 
+-- A square icon button (the quick bar): a glyph tinted muted, lit on hover, the accent when
+-- active; an optional small caption under it (w x h grows to fit). :SetActive(on), .icon, .caption
+function T.IconButton(parent, icon, size, caption)
+	local C = T.C
+	local b = CreateFrame("Button", nil, parent)
+	size = size or 30
+	b:SetSize(caption and size + 26 or size, caption and size + 16 or size)
+	b.bg = T.Fill(b, { 0, 0, 0, 0 })
+	b.icon = b:CreateTexture(nil, "ARTWORK")
+	b.icon:SetTexture(icon)
+	b.icon:SetSize(size - 10, size - 10)
+	b.icon:SetPoint("TOP", 0, -5)
+	if caption then
+		b.caption = T.Text(b, 9, C.muted)
+		b.caption:SetPoint("BOTTOM", 0, 4)
+		b.caption:SetJustifyH("CENTER")
+		b.caption:SetText(caption)
+	end
+	local function paint(self, hover)
+		color(self.bg, self.active and C.rowActive or (hover and C.rowHover or { 0, 0, 0, 0 }))
+		local ic = self.active and C.accent or (hover and C.text or C.muted)
+		self.icon:SetVertexColor(ic[1], ic[2], ic[3], 1)
+		if self.caption then
+			local tc = hover and C.text or C.muted
+			self.caption:SetTextColor(tc[1], tc[2], tc[3], 1)
+		end
+	end
+	function b:SetActive(on) self.active = on and true or false; paint(self, false) end
+	b.paint = paint
+	b:SetScript("OnEnter", function(self) paint(self, true) end)
+	b:SetScript("OnLeave", function(self) paint(self, false) end)
+	b:SetActive(false)
+	return b
+end
+
 -- A navigation rail button: an icon over a small label; active = accent icon, an accent bar
 -- on the left and a tinted ground. Same SetLabel / SetActive / .label / .active as T.Button.
 function T.RailButton(parent, icon, w, h)

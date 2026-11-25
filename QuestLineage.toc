@@ -24,6 +24,8 @@ Window.lua
 Arrow.lua
 Route.lua
 MapRoute.lua
+Services.lua
+QuickBar.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua

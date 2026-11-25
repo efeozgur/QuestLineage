@@ -82,7 +82,7 @@ end
 
 -- index.rewards[questId] = item ids the quest can give (from each item's questRewards)
 local function newIndex()
-	return { dependents = {}, names = {}, byZone = {}, rewards = {}, byClass = {} }
+	return { dependents = {}, names = {}, byZone = {}, rewards = {}, byClass = {}, services = {} }
 end
 
 local function indexItem(index, itemId)
@@ -164,7 +164,11 @@ end
 -- The index's work: every quest, then every item. -> list of {fn, id}
 local function workList(l)
 	local work = {}
-	for _, job in ipairs({ { l.Quest, indexOne }, { l.Item, indexItem } }) do
+	local jobs = { { l.Quest, indexOne }, { l.Item, indexItem } }
+	-- services (Services.lua): trainers, vendors and service NPCs, and mailboxes
+	if QL.IndexServiceNpc then jobs[#jobs + 1] = { l.Npc, function(index, id) QL.IndexServiceNpc(index, id) end } end
+	if QL.IndexServiceObject then jobs[#jobs + 1] = { l.Object, function(index, id) QL.IndexServiceObject(index, id) end } end
+	for _, job in ipairs(jobs) do
 		local entity, fn = job[1], job[2]
 		if entity and entity.GetAllIds then
 			local ok, ids = pcall(entity.GetAllIds)
