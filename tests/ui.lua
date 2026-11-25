@@ -465,6 +465,9 @@ Check(qc and qc.shown, "the card opens on a quest offer")
 Eq(strip.shown, false, "and replaces the offer strip")
 Eq(qc.questId, 6, "for the offered quest")
 Eq(qc.kicker.text, "NEW QUEST", "kicker")
+Eq(qc.accept.label.text, "Accept", "the Accept button has its text")
+Eq(qc.decline.label.text, "Decline", "the Decline button has its text")
+Eq(qc.accept.label.shown ~= false, true, "and it is shown")
 Check(qc.sections.warn.shown and qc.sections.warn.body.text:find("closes for good: Right Path", 1, true), "warning on the card")
 Eq(qc.sections.objective.body.text, "Bring 5 boar ribs.", "the game's objective text")
 local shownTiles = 0
@@ -502,6 +505,12 @@ function GetQuestID() return 99999 end
 function GetTitleText() return "Unknown Errand" end
 for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
 Eq(qc.title.text, "Unknown Errand", "title from the game")
+Eq(qc.sections.tasks.shown, false, "no tasks known: the section hides")
+local realObjectives = C_QuestLog.GetQuestObjectives
+C_QuestLog.GetQuestObjectives = function(qid) if qid == 99999 then return { { text = "Wolf slain: 0/6" } } end end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+Check(qc.sections.tasks.shown and qc.sections.tasks.body.text:find("Wolf slain: 0/6", 1, true), "tasks from the client's objectives")
+C_QuestLog.GetQuestObjectives = realObjectives
 for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
 -- the main window on accept
 local openedId

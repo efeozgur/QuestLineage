@@ -343,6 +343,60 @@ local function rewards(sec)
 	return n > 0 or #lines > 0, rows * 42 + (rows > 0 and 4 or 0)
 end
 
+-- The "what to do" lines: the database's tasks, else the client's objectives for the quest.
+function QL.CardTasks(id, known)
+	local C = QL.Theme.C
+	local out = {}
+	if known then
+		for _, t in ipairs(QL.QuestTasks(id)) do
+			if t.kind ~= "rep" then
+				local verb = t.kind == "npc" and L("Kill: ") or (t.kind == "item" and L("Collect: ") or L("Use: "))
+				local name = t.name or t.text
+				if name then out[#out + 1] = hex(C.accent) .. "•|r  " .. verb .. hex(C.text) .. name .. "|r" end
+			end
+		end
+	end
+	if #out == 0 and C_QuestLog and C_QuestLog.GetQuestObjectives then
+		local list = call(C_QuestLog.GetQuestObjectives, id)
+		if type(list) == "table" then
+			for _, o in ipairs(list) do
+				if type(o) == "table" and type(o.text) == "string" and o.text ~= "" then
+					out[#out + 1] = hex(C.accent) .. "•|r  " .. hex(C.text) .. o.text .. "|r"
+				end
+			end
+		end
+	end
+	return table.concat(out, "\n")
+end
+
+-- /ql kart: what the open card holds, to find why something does not show.
+function QL.CardDebug()
+	if not card or not card:IsShown() then QL.Chat(L("The quest card is not open: talk to an NPC offering a quest first.")); return end
+	local id = card.questId
+	QL.Chat(("card: quest %s · known %s · %dx%d · strata %s"):format(tostring(id), tostring(QL.QuestExists(id or 0)),
+		card:GetWidth() or 0, card:GetHeight() or 0, tostring(card:GetFrameStrata())))
+	for _, k in ipairs({ "accept", "decline", "chainButton" }) do
+		local b = card[k]
+		local fs = b.label
+		QL.Chat(("%s: shown %s · text '%s' · width %.0f · font %s · alpha %.2f"):format(k, tostring(b:IsVisible()), tostring(fs:GetText()),
+			fs:GetStringWidth() or -1, tostring((fs:GetFont())), fs:GetAlpha() or -1))
+	end
+	local tasks = QL.QuestTasks(id or 0)
+	QL.Chat(("tasks from the database: %d"):format(#tasks))
+	for i, t in ipairs(tasks) do
+		if i > 6 then break end
+		QL.Chat(("  %s %s: %s"):format(t.kind, tostring(t.id), tostring(t.name or t.text)))
+	end
+	local obj = QL.Q(id or 0, "objectives")
+	QL.Chat("objectives field: " .. type(obj) .. (type(obj) == "table" and (" · slots " .. tostring(obj[1] and #obj[1]) .. "/" .. tostring(obj[2] and #obj[2]) .. "/" .. tostring(obj[3] and #obj[3])) or ""))
+	for name, sec in pairs(card.sections) do
+		QL.Chat(("section %s: shown %s · height %.0f · text %d chars · text height %.0f"):format(name, tostring(sec:IsShown()),
+			sec:GetHeight() or 0, #(sec.body:GetText() or ""), sec.body:GetStringHeight() or 0))
+	end
+	QL.Chat(("scroll: %.0fx%.0f · child %.0fx%.0f"):format(card.scroll:GetWidth() or 0, card.scroll:GetHeight() or 0,
+		card.scroll.child:GetWidth() or 0, card.scroll.child:GetHeight() or 0))
+end
+
 function QL.ShowQuestCard(id)
 	if not card then
 		local ok, err = pcall(build)
@@ -375,18 +429,19 @@ function QL.ShowQuestCard(id)
 	-- sections, stacked
 	local y = 0
 	local width = W - 32
+	local s = card.sections
 	local function place(sec, text, extra)
 		if not text or text == "" then sec:Hide(); return end
 		sec:ClearAllPoints()
 		sec:SetPoint("TOPLEFT", 16, -y)
 		sec:SetWidth(width)
+		if sec ~= s.rewards then sec.body:SetWidth(width) end
 		if text ~= true then sec.body:SetText(text) end
 		local h = 16 + (extra or 0) + ((sec.body:GetText() or "") ~= "" and (sec.body:GetStringHeight() or 12) or 0)
 		sec:SetHeight(h)
 		sec:Show()
 		y = y + h + 14
 	end
-	local s = card.sections
 	local warns = {}
 	for _, w in ipairs(QL.OfferWarnings(id, ctx)) do
 		warns[#warns + 1] = (w.danger and hex(C.danger) or hex(C.text)) .. w.text .. "|r"
@@ -394,16 +449,8 @@ function QL.ShowQuestCard(id)
 	place(s.warn, table.concat(warns, "\n"))
 	local objective = (known and QL.UseTurkish() and QL.QuestObjectives(id)) or call(GetObjectiveText) or (known and QL.QuestObjectives(id))
 	place(s.objective, objective)
-	local tasks = {}
-	if known then
-		for _, t in ipairs(QL.QuestTasks(id)) do
-			if t.kind ~= "rep" then
-				local verb = t.kind == "npc" and L("Kill: ") or (t.kind == "item" and L("Collect: ") or L("Use: "))
-				tasks[#tasks + 1] = hex(C.accent) .. "•|r  " .. verb .. hex(C.text) .. (t.name or "?") .. "|r"
-			end
-		end
-	end
-	place(s.tasks, table.concat(tasks, "\n"))
+	local tasks = QL.CardTasks(id, known)
+	place(s.tasks, tasks)
 	local any, extra = rewards(s.rewards)
 	if any then
 		s.rewards.body:SetWidth(width)
@@ -433,6 +480,14 @@ function QL.ShowQuestCard(id)
 		s.story:Hide()
 	end
 
+	card.accept:SetLabel(L("Accept"))
+	card.decline:SetLabel(L("Decline"))
+	card.chainButton:SetLabel(L("Chain"))
+	for _, b in ipairs({ card.accept, card.decline, card.chainButton }) do
+		T.SetFont(b.label, 12, true)
+		b.label:SetTextColor(unpack(b == card.accept and C.text or C.muted))
+		b.label:Show()
+	end
 	card.scroll.child:SetWidth(W)
 	card.scroll:SetContentHeight(y)
 	card:SetHeight(math.min(MAX_H, HERO_H + 12 + y + 56))
@@ -464,8 +519,7 @@ QL.Event("QUEST_DETAIL", function()
 	if C_Timer and C_Timer.After then
 		C_Timer.After(0, function()
 			if card and card:IsShown() and card.questId == id then
-				if QL.DB().hideGameQuestFrame then hideGameFrame() end
-				placeCard()
+				pcall(QL.ShowQuestCard, id) -- measured again now that the card is laid out
 			end
 		end)
 	end
