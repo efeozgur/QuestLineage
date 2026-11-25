@@ -364,25 +364,58 @@ function QL.AreaAt(hits, x, y)
 	return best
 end
 
-local hovered = { minimap = nil, world = nil } -- the area each map's tooltip shows
+-- Every area under a point, smallest first, one per objective (rings of the same objective that
+-- overlap count once).
+function QL.AreasAt(hits, x, y)
+	local found = {}
+	for _, h in ipairs(hits or {}) do
+		local rx, ry = h.rx or h.r, h.ry or h.r
+		if rx and ry and rx > 0 and ry > 0 then
+			local dx, dy = (x - h.x) / rx, (y - h.y) / ry
+			if dx * dx + dy * dy <= 1 then found[#found + 1] = { area = h.area, size = rx * ry } end
+		end
+	end
+	table.sort(found, function(a, b) return a.size < b.size end)
+	local out, seen = {}, {}
+	for _, f in ipairs(found) do
+		local key = type(f.area) == "table" and ((f.area.questId or "") .. ":" .. (f.area.label or "")) or tostring(f.area)
+		if not seen[key] then seen[key] = true; out[#out + 1] = f.area end
+	end
+	return out
+end
 
-local function showAreaTip(owner, a)
+local hovered = { minimap = nil, world = nil } -- what each map's tooltip shows (a key)
+
+-- The tooltip leads with the objective(s) under the cursor, each in its ring's colour with its
+-- counter; the quest they belong to follows.
+local function showAreaTip(owner, list)
+	local T, C = QL.Theme, QL.Theme.C
 	local tip = QL.Tip()
 	tip:SetOwner(owner, "ANCHOR_CURSOR")
-	QL.FillQuestTooltip(tip, a.questId)
-	local c = a.color or QL.Theme.C.accent
+	local first = list[1]
+	for _, a in ipairs(list) do
+		local c = a.color or C.accent
+		tip:AddLine("●  " .. (a.label or "?") .. (a.count and ("   " .. a.count) or ""), c[1], c[2], c[3])
+	end
+	tip:AddLine(L("Objective of %s"):format(QL.QuestTitle(first.questId)), C.muted[1], C.muted[2], C.muted[3])
 	tip:AddLine(" ")
-	tip:AddLine(L("Area: ") .. (a.label or "") .. (a.count and ("  " .. a.count) or ""), c[1], c[2], c[3])
-	tip:AddLine(L("Click the quest window or the arrow to go there"), 0.5, 0.5, 0.5, true)
+	QL.FillQuestTooltip(tip, first.questId)
 	tip:Show()
 end
 
-local function hover(which, owner, a)
+local function keyOf(list)
+	local parts = {}
+	for _, a in ipairs(list) do parts[#parts + 1] = tostring(a) end
+	return table.concat(parts, "|")
+end
+
+local function hover(which, owner, list)
 	local tip = QL.Tip()
-	if a then
-		if hovered[which] ~= a or tip.owner ~= owner or not tip:IsShown() then
-			hovered[which] = a
-			showAreaTip(owner, a)
+	if list and #list > 0 then
+		local key = keyOf(list)
+		if hovered[which] ~= key or tip.owner ~= owner or not tip:IsShown() then
+			hovered[which] = key
+			showAreaTip(owner, list)
 		else
 			tip:PlaceAtCursor() -- follow the cursor
 		end
@@ -411,7 +444,7 @@ function QL.HoverMinimapAreas()
 	local a
 	if #current > 0 and mouseOver(Minimap) and GetCursorPosition then
 		local x, y = minimapCursor()
-		if x then a = QL.AreaAt(QL.minimapAreaHits, x, y) end
+		if x then a = QL.AreasAt(QL.minimapAreaHits, x, y) end
 	end
 	hover("minimap", Minimap, a)
 end
@@ -430,7 +463,7 @@ function QL.HoverWorldAreas()
 	local a
 	if wm and #current > 0 and WorldMapFrame and mouseOver(WorldMapFrame.ScrollContainer or WorldMapFrame) then
 		local x, y = worldCursor()
-		if x then a = QL.AreaAt(QL.worldAreaHits, x, y) end
+		if x then a = QL.AreasAt(QL.worldAreaHits, x, y) end
 	end
 	hover("world", wm, a)
 end

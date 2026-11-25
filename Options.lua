@@ -75,9 +75,11 @@ local ROWS = {
 	{ key = "nearbyTarget", page = "tracking", group = "Other quests nearby",
 		label = "When I target a creature of another quest", note = "A card names the quest; a click on it makes that quest current." },
 	{ key = "nearbyPlates", page = "tracking", group = "Other quests nearby",
-		label = "When such a creature comes into view", note = "From its nameplate; at most one card per quest every three minutes." },
+		label = "When such a creature comes into view", note = "From its nameplate (the game's nameplates have to be on)." },
 	{ key = "nearbyAreas", page = "tracking", group = "Other quests nearby",
 		label = "When I walk into another quest's area", note = "The areas the map rings show, for every quest in your log." },
+	{ key = "nearbyCooldown", page = "tracking", group = "Other quests nearby",
+		slider = { min = 1, max = 15, text = "The same quest's card again after %d min" }, note = "However it came up: target, nameplate or area." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 }

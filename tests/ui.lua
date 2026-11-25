@@ -1193,7 +1193,7 @@ Eq(cur.logRows[1].shown, true, "and opens")
 local logSlider
 for i = 1, 60 do
 	local f = _G["QuestLineageOption" .. i]
-	if f and f.scripts and f.scripts.OnValueChanged then logSlider = f end
+	if f and f.scripts and f.scripts.OnValueChanged and f.label and (f.label.text or ""):find("Quests in the list", 1, true) then logSlider = f end
 end
 Check(logSlider, "a slider row on the settings page")
 local realLog = QL.LogQuests
@@ -1319,7 +1319,12 @@ local tipText = {}
 for i = 1, tip:NumLines() do tipText[#tipText + 1] = tip.lines[i].text or "" end
 tipText = table.concat(tipText, "\n")
 Check(tipText:find("The Gathering", 1, true), "the quest: " .. tipText)
-Check(tipText:find("Area: Bob  0/1", 1, true), "and the area's objective")
+Check(tipText:find("Bob   0/1", 1, true), "the objective under the cursor first")
+Check(tip.lines[1].text:find("Bob", 1, true), "on the first line: " .. tip.lines[1].text)
+Check(tipText:find("Objective of The Gathering", 1, true), "then whose objective it is")
+local two = QL.AreasAt({ { x = 0, y = 0, r = 10, area = { questId = 3, label = "Wolf" } }, { x = 1, y = 0, r = 3, area = { questId = 3, label = "Bear" } } }, 1, 0)
+Eq(#two, 2, "overlapping rings of two objectives: both")
+Eq(two[1].label, "Bear", "the smaller first")
 cursorX = 100 + hit.x + hit.r + 5
 QL.HoverMinimapAreas()
 Eq(tip.shown, false, "hidden when the cursor leaves the area")
@@ -1415,6 +1420,35 @@ QL.lastNearbyHint = nil
 QL.CheckNearbyAreas(true)
 Eq(QL.lastNearbyHint, nil, "once per entry, not while standing in it")
 C_Map.GetPlayerMapPosition = realPos
+guids.target = nil
+QL.SetArrowTarget(3)
+QL.ClearToasts()
+-- the waiting time is a setting (minutes)
+local cdSlider
+for i = 1, 60 do
+	local f = _G["QuestLineageOption" .. i]
+	if f and f.scripts and f.scripts.OnValueChanged and f.label and (f.label.text or ""):find("card again after", 1, true) then cdSlider = f end
+end
+Check(cdSlider, "a waiting-time slider")
+cdSlider.scripts.OnValueChanged(cdSlider, 1)
+Eq(QL.DB().nearbyCooldown, 1, "one minute")
+local clock = 1000
+GetTime = function() return clock end
+QL.ResetNearby()
+QL.SetArrowTarget(2)
+guids.target = guids.nameplate2
+QL.lastNearbyHint = nil
+for _, fn in ipairs(QL.events.PLAYER_TARGET_CHANGED) do fn("PLAYER_TARGET_CHANGED") end
+Check(QL.lastNearbyHint, "first card")
+QL.lastNearbyHint = nil
+clock = 1000 + 50
+for _, fn in ipairs(QL.events.PLAYER_TARGET_CHANGED) do fn("PLAYER_TARGET_CHANGED") end
+Eq(QL.lastNearbyHint, nil, "not within the minute")
+clock = 1000 + 61
+for _, fn in ipairs(QL.events.PLAYER_TARGET_CHANGED) do fn("PLAYER_TARGET_CHANGED") end
+Check(QL.lastNearbyHint, "again after a minute")
+cdSlider.scripts.OnValueChanged(cdSlider, 3)
+GetTime = nil
 guids.target = nil
 QL.SetArrowTarget(3)
 QL.ClearToasts()

@@ -4,7 +4,7 @@
 --   plates   a creature whose nameplate comes into view does
 --   areas    you walk into one of another quest's objective areas  "You are in Wolf Hunt's area"
 -- Never for the current quest, a finished objective or a quest ready to hand in; one card per quest
--- every few minutes (COOLDOWN, whatever the reason); in combat the latest hint per quest waits for
+-- every few minutes (nearbyCooldown, whatever the reason); in combat the latest hint per quest waits for
 -- the fight to end. Settings: nearbyTarget, nearbyPlates, nearbyAreas (all on). The cards are
 -- toasts of kind "quest" (violet); with toasts off they are chat lines.
 --
@@ -13,7 +13,8 @@
 local _, QL = ...
 local L = QL.L
 
-local COOLDOWN = 180 -- seconds between two cards for the same quest
+-- minutes between two cards for the same quest (setting nearbyCooldown, 1-15)
+local function cooldown() return math.max(1, math.min(15, tonumber(QL.DB().nearbyCooldown) or 3)) * 60 end
 local AREA_EVERY = 2 -- seconds between two looks at where you stand
 local AREAS_EVERY = 15 -- seconds between two rebuilds of the other quests' areas
 
@@ -67,7 +68,7 @@ function QL.NearbyHint(questId, row, reason, name)
 	if QL.CurrentQuest and QL.CurrentQuest(ctx) == questId then return false end
 	if row and (row.done or (row.need and row.need > 0 and (row.have or 0) >= row.need)) then return false end
 	local last = shown[questId]
-	if last and now() - last < COOLDOWN then return false end
+	if last and now() - last < cooldown() then return false end
 	local h = { questId = questId, row = row, reason = reason, name = name }
 	if inCombat() then
 		waiting[questId] = h

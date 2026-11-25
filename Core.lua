@@ -41,6 +41,7 @@ QL.defaults = {
 	nearbyTarget = true,  -- a card when the creature you target counts for another quest
 	nearbyPlates = true,  -- ... when such a creature's nameplate comes into view
 	nearbyAreas = true,   -- ... when you walk into another quest's objective area
+	nearbyCooldown = 3,   -- minutes before the same quest's card can come again (1-15)
 	logObjectives = true, -- the list's rows show their objectives (each row can be minimised: logFolded)
 	questsHideChains = true, -- the main window's Quests tab leaves chain quests to the Chains tab
 	hideGameTracker = false, -- hide the game's own quest tracker (QuestLineage's window replaces it)
