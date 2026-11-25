@@ -71,6 +71,7 @@ LibQuestieDB = {
 				uiMapIdToAreaId = "return { [1411] = 14, [1412] = 215 }",
 				uiMapIdToAreaIdOverride = "return { [1414] = 10073 }",
 				subZoneToParentZone = "return { [220] = 215 }",
+				areaIdToUiMapId = "return { [14] = 1411, [215] = 1412 }",
 			} }
 		end,
 	},

@@ -560,7 +560,15 @@ function Inspector:Show(id, chain)
 
 	-- actions
 	self.y = self.y - 4
-	local actions = { { label = L("Link in chat"), click = function() QL.InsertQuestLink(id) end } }
+	local actions = {}
+	if QL.SetArrowTarget and status ~= "done" then
+		if QL.ArrowQuest() == id then
+			actions[#actions + 1] = { label = L("Stop the arrow"), click = function() QL.ClearArrow(); QL.RenderWindow(false) end }
+		else
+			actions[#actions + 1] = { label = L("Point the arrow"), click = function() QL.SetArrowTarget(id); QL.RenderWindow(false) end }
+		end
+	end
+	actions[#actions + 1] = { label = L("Link in chat"), click = function() QL.InsertQuestLink(id) end }
 	if ctx.log[id] and QuestMapFrame_OpenToQuestDetails then
 		actions[#actions + 1] = { label = L("Open in quest log"), click = function() pcall(QuestMapFrame_OpenToQuestDetails, id) end }
 	end

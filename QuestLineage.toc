@@ -16,10 +16,12 @@ Zone.lua
 State.lua
 Chain.lua
 Details.lua
+Nav.lua
 Theme.lua
 Tree.lua
 Inspector.lua
 Window.lua
+Arrow.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua

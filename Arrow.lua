@@ -1,0 +1,225 @@
+-- QuestLineage's own direction arrow: a heads-up arrow that turns toward the quest's current
+-- spot (its giver, the nearest creature or object for its unfinished objectives, or where it is
+-- handed in), with the quest's name, the distance and what to do there.
+--
+--   QL.SetArrowTarget(questId)   point at a quest (kept per character across reloads)
+--   QL.ClearArrow()
+--   QL.ArrowQuest() -> questId | nil
+--
+-- Colour shows how well you face it: the accent when ahead, amber to the side, red behind.
+-- Left-drag moves it (arrowPoint), right-click stops it. It follows the quest: once the
+-- objectives are done it turns to the hand-in; when the quest is handed in it says so and stops.
+
+local _, QL = ...
+
+local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
+local ARRIVED = 10      -- yards
+local UPDATE = 0.03     -- seconds between updates
+
+local frame, target, questId
+local elapsedSince = 0
+
+local function L(s) return QL.L(s) end
+
+local function charKey()
+	local name = UnitName and UnitName("player") or "?"
+	local realm = GetRealmName and GetRealmName() or "?"
+	return tostring(name) .. "-" .. tostring(realm)
+end
+
+local function saved()
+	local db = QL.DB()
+	if type(db.arrowTargets) ~= "table" then db.arrowTargets = {} end
+	return db.arrowTargets
+end
+
+local function blend(a, b, t)
+	return a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t
+end
+
+-- Facing accuracy -> colour: 1 ahead (accent), 0.5 to the side (amber), 0 behind (red).
+local AMBER = { 0.984, 0.749, 0.141 }
+function QL.ArrowColor(rotation)
+	local C = QL.Theme.C
+	local err = math.abs(((rotation + math.pi) % (2 * math.pi)) - math.pi)
+	local accuracy = 1 - err / math.pi
+	if accuracy >= 0.5 then return blend(AMBER, C.accent, (accuracy - 0.5) * 2) end
+	return blend(C.danger, AMBER, accuracy * 2)
+end
+
+local function build()
+	local T, C = QL.Theme, QL.Theme.C
+	local f = CreateFrame("Frame", "QuestLineageArrow", UIParent)
+	frame = f
+	f:SetSize(150, 150)
+	local p = QL.DB().arrowPoint
+	if type(p) == "table" and p[1] then f:SetPoint(p[1], UIParent, p[2], p[3], p[4]) else f:SetPoint("TOP", UIParent, "TOP", 0, -140) end
+	f:SetFrameStrata("MEDIUM")
+	f:SetClampedToScreen(true)
+	f:SetMovable(true)
+	f:EnableMouse(true)
+	f:RegisterForDrag("LeftButton")
+	f:SetScript("OnDragStart", f.StartMoving)
+	f:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		local point, _, relPoint, x, y = self:GetPoint(1)
+		QL.DB().arrowPoint = { point, relPoint, x, y }
+	end)
+	f:SetScript("OnMouseUp", function(_, button) if button == "RightButton" then QL.ClearArrow() end end)
+
+	f.title = T.Text(f, 13, C.text)
+	f.title:SetPoint("TOP", 0, 0)
+	f.title:SetJustifyH("CENTER")
+	f.title:SetWidth(240)
+	f.title:SetShadowOffset(1, -1)
+
+	f.glow = f:CreateTexture(nil, "BACKGROUND")
+	f.glow:SetTexture(MEDIA .. "arrow_glow")
+	f.glow:SetSize(104, 104)
+	f.glow:SetPoint("CENTER", 0, 6)
+	f.arrow = f:CreateTexture(nil, "ARTWORK")
+	f.arrow:SetTexture(MEDIA .. "arrow")
+	f.arrow:SetSize(62, 62)
+	f.arrow:SetPoint("CENTER", 0, 6)
+	f.shade = f:CreateTexture(nil, "ARTWORK", nil, 1)
+	f.shade:SetTexture(MEDIA .. "arrow_shade")
+	f.shade:SetAllPoints(f.arrow)
+
+	f.dist = T.Text(f, 17, C.text)
+	f.dist:SetPoint("TOP", f.arrow, "BOTTOM", 0, -6)
+	f.dist:SetJustifyH("CENTER")
+	f.dist:SetShadowOffset(1, -1)
+	f.label = T.Text(f, 11, C.muted)
+	f.label:SetPoint("TOP", f.dist, "BOTTOM", 0, -3)
+	f.label:SetJustifyH("CENTER")
+	f.label:SetWidth(240)
+	f.label:SetShadowOffset(1, -1)
+
+	f:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+		if questId then QL.FillQuestTooltip(GameTooltip, questId) end
+		GameTooltip:AddLine(L("Drag: move · Right-click: stop"), 0.6, 0.6, 0.6)
+		GameTooltip:Show()
+	end)
+	f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	f:SetScript("OnUpdate", function(_, elapsed)
+		elapsedSince = elapsedSince + (elapsed or 0)
+		if elapsedSince < UPDATE then return end
+		elapsedSince = 0
+		local ok, err = pcall(QL.UpdateArrow)
+		if not ok then QL.Debug("arrow: " .. tostring(err)) end
+	end)
+	f:Hide()
+end
+
+local function setRotation(r)
+	frame.arrow:SetRotation(r)
+	frame.shade:SetRotation(r)
+end
+
+function QL.UpdateArrow()
+	if not frame or not target then return end
+	local loc = QL.Locate(target)
+	frame.title:SetText(QL.QuestTitle(questId))
+	frame.label:SetText(target.label or "")
+	if not loc then
+		setRotation(0)
+		frame.arrow:SetVertexColor(0.5, 0.5, 0.5, 0.5)
+		frame.glow:SetAlpha(0)
+		frame.dist:SetText(#target.points == 0 and L("No location data") or L("No position here"))
+		return
+	end
+	if loc.otherMap then
+		setRotation(0)
+		frame.arrow:SetVertexColor(0.6, 0.6, 0.65, 0.45)
+		frame.glow:SetAlpha(0)
+		frame.dist:SetText(L("Head to %s"):format(QL.MapName(loc.otherMap.map) or "?"))
+		return
+	end
+	local C = QL.Theme.C
+	if loc.dist < ARRIVED then
+		setRotation(0)
+		local g = QL.Theme.STATUS.done
+		frame.arrow:SetVertexColor(g[1], g[2], g[3], 0.9)
+		frame.glow:SetVertexColor(g[1], g[2], g[3], 1)
+		frame.glow:SetAlpha(0.55)
+		frame.dist:SetText(target.kind == "objective" and L("You are there: look around") or L("Arrived"))
+		return
+	end
+	local facing = GetPlayerFacing and GetPlayerFacing()
+	if facing ~= nil and issecretvalue and issecretvalue(facing) then facing = nil end
+	local r, g, b = C.accent[1], C.accent[2], C.accent[3]
+	if facing then
+		local rot = QL.Bearing(loc.dx, loc.dy, facing)
+		setRotation(rot)
+		r, g, b = QL.ArrowColor(rot)
+	end
+	frame.arrow:SetVertexColor(r, g, b, 1)
+	frame.glow:SetVertexColor(r, g, b, 1)
+	frame.glow:SetAlpha(0.32)
+	frame.dist:SetText(L("%d yd"):format(math.floor(loc.dist + 0.5)))
+end
+
+-- Rebuild the target from the quest's state (pick up -> objectives -> hand in).
+local function refreshTarget()
+	if not questId then return end
+	local ctx = QL.Context()
+	if QL.NodeStatus(questId, ctx) == "done" then
+		QL.Print(L("Quest handed in: ") .. QL.QuestTitle(questId))
+		QL.ClearArrow()
+		QL.Fire("ARROW_QUEST_DONE")
+		return
+	end
+	local new = QL.QuestTarget(questId, ctx)
+	if not new then QL.ClearArrow(); return end
+	if not target or new.kind ~= target.kind or new.label ~= target.label then target = new end
+end
+
+function QL.SetArrowTarget(id)
+	id = tonumber(id)
+	if not id then return end
+	if not frame and CreateFrame then build() end
+	questId = id
+	target = nil
+	refreshTarget()
+	if not target then return end
+	saved()[charKey()] = id
+	if frame then
+		frame:Show()
+		pcall(QL.UpdateArrow)
+	end
+	QL.Fire("ARROW_CHANGED", id)
+end
+
+function QL.ClearArrow()
+	questId, target = nil, nil
+	saved()[charKey()] = nil
+	if frame then frame:Hide() end
+	QL.Fire("ARROW_CHANGED", nil)
+end
+
+function QL.ArrowQuest() return questId end
+function QL.ArrowTarget() return target end
+
+-- quest log changes move the arrow along (objectives done -> hand in; handed in -> stop)
+QL.On("STATE_CHANGED", function()
+	if questId then
+		local ok, err = pcall(refreshTarget)
+		if not ok then QL.Debug("arrow target: " .. tostring(err)) end
+	end
+end)
+
+-- A handed-in quest leaves the log before the client may report it completed; without this it
+-- could read as "available" for a moment and the arrow would turn back to its giver.
+QL.Event("QUEST_TURNED_IN", function(_, id)
+	if id and id == questId then
+		QL.Print(L("Quest handed in: ") .. QL.QuestTitle(questId))
+		QL.ClearArrow()
+		QL.Fire("ARROW_QUEST_DONE", id)
+	end
+end)
+
+QL.Event("PLAYER_LOGIN", function()
+	local id = saved()[charKey()]
+	if id then QL.WhenIndexed(function() QL.SetArrowTarget(id) end) end
+end)

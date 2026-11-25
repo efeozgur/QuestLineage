@@ -28,7 +28,7 @@ end
 
 local function zoneData()
 	if maps then return maps end
-	maps = { ui = {}, parent = {} }
+	maps = { ui = {}, parent = {}, area = {} }
 	local lib = _G.LibQuestieDB
 	local support = lib and lib.Support
 	local zoneDB
@@ -43,12 +43,22 @@ local function zoneData()
 	for _, key in ipairs({ "subZoneToParentZone", "subZoneToParentZoneOverride" }) do
 		for k, v in pairs(asTable(private[key])) do maps.parent[k] = v end
 	end
+	for _, key in ipairs({ "areaIdToUiMapId", "areaIdToUiMapIdOverride" }) do
+		for k, v in pairs(asTable(private[key])) do maps.area[k] = v end
+	end
 	return maps
 end
 
 function QL.ResetZones()
 	maps = nil
 	QL.zoneChainCache = {}
+end
+
+-- The uiMapID a spawn's area is drawn on: the area's own map, else its zone's.
+function QL.AreaUiMap(area)
+	if type(area) ~= "number" then return nil end
+	local m = zoneData().area
+	return m[area] or m[QL.TopArea(area) or area]
 end
 
 function QL.TopArea(area)

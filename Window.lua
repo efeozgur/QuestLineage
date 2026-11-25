@@ -77,7 +77,10 @@ local function newRow(list, height)
 		GameTooltip:Hide()
 	end)
 	r:SetScript("OnClick", function(self)
-		if self.openId then QL.Open(self.openId) end
+		if not self.openId then return end
+		-- the Quests list also points the arrow at the quest
+		if self.arrowOnClick and QL.SetArrowTarget then QL.SetArrowTarget(self.openId) end
+		QL.Open(self.openId)
 	end)
 	return r
 end
@@ -153,6 +156,7 @@ local function renderZone()
 	end
 	for i, row in ipairs(rows) do
 		local r = listRow(list, i, ZONE_ROW_H)
+		r.arrowOnClick = nil
 		local e, p = row.entry, row.progress
 		r.questId = e.head
 		r.openId = p.focus
@@ -229,6 +233,7 @@ local function renderQuests()
 	for i, q in ipairs(quests) do
 		local r = listRow(list, i, QUEST_ROW_H)
 		r.questId, r.openId = q.id, q.id
+		r.arrowOnClick = true
 		r.title:SetText(QL.QuestTitle(q.id))
 		r.title:SetTextColor(unpack(C.text))
 		local s = T.STATUS[q.status] or T.STATUS.available
@@ -245,6 +250,9 @@ local function renderQuests()
 		end
 		if r.bar then r.bar:Hide() end
 		selectRow(r, q.id == focusId)
+		if QL.ArrowQuest and QL.ArrowQuest() == q.id then
+			r.title:SetText(T.Hex(C.accent) .. "» |r" .. QL.QuestTitle(q.id))
+		end
 	end
 	hideRows(list, #quests + 1)
 	list:SetContentHeight(#quests * QUEST_ROW_H + 8)
@@ -279,6 +287,7 @@ local function renderSearch()
 	local ctx = QL.Context()
 	for i, id in ipairs(ids) do
 		local r = listRow(list, i, SEARCH_ROW_H)
+		r.arrowOnClick = nil
 		r.questId, r.openId = id, id
 		r.title:SetText(QL.QuestTitle(id))
 		r.title:SetTextColor(unpack(C.text))
@@ -712,5 +721,6 @@ local function schedule()
 end
 QL.On("STATE_CHANGED", schedule)
 QL.On("SETTING_CHANGED", schedule)
+QL.On("ARROW_CHANGED", schedule)
 QL.Event("ZONE_CHANGED_NEW_AREA", schedule)
 QL.Event("PLAYER_ENTERING_WORLD", schedule)

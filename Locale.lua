@@ -144,6 +144,20 @@ local TR = {
 	["No quests to take here right now."] = "Şu an burada alınacak görev yok.",
 	["%d quests · %d in your log"] = "%d görev · %d günlükte",
 	["no XP data"] = "XP verisi yok",
+	-- arrow
+	["Turn in: "] = "Teslim: ",
+	["Pick up: "] = "Al: ",
+	["Explore"] = "Keşfet",
+	["No location data"] = "Konum verisi yok",
+	["No position here"] = "Burada konum alınamıyor",
+	["Head to %s"] = "%s bölgesine git",
+	["You are there: look around"] = "Oradasın: çevrene bak",
+	["Arrived"] = "Vardın",
+	["%d yd"] = "%d yd",
+	["Quest handed in: "] = "Görev teslim edildi: ",
+	["Drag: move · Right-click: stop"] = "Sürükle: taşı · Sağ tık: durdur",
+	["Point the arrow"] = "Oku göster",
+	["Stop the arrow"] = "Oku durdur",
 }
 QL.TR = TR
 

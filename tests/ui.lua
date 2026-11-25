@@ -30,6 +30,7 @@ local function mock(kind, name)
 		self.gradient = nil
 	end
 	function mt.SetGradient(self, dir, c1, c2) self.gradient = { dir, c1, c2 } end
+	function mt.SetRotation(self, r) self.rotation = r end
 	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
 	function mt.SetColorTexture(self, ...) numbers("SetColorTexture", ...) end
 	function mt.SetScript(self, s, fn) self.scripts[s] = fn end
@@ -104,7 +105,13 @@ C_QuestLog = {
 local tooltipPost
 TooltipDataProcessor = { AddTooltipPostCall = function(_, fn) tooltipPost = fn end }
 Enum = { TooltipDataType = { Unit = 2 } }
+CreateVector2D = function(x, y) return { x = x, y = y, GetXY = function(v) return v.x, v.y end } end
+function GetPlayerFacing() return 0 end
+function UnitName() return "Tester" end
+function GetRealmName() return "Realm" end
 C_Map = {
+	GetPlayerMapPosition = function() return CreateVector2D(0.5, 0.4) end,
+	GetMapWorldSize = function() return 1000, 800 end,
 	GetBestMapForUnit = function() return 1411 end,
 	GetMapInfo = function(id) if id == 1411 then return { name = "Durotar", parentMapID = 1414 } end end,
 	GetAreaInfo = function(area) return ({ [14] = "Durotar", [215] = "Mulgore" })[area] end,
@@ -115,7 +122,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -346,6 +353,49 @@ Check(f.infoMeta.text:find("tamam", 1, true), "Turkish interface text")
 Eq(f.zoneTab.label.text, "Zincirler", "Turkish tab label")
 Eq(f.questsTab.label.text, "Görevler", "Turkish quests tab")
 Eq(f.infoXP.text, "+670 XP", "XP stays XP in Turkish")
+
+-- Arrow: a click in the Quests list points it at the quest -------------------------------------
+QL.Set("lang", "en")
+QL.ShowPage("quests")
+local qrow
+for _, r in ipairs(f.questsPage.list.rows) do if r.shown and r.questId == 5 then qrow = r end end
+Check(qrow, "Rumours row")
+qrow.scripts.OnClick(qrow)
+Eq(QL.ArrowQuest(), 5, "the arrow follows the clicked quest")
+local arrow = QuestLineageArrow
+Check(arrow and arrow.shown, "arrow shown")
+Eq(QL.ArrowTarget().kind, "pickup", "Rumours is not in the log: go to its giver")
+QL.UpdateArrow()
+Eq(arrow.title.text, "Rumours", "quest name on the arrow")
+Eq(arrow.dist.text, "No location data", "Rumours has no giver data in the fixture")
+Eq(QuestLineageDB.arrowTargets["Tester-Realm"], 5, "kept per character")
+Check(f.questsPage.list.rows[1].title.text:find("»", 1, true), "the arrow's quest is marked in the list")
+-- a quest with a place: The Gathering's giver Bob at 45.2, 63.1; the player at 50, 40
+QL.SetArrowTarget(3)
+QL.UpdateArrow()
+Eq(arrow.dist.text, "191 yd", "distance sqrt(48^2 + 184.8^2): " .. arrow.dist.text)
+Check(arrow.label.text:find("Bob", 1, true), "what to do there: " .. arrow.label.text)
+Check(arrow.arrow.rotation and arrow.arrow.rotation > 0, "arrow turned")
+Eq(arrow.shade.rotation, arrow.arrow.rotation, "the facet turns with it")
+-- the detail panel offers to stop it
+QL.Open(3)
+local labels = {}
+for _, b in ipairs(f.inspector.pools.button or {}) do if b.shown then labels[#labels + 1] = b.label.text end end
+Check(table.concat(labels, "|"):find("Stop the arrow", 1, true), "stop button: " .. table.concat(labels, "|"))
+-- handed in: the arrow says so and stops
+for _, fn in ipairs(QL.events.QUEST_TURNED_IN) do fn("QUEST_TURNED_IN", 3) end
+Eq(QL.ArrowQuest(), nil, "stopped after the hand-in")
+Eq(arrow.shown, false, "hidden")
+-- right-click stops it too
+QL.SetArrowTarget(3)
+arrow.scripts.OnMouseUp(arrow, "RightButton")
+Eq(QL.ArrowQuest(), nil, "right-click stops")
+-- colour by facing
+local r1, g1, b1 = QL.ArrowColor(0)
+local r2 = QL.ArrowColor(math.pi)
+Check(math.abs(r1 - QL.Theme.C.accent[1]) < 1e-9, "ahead: accent")
+Check(math.abs(r2 - QL.Theme.C.danger[1]) < 1e-9, "behind: red")
+QL.Open(3)
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton
