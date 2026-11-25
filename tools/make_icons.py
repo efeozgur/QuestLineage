@@ -7,6 +7,7 @@ Needs Pillow. White on transparent, 64x64; the game tints them (muted, or the ac
   nav_search.tga   a magnifying glass
   corpse.tga       a tombstone (the corpse marker on the maps)
   speaker.tga      a speaker with sound waves (the quest card's voice button)
+  area_*.tga       the map's objective areas: soft fill, thin ring, dotted ring
 """
 import os
 from PIL import Image, ImageDraw
@@ -236,6 +237,51 @@ def speaker():
     save(img, "speaker.tga")
 
 
+def area_textures():
+    """The map's objective areas, 256x256, white (tinted in game):
+      area_soft.tga  a soft fill: clear in the middle, rising towards the edge, fading out past it
+      area_ring.tga  a thin anti-aliased circle
+      area_dash.tga  a thin dotted circle (other quests' areas)"""
+    import math
+    N = 256
+    big = N * SS
+    # soft fill, computed per pixel at the final size
+    img = Image.new("RGBA", (N, N), (255, 255, 255, 0))
+    px = img.load()
+    c = (N - 1) / 2
+    R = N / 2 - 2
+    for y in range(N):
+        for x in range(N):
+            r = math.hypot(x - c, y - c) / R
+            if r <= 1:
+                a = 0.10 + 0.55 * (r ** 3)          # faint centre, brighter towards the edge
+            elif r <= 1.04:
+                a = 0.65 * (1 - (r - 1) / 0.04)    # a soft falloff just past it
+            else:
+                a = 0
+            px[x, y] = (255, 255, 255, int(255 * max(0, min(1, a))))
+    img.save(os.path.join(OUT, "area_soft.tga"))
+    print("wrote area_soft.tga")
+    # thin ring
+    img = Image.new("RGBA", (big, big), (255, 255, 255, 0))
+    d = ImageDraw.Draw(img)
+    w = 3 * SS
+    d.ellipse((w, w, big - w, big - w), outline=W, width=w)
+    img.resize((N, N), Image.LANCZOS).save(os.path.join(OUT, "area_ring.tga"))
+    print("wrote area_ring.tga")
+    # dotted ring
+    img = Image.new("RGBA", (big, big), (255, 255, 255, 0))
+    d = ImageDraw.Draw(img)
+    cc, rr, dot = big / 2, big / 2 - 4 * SS, 2.6 * SS
+    n = 48
+    for k in range(n):
+        t = 2 * math.pi * k / n
+        x, y = cc + rr * math.cos(t), cc + rr * math.sin(t)
+        d.ellipse((x - dot, y - dot, x + dot, y + dot), fill=W)
+    img.resize((N, N), Image.LANCZOS).save(os.path.join(OUT, "area_dash.tga"))
+    print("wrote area_dash.tga")
+
+
 def logo():
     """The addon's own icon (the AddOns list, ## IconTexture): in colour, not tinted by the game.
     A dark rounded tile with a family tree in the accent gradient: one quest above, two below."""
@@ -271,6 +317,7 @@ if __name__ == "__main__":
     logo()
     quest_mark()
     corpse()
+    area_textures()
     speaker()
     quests()
     chains()

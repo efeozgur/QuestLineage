@@ -7,6 +7,9 @@
 --   world map  a filled disc, a ring, a soft glow, and the objective's name and counter above it
 --   minimap    the disc and ring, kept inside the minimap's circle; an area beyond the edge shows
 --              as a small mark on the rim pointing to it
+-- Look (Media/area_*.tga from tools/make_icons.py): the current quest's areas are a soft fill
+-- that rises towards the edge and a thin ring, breathing slowly; another quest's area is only a
+-- faint dotted circle. The ring under the cursor brightens (another quest's gets a soft fill).
 -- Hovering an area on either map shows the quest in a tooltip beside the cursor (no mouse frames
 -- are added over the maps, so clicks, pings and map dragging work as before: the cursor is
 -- tested against the drawn circles).
@@ -163,6 +166,47 @@ local function recompute(force)
 	QL.drawnAreas = current
 end
 
+-- Look ------------------------------------------------------------------------------------------------
+
+local hot = { minimap = {}, world = {} } -- the areas under the cursor, per map
+
+local function lit(a) return hot.minimap[a] or hot.world[a] end
+
+-- Paints one area's parts (disc = soft fill, ring = thin or dotted circle) at a point.
+local function style(p, a, size, anchor, point, x, y)
+	local c = a.color
+	local on = lit(a)
+	p.disc:SetSize(size, size)
+	p.disc:ClearAllPoints(); p.disc:SetPoint("CENTER", anchor, point, x, y)
+	p.ring:SetSize(size, size)
+	p.ring:ClearAllPoints(); p.ring:SetPoint("CENTER", anchor, point, x, y)
+	if a.other then
+		p.ring:SetTexture(MEDIA .. "area_dash")
+		p.look = "dotted"
+		p.ring:SetVertexColor(c[1], c[2], c[3], on and 0.95 or 0.42)
+		p.disc:SetVertexColor(c[1], c[2], c[3], 0.28)
+		p.disc:SetShown(on and true or false)
+		p.breathe = false
+	else
+		p.ring:SetTexture(MEDIA .. "area_ring")
+		p.look = "ring"
+		p.ring:SetVertexColor(c[1], c[2], c[3], on and 1 or 0.7)
+		p.disc:SetVertexColor(c[1], c[2], c[3], on and 0.7 or 0.42)
+		p.disc:Show()
+		p.breathe = not on
+	end
+	p.disc:SetAlpha(1)
+	p.ring:Show()
+end
+
+-- the current quest's fills breathe slowly (a gentle rise and fall, never a blink)
+local function breathe(parts, t)
+	local f = 0.78 + 0.22 * math.sin((t or 0) * 1.4)
+	for _, p in ipairs(parts) do
+		if p.breathe and p.disc:IsShown() then p.disc:SetAlpha(f) end
+	end
+end
+
 -- Minimap ---------------------------------------------------------------------------------------------
 
 local mm, mmParts, rimParts = nil, {}, {}
@@ -196,9 +240,9 @@ local function mmPart(i)
 	if p then return p end
 	p = {}
 	p.disc = mm:CreateTexture(nil, "ARTWORK")
-	p.disc:SetTexture(MEDIA .. "disc")
+	p.disc:SetTexture(MEDIA .. "area_soft")
 	p.ring = mm:CreateTexture(nil, "ARTWORK", nil, 1)
-	p.ring:SetTexture(MEDIA .. "ring")
+	p.ring:SetTexture(MEDIA .. "area_ring")
 	mmParts[i] = p
 	return p
 end
@@ -245,13 +289,7 @@ local function drawMinimap()
 				if fit then
 					n = n + 1
 					local p = mmPart(n)
-					p.disc:SetSize(fit * 2, fit * 2)
-					p.disc:ClearAllPoints(); p.disc:SetPoint("CENTER", Minimap, "CENTER", cx, cy)
-					p.disc:SetVertexColor(c[1], c[2], c[3], a.other and 0.07 or 0.16)
-					p.ring:SetSize(fit * 2, fit * 2)
-					p.ring:ClearAllPoints(); p.ring:SetPoint("CENTER", Minimap, "CENTER", cx, cy)
-					p.ring:SetVertexColor(c[1], c[2], c[3], a.other and 0.45 or 0.8)
-					p.disc:Show(); p.ring:Show()
+					style(p, a, fit * 2, Minimap, "CENTER", cx, cy)
 					QL.minimapAreaHits[#QL.minimapAreaHits + 1] = { x = cx, y = cy, r = fit, area = a }
 				end
 			end
@@ -278,15 +316,16 @@ local function wmPart(i)
 	if p then return p end
 	local T = QL.Theme
 	p = {}
-	p.glow = wm:CreateTexture(nil, "BORDER")
-	p.glow:SetTexture(MEDIA .. "arrow_glow")
+	p.glow = wm:CreateTexture(nil, "BORDER") -- kept for older callers; not shown any more
+	p.glow:Hide()
 	p.disc = wm:CreateTexture(nil, "ARTWORK")
-	p.disc:SetTexture(MEDIA .. "disc")
+	p.disc:SetTexture(MEDIA .. "area_soft")
 	p.ring = wm:CreateTexture(nil, "ARTWORK", nil, 1)
-	p.ring:SetTexture(MEDIA .. "ring")
-	p.label = T.Text(wm, 12, T.C.text, "OVERLAY", true)
+	p.ring:SetTexture(MEDIA .. "area_ring")
+	p.label = T.Text(wm, 11, T.C.text, "OVERLAY", true)
 	p.label:SetJustifyH("CENTER")
 	p.label:SetShadowOffset(1, -1)
+	p.label:SetAlpha(0.85)
 	wmParts[i] = p
 	return p
 end
@@ -318,17 +357,8 @@ local function drawWorldMap()
 			local r = math.max(10 / zoom, a.r / mw * cw)
 			local c = a.color
 			local px, py = x * cw, -y * ch
-			p.glow:SetSize(r * 2.6, r * 2.6)
-			p.glow:ClearAllPoints(); p.glow:SetPoint("CENTER", wm, "TOPLEFT", px, py)
-			p.glow:SetVertexColor(c[1], c[2], c[3], 0.22)
-			p.disc:SetSize(r * 2, r * 2)
-			p.disc:ClearAllPoints(); p.disc:SetPoint("CENTER", wm, "TOPLEFT", px, py)
-			p.disc:SetVertexColor(c[1], c[2], c[3], a.other and 0.07 or 0.18)
-			p.ring:SetSize(r * 2, r * 2)
-			p.ring:ClearAllPoints(); p.ring:SetPoint("CENTER", wm, "TOPLEFT", px, py)
-			p.ring:SetVertexColor(c[1], c[2], c[3], a.other and 0.5 or 0.9)
-			p.disc:Show(); p.ring:Show()
-			p.glow:SetShown(not a.other)
+			style(p, a, r * 2, wm, "TOPLEFT", px, py)
+			p.glow:Hide()
 			QL.worldAreaHits[#QL.worldAreaHits + 1] = { x = x, y = y, rx = r / cw, ry = r / ch, area = a }
 			-- one label per objective, on its biggest area
 			if not a.other and not labelled[a.label or ""] then
@@ -361,7 +391,7 @@ local function ensureWorld()
 		since = since + (elapsed or 0)
 		hoverT = hoverT + (elapsed or 0)
 		if since >= 0.5 then since = 0; pcall(drawWorldMap) end
-		if hoverT >= 0.05 then hoverT = 0; pcall(QL.HoverWorldAreas) end
+		if hoverT >= 0.05 then hoverT = 0; pcall(QL.HoverWorldAreas); breathe(wmParts, clock()) end
 	end)
 	if wm.SetScript and WorldMapFrame.HookScript then
 		WorldMapFrame:HookScript("OnHide", function() hover("world", wm, nil) end)
@@ -455,18 +485,29 @@ local function keyOf(list)
 	return table.concat(parts, "|")
 end
 
+QL.AreaParts = function() return mmParts, wmParts end -- for tests
+
+local function setHot(which, list)
+	hot[which] = {}
+	for _, a in ipairs(list or {}) do hot[which][a] = true end
+	pcall(drawMinimap)
+	pcall(drawWorldMap)
+end
+
 local function hover(which, owner, list)
 	local tip = QL.Tip()
 	if list and #list > 0 then
 		local key = keyOf(list)
 		if hovered[which] ~= key or tip.owner ~= owner or not tip:IsShown() then
 			hovered[which] = key
+			setHot(which, list)
 			showAreaTip(owner, list)
 		else
 			tip:PlaceAtCursor() -- follow the cursor
 		end
 	elseif hovered[which] then
 		hovered[which] = nil
+		setHot(which, nil)
 		if tip.owner == owner then tip:Hide() end
 	end
 end
@@ -532,7 +573,12 @@ QL.Event("PLAYER_LOGIN", function()
 			since = since + (elapsed or 0)
 			again = again + (elapsed or 0)
 			if again >= 2 then again = 0; recompute() end -- objectives move on, the current quest changes
-			if since >= 0.05 then since = 0; pcall(drawMinimap); pcall(QL.HoverMinimapAreas) end
+			if since >= 0.05 then
+				since = 0
+				pcall(drawMinimap)
+				pcall(QL.HoverMinimapAreas)
+				breathe(mmParts, clock())
+			end
 		end)
 	end
 	if WorldMapFrame and WorldMapFrame.HookScript then

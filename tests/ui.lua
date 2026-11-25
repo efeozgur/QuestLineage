@@ -1359,6 +1359,16 @@ for i = 1, QL.Tip():NumLines() do otext[#otext + 1] = QL.Tip().lines[i].text or 
 otext = table.concat(otext, " / ")
 Check(otext:find("The Gathering", 1, true), "its own quest in the tooltip: " .. otext)
 Check(otext:find("Objective of The Gathering", 1, true), "whose objective it is, not the current quest's")
+-- the look: another quest's area is a dotted circle, its soft fill only while hovered
+local mmp = QL.AreaParts()
+local otherPart
+for _, pp in ipairs(mmp) do if pp.ring.shown and pp.look == "dotted" then otherPart = pp end end
+Check(otherPart, "a dotted circle for another quest")
+Eq(otherPart.disc.shown, true, "lit while the cursor is on it")
+GetCursorPosition = function() return 100 + oh.x + 500, 100 + oh.y end
+QL.HoverMinimapAreas()
+Eq(otherPart.disc.shown, false, "no fill once the cursor leaves")
+Eq(otherPart.breathe, false, "other quests' rings stay still")
 QL.Tip():Hide()
 Minimap.IsMouseOver, Minimap.IsVisible, Minimap.GetCenter = nil, nil, nil
 GetCursorPosition = function() return 0, 0 end
