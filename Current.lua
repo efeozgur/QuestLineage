@@ -495,9 +495,19 @@ QL.Event("PLAYER_LOGIN", function()
 	if C_Timer and C_Timer.After then C_Timer.After(2, function() pcall(QL.RefreshCurrent) end) end
 end)
 
+-- A quest you accept becomes the current quest (setting acceptedCurrent): the arrow turns to it,
+-- since the window follows the arrow's quest. Left alone while a route runs or the arrow points at
+-- your corpse.
 QL.Event("QUEST_ACCEPTED", function(_, a, b)
 	local id = type(b) == "number" and b or a
-	if type(id) == "number" and id > 0 then lastProgress = id end
+	if type(id) ~= "number" or id <= 0 then return end
+	lastProgress = id
+	if QL.DB().acceptedCurrent == false then return end
+	if QL.RouteActive and QL.RouteActive() then return end
+	local t = QL.ArrowTarget and QL.ArrowTarget()
+	if t and t.corpse then return end
+	if QL.SetArrowTarget then pcall(QL.SetArrowTarget, id, true) end
+	pcall(QL.RefreshCurrent)
 end)
 
 QL.On("STATE_CHANGED", function()

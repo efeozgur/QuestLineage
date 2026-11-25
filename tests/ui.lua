@@ -573,6 +573,16 @@ Check(qc.sections.tasks.shown and qc.sections.tasks.body.text:find("Wolf slain: 
 C_QuestLog.GetQuestObjectives = realObjectives
 for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
 -- the main window on accept
+-- an accepted quest becomes the current quest
+QL.SetArrowTarget(3)
+for _, fn in ipairs(QL.events.QUEST_ACCEPTED) do fn("QUEST_ACCEPTED", 2) end
+Eq(QL.ArrowQuest(), 2, "the arrow turns to the accepted quest")
+Eq(QL.CurrentQuest(), 2, "it is the current quest")
+QL.Set("acceptedCurrent", false)
+for _, fn in ipairs(QL.events.QUEST_ACCEPTED) do fn("QUEST_ACCEPTED", 3) end
+Eq(QL.ArrowQuest(), 2, "left alone when the setting is off")
+QL.Set("acceptedCurrent", true)
+QL.SetArrowTarget(3)
 local openedId
 local realOpen = QL.Open
 QL.Open = function(id) openedId = id end

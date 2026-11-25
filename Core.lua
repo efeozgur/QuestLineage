@@ -43,6 +43,7 @@ QL.defaults = {
 	questCardStory = false, -- its story section open
 	hideGameQuestFrame = false, -- the game's quest window kept out of sight while the card shows
 	openOnAccept = false, -- the main window opens on a quest you accept
+	acceptedCurrent = true, -- a quest you accept becomes the current quest (the arrow turns to it)
 	voiceAutoplay = false, -- the quest card starts WoWTR Voices' Turkish reading by itself
 	corpseRoute = true,   -- while dead: a path to the corpse on the minimap and world map, and the arrow
 	nameplates = true,    -- quest badges and counters on objective creatures' nameplates

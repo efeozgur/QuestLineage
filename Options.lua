@@ -66,6 +66,8 @@ local ROWS = {
 
 	{ key = "voiceAutoplay", parent = "questCard", page = "tracking", group = "Turkish voice-over",
 		label = "Read the quest aloud as soon as the card opens", note = "Off: nothing plays until you click the speaker on the card. Needs WoWTR Voices." },
+	{ key = "acceptedCurrent", page = "tracking", group = "Current quest window",
+		label = "A quest I accept becomes the current quest", note = "The arrow turns to it (not while a route runs)." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 }
@@ -375,9 +377,21 @@ QL.RefreshOptions = refresh
 
 -- The plain rows of one page, under their group headings.
 local function buildRows(pageId, y)
-	local group
+	-- rows grouped by group, the groups in the order they first appear (rows can be added at the
+	-- end of ROWS without renumbering the frames)
+	local groups, byGroup = {}, {}
 	for i, row in ipairs(ROWS) do
 		if row.page == pageId then
+			if not byGroup[row.group] then byGroup[row.group] = {}; groups[#groups + 1] = row.group end
+			table.insert(byGroup[row.group], i)
+		end
+	end
+	local order = {}
+	for _, g in ipairs(groups) do for _, i in ipairs(byGroup[g]) do order[#order + 1] = i end end
+	local group
+	for _, i in ipairs(order) do
+		local row = ROWS[i]
+		do
 			if row.group ~= group then
 				if group then y = y - 8 end
 				group = row.group
