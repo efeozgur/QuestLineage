@@ -36,6 +36,8 @@ local function mock(kind, name)
 	function mt.GetWidth() return 600 end
 	function mt.GetHeight() return 400 end
 	function mt.GetEffectiveScale() return 1 end
+	function mt.SetAlpha(self, a) self.alpha = a end
+	function mt.GetAlpha(self) return self.alpha or 1 end
 	function mt.GetParent(self) return self.parent end
 	function mt.SetParent(self, p) self.parent = p end
 	function mt.GetChecked(self) return self.checked end
@@ -112,6 +114,42 @@ QL.RenderWindow()
 Eq(f.title.text:find("The Gathering", 1, true) ~= nil, true, "title is the focused quest")
 Check(f.sub.text:find("1/8", 1, true), "progress 1/8 done: " .. f.sub.text)
 Eq(f.message.shown, false, "no message over a chain")
+
+-- Family-tree layout: first quests on top, each generation lower, siblings on one row, centred
+local chain = QL.BuildChain(3, QL.Context())
+local function pos(id) return QL.CardPos(chain, chain.nodes[id]) end
+local x1, y1 = pos(1)
+local x5, y5 = pos(5)
+local x3, y3 = pos(3)
+local x6, y6 = pos(6)
+local x9, y9 = pos(9)
+Eq(y1, y5, "first generation on one row")
+Check(y1 > y3 and y3 > y6, "generations go downward")
+Eq(y6, y9, "siblings on one row")
+Check(x6 ~= x9, "siblings side by side")
+local cw, ch = QL.CanvasSize(chain)
+Check(cw > 0 and ch > 0, "canvas size")
+Eq(#chain.layers[3], 1, "generation 3 is the gathering alone")
+Eq(#chain.layers[4], 3, "three quests follow it")
+local middle = chain.layers[4][2]
+Eq(x3, (pos(middle)), "a lone card sits centred above its three children")
+
+-- Unfolding: a new focus starts transparent and ends fully shown
+QL.Open(2)
+local faded = false
+local cards = {}
+for _, fr in ipairs(frames) do
+	if fr.kind == "Button" and fr.questId and fr.shown then cards[#cards + 1] = fr end
+end
+for _, c in ipairs(cards) do if (c.alpha or 1) < 1 then faded = true end end
+Check(faded, "cards start faded")
+for _ = 1, 60 do
+	local up = f.unfolder.scripts.OnUpdate
+	if up then up(f.unfolder, 0.05) end
+end
+for _, c in ipairs(cards) do Eq(c.alpha, 1, "card fully shown after unfolding") end
+Eq(f.unfolder.scripts.OnUpdate, nil, "unfold stops itself")
+QL.Open(3)
 
 -- a search with several hits shows the result list
 QL.Open("path")

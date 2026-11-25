@@ -16,8 +16,8 @@ QuestLineage is a WoW addon (Lua 5.1, Interface 16001, client 1.60.1 "World of W
 - `Locale.lua`: `QL.L`, `QL.UseTurkish`, `QL.QuestTitle/QuestObjectives`, fonts.
 - `Data.lua`: QuestieDB adaptor, reverse index (`QL.Dependents(id)` = quests needing id, kinds all/any/parent; name list for search) built once per session in frame slices (`QL.WhenIndexed(fn)`), `QL.SearchQuests`, `QL.QuestGiver/Ender/Level`.
 - `State.lua`: `QL.Context()` = {level, raceFlag, classFlag, done, log, complete}, cached until a quest-log event.
-- `Chain.lua`: pure logic. `QL.BuildChain(id, ctx, opts)` (BFS over all links, node cap 80, one edge per pair with the strongest kind, cycles broken by back edges, layers by longest path, rows by barycenter sweeps), `QL.NodeStatus`, `QL.ChainSummary` (cached; cleared on state/index/setting changes).
-- `TreeFrame.lua`: the window (`QL.Open`, `QL.ToggleWindow`, `QL.RenderWindow`), `QL.FillQuestTooltip`.
+- `Chain.lua`: pure logic. `QL.BuildChain(id, ctx, opts)` (BFS over all links, node cap 80, one edge per pair with the strongest kind, cycles broken by back edges, layers (generations) by longest path, order within a generation by barycenter sweeps), `QL.NodeStatus`, `QL.ChainSummary` (cached; cleared on state/index/setting changes).
+- `TreeFrame.lua`: the window (`QL.Open`, `QL.ToggleWindow`, `QL.RenderWindow`), `QL.FillQuestTooltip`. Drawn as a family tree: generations top to bottom, each centred (`QL.CardPos`, `QL.CanvasSize`), lines as stem / shared bar / drop so siblings hang from one bar; a newly focused quest unfolds generation by generation (`unfold`, on `win.unfolder`; a quest-log refresh repaints without it).
 - `Hooks.lua`: quest log button, NPC tooltip line, quest offer strip (`QL.SummaryText`).
 - `Options.lua`: settings page (`QL.OpenOptions`).
 

@@ -1,14 +1,19 @@
--- The chain window: one card per quest, laid out left (earlier) to right (later), with elbow
--- lines between them. Header: the focused quest and how much of its chain is done, a search box.
+-- The chain window, drawn as a family tree: the first quests of the chain on top, each
+-- generation below the one it comes from, siblings side by side and centred, joined by
+-- family-tree lines (a stem down from the earlier quest, a shared bar, a drop to each later one).
+-- When a new quest is focused the tree unfolds generation by generation.
+-- Header: the focused quest and how much of its chain is done, a search box.
 --   QL.Open(idOrText)   focus a quest by id or by a part of its name, and show the window
 --   QL.ToggleWindow()
+--   QL.CardPos(chain, node) -> x, y   a card's top-left on the canvas (y grows downward, negative)
 --   QL.FillQuestTooltip(tooltip, id, ctx)   the quest lines the cards (and Hooks.lua) show
 
 local _, QL = ...
 
-local W, H = 860, 520
-local CARD_W, CARD_H = 190, 42
-local GAP_X, GAP_Y, PAD = 56, 12, 16
+local W, H = 900, 580
+local CARD_W, CARD_H = 172, 44
+local GAP_X, GAP_Y, PAD = 18, 46, 20
+local UNFOLD_STEP, UNFOLD_TIME = 0.09, 0.22 -- seconds between generations, fade length
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 
 local STATUS = {
@@ -161,6 +166,9 @@ local function getNode()
 	return n
 end
 
+-- The generation the lines being drawn belong to (they unfold with it).
+local drawGen = 1
+
 local function getLine()
 	usedLines = usedLines + 1
 	local t = linePool[usedLines]
@@ -169,6 +177,8 @@ local function getLine()
 		t:SetTexture(WHITE)
 		linePool[usedLines] = t
 	end
+	t.gen = drawGen
+	t:SetAlpha(1)
 	t:Show()
 	return t
 end
@@ -198,42 +208,72 @@ local function segment(x1, y1, x2, y2, color, dashed)
 	end
 end
 
+-- Generations run top to bottom; each generation's cards are centred under the widest one.
 local function cardPos(chain, node)
 	local layerSize = #chain.layers[node.layer]
-	local offset = (chain.height - layerSize) * (CARD_H + GAP_Y) / 2
-	local x = PAD + (node.layer - 1) * (CARD_W + GAP_X)
-	local y = -(PAD + offset + (node.row - 1) * (CARD_H + GAP_Y))
+	local offset = (chain.height - layerSize) * (CARD_W + GAP_X) / 2
+	local x = PAD + offset + (node.row - 1) * (CARD_W + GAP_X)
+	local y = -(PAD + (node.layer - 1) * (CARD_H + GAP_Y))
 	return x, y
 end
+QL.CardPos = cardPos
 
+function QL.CanvasSize(chain)
+	local cols, rows = chain.height, #chain.layers
+	return PAD * 2 + cols * CARD_W + (cols - 1) * GAP_X, PAD * 2 + rows * CARD_H + (rows - 1) * GAP_Y
+end
+
+-- A family-tree line: a stem down from the earlier quest to the bar half-way between the two
+-- generations, along the bar, and a drop onto the later quest. Lines of one parent share the
+-- stem, lines into one quest share the drop, so siblings hang from one bar as in a family tree.
 local function drawEdge(chain, e)
 	local a, b = chain.nodes[e.from], chain.nodes[e.to]
 	local ax, ay = cardPos(chain, a)
 	local bx, by = cardPos(chain, b)
 	local color = EDGE[e.kind] or EDGE.all
-	if e.back then color = { 0.5, 0.5, 0.5, 0.4 } end
-	local dashed = e.kind == "breadcrumb" or e.back
-	local y1, y2 = ay - CARD_H / 2, by - CARD_H / 2
-	local x1, x2 = ax + CARD_W, bx
-	if x2 > x1 then
-		local mid = x1 + GAP_X / 2
-		segment(x1, y1, mid, y1, color, dashed)
-		segment(mid, y1, mid, y2, color, dashed)
-		segment(mid, y2, x2, y2, color, dashed)
-		local dot = getLine()
-		dot:ClearAllPoints()
-		dot:SetVertexColor(color[1], color[2], color[3], 1)
-		dot:SetSize(5, 5)
-		dot:SetPoint("TOPLEFT", win.canvas, "TOPLEFT", x2 - 5, y2 + 2.5)
-	else
-		-- a back edge (a cycle): loop under the cards
-		local low = math.min(y1, y2) - CARD_H / 2 - GAP_Y / 2
-		segment(x1, y1, x1 + 8, y1, color, true)
-		segment(x1 + 8, y1, x1 + 8, low, color, true)
-		segment(x2 - 8, low, x1 + 8, low, color, true)
-		segment(x2 - 8, low, x2 - 8, y2, color, true)
-		segment(x2 - 8, y2, x2, y2, color, true)
+	drawGen = b.layer
+	if e.back then
+		-- a cycle: a dashed loop round the right-hand side of both cards
+		color = { 0.5, 0.5, 0.5, 0.45 }
+		local y1, y2 = ay - CARD_H / 2, by - CARD_H / 2
+		local side = math.max(ax, bx) + CARD_W + GAP_X / 2
+		segment(ax + CARD_W, y1, side, y1, color, true)
+		segment(side, y1, side, y2, color, true)
+		segment(bx + CARD_W, y2, side, y2, color, true)
+		return
 	end
+	local dashed = e.kind == "breadcrumb"
+	local px, cx = ax + CARD_W / 2, bx + CARD_W / 2
+	local bottom, top = ay - CARD_H, by
+	local bar = bottom - GAP_Y / 2
+	segment(px, bottom, px, bar, color, dashed)
+	segment(px, bar, cx, bar, color, dashed)
+	segment(cx, bar, cx, top, color, dashed)
+	local dot = getLine()
+	dot:ClearAllPoints()
+	dot:SetVertexColor(color[1], color[2], color[3], 1)
+	dot:SetSize(8, 3)
+	dot:SetPoint("TOPLEFT", win.canvas, "TOPLEFT", cx - 4, top + 3)
+end
+
+-- Unfolding: every card and line of generation g fades in UNFOLD_STEP * (g - 1) seconds after
+-- the first. One OnUpdate on the window, only while something is still fading.
+local function unfold()
+	local objects = {}
+	for i = 1, usedNodes do objects[#objects + 1] = nodePool[i] end
+	for i = 1, usedLines do objects[#objects + 1] = linePool[i] end
+	for _, o in ipairs(objects) do o:SetAlpha(0) end
+	local t = 0
+	win.unfolder:SetScript("OnUpdate", function(self, elapsed)
+		t = t + (elapsed or 0.016)
+		local busy = false
+		for _, o in ipairs(objects) do
+			local a = (t - ((o.gen or 1) - 1) * UNFOLD_STEP) / UNFOLD_TIME
+			if a < 1 then busy = true end
+			o:SetAlpha(math.max(0, math.min(1, a)))
+		end
+		if not busy then self:SetScript("OnUpdate", nil) end
+	end)
 end
 
 local function setMessage(text)
@@ -321,8 +361,7 @@ function QL.RenderWindow()
 	if chain.truncated then win.note:SetText(L("Showing the nearest %d quests of a larger web."):format(chain.total)) end
 	setMessage(chain.total < 2 and L("This quest has no chain.") or nil)
 
-	local cols = #chain.layers
-	win.canvas:SetSize(PAD * 2 + cols * CARD_W + (cols - 1) * GAP_X, PAD * 2 + chain.height * CARD_H + (chain.height - 1) * GAP_Y)
+	win.canvas:SetSize(QL.CanvasSize(chain))
 
 	for _, e in ipairs(chain.edges) do drawEdge(chain, e) end
 	local focusX, focusY = 0, 0
@@ -332,6 +371,8 @@ function QL.RenderWindow()
 		local x, y = cardPos(chain, node)
 		card:ClearAllPoints()
 		card:SetPoint("TOPLEFT", win.canvas, "TOPLEFT", x, y)
+		card:SetAlpha(1)
+		card.gen = node.layer
 		card.questId = id
 		local s = STATUS[node.status] or STATUS.locked
 		local dim = (node.status == "done" or node.status == "other" or node.status == "closed") and 0.55 or 1
@@ -346,6 +387,11 @@ function QL.RenderWindow()
 		local warn = #node.closes > 0 and ("  " .. hex(1, 0.35, 0.35) .. "(!)|r") or ""
 		card.sub:SetText((node.level and (L("Lv %d"):format(node.level) .. " · ") or "") .. hex(s[1], s[2], s[3]) .. L(s[4]) .. "|r" .. warn)
 		if id == focusId then focusX, focusY = x, -y end
+	end
+	-- unfold only for a newly focused quest; a quest-log refresh repaints in place
+	if win.shownFocus ~= focusId then
+		win.shownFocus = focusId
+		unfold()
 	end
 	local viewW, viewH = win.scroll:GetWidth() or W, win.scroll:GetHeight() or H
 	if C_Timer and C_Timer.After then
@@ -463,6 +509,7 @@ local function createWindow()
 	canvas:SetSize(W, H)
 	scroll:SetScrollChild(canvas)
 	f.scroll, f.canvas = scroll, canvas
+	f.unfolder = CreateFrame("Frame", nil, f)
 
 	-- wheel scrolls up/down, Shift+wheel left/right; dragging the background pans
 	scroll:EnableMouseWheel(true)
@@ -505,7 +552,10 @@ local function createWindow()
 	f.note:SetPoint("BOTTOMRIGHT", line, "TOPRIGHT", 0, 4)
 
 	f:SetScript("OnShow", function() QL.RenderWindow() end)
-	f:SetScript("OnHide", function() results:Hide() end)
+	f:SetScript("OnHide", function()
+		results:Hide()
+		f.shownFocus = nil -- unfold again next time it opens
+	end)
 	f:Hide()
 end
 

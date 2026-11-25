@@ -2,7 +2,7 @@
 
 Quest chain trees for **World of Warcraft: Forever** (client 1.60.1, Interface 16001).
 
-Pick any quest and QuestLineage draws its whole lineage as a tree: the quests that must come
+Pick any quest and QuestLineage draws its whole lineage as a family tree, unfolding from the first quests at the top down to the last: the quests that must come
 before it, the breadcrumbs that lead to it, the follow-ups it opens, and the quests that taking it
 closes for good. Each card shows the quest's state for your character.
 
