@@ -1149,8 +1149,36 @@ Eq(cur.logMore.shown, true, "the rest as a line")
 Eq(cur.logMore.text, "+2 more", "+2 more")
 logSlider.scripts.OnValueChanged(logSlider, 99)
 Eq(QL.DB().currentLogMax, 30, "capped at 30")
-QL.LogQuests = realLog
+-- filters: all / zone / class / chain
 QL.Set("currentLogMax", 15)
+QL.LogQuests = function() return { 2, 6, 10 } end
+QL.RefreshCurrent()
+local groups = QL.FilterLogQuests({ 2, 6, 10 }, QL.Context())
+Eq(#cur.logChips, 4, "four filter chips")
+Check(cur.logChips[1].text.text:find("All", 1, true) and cur.logChips[1].active, "All, on by default: " .. cur.logChips[1].text.text)
+Check(cur.logChips[4].text.text:find("Chain", 1, true), "Chain chip")
+Check(cur.logChips[4].text.text:find(tostring(#groups.chain), 1, true), "with its count")
+local function listedIds()
+	local out = {}
+	for _, r in ipairs(cur.logRows) do if r.shown then out[#out + 1] = r.questId end end
+	return out
+end
+Eq(#listedIds(), 3, "all three listed")
+cur.logChips[4].scripts.OnClick(cur.logChips[4])
+Eq(QL.DB().currentLogFilter, "chain", "chain filter chosen")
+Eq(#listedIds(), #groups.chain, "only chain quests listed")
+Check(#groups.chain < 3, "quest 10 has no chain, so the filter drops it")
+for _, qid in ipairs(listedIds()) do Check(QL.ChainSummary(qid, QL.Context()), "listed quest is in a chain: " .. qid) end
+Eq(cur.logChips[4].active, true, "its chip lit")
+-- an empty filter says so
+local realFilter = QL.FilterLogQuests
+QL.FilterLogQuests = function(...) local g = realFilter(...); g.class = {}; return g end
+cur.logChips[3].scripts.OnClick(cur.logChips[3])
+Eq(#listedIds(), 0, "no class quests")
+Eq(cur.logMore.text, "No quests under this filter", "says so")
+cur.logChips[1].scripts.OnClick(cur.logChips[1])
+QL.FilterLogQuests = realFilter
+QL.LogQuests = realLog
 QL.RefreshCurrent()
 QL.SetArrowTarget(3)
 QL.RefreshCurrent()

@@ -37,6 +37,7 @@ QL.defaults = {
 	currentCollapsed = false, -- its objectives folded
 	currentLogCollapsed = false, -- the "Quests" list under it folded
 	currentLogMax = 15,   -- how many quests that list shows (1-30)
+	currentLogFilter = "all", -- which: "all" | "zone" | "class" | "chain"
 	hideGameTracker = false, -- hide the game's own quest tracker (QuestLineage's window replaces it)
 	questAreas = true,    -- the current quest's objective areas on the minimap and world map
 	hideGameAreas = false, -- hide the game's own (blue) quest area on the minimap

@@ -194,6 +194,7 @@ local function build()
 	head:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
 	head:Hide()
 	frame.logHead = head
+	frame.logChips = {}
 	frame.logMore = T.Text(frame, 10, C.dim)
 	frame.logMore:Hide()
 	frame:SetScript("OnEnter", function(self)
@@ -296,11 +297,86 @@ local function logRow(i)
 	return r
 end
 
+-- Filters for the list (setting currentLogFilter): every quest, the quests of the zone you are
+-- in (their own zone or their givers'), your class's quests, chain quests.
+local LOG_FILTERS = {
+	{ id = "all", label = "All" },
+	{ id = "zone", label = "Zone" },
+	{ id = "class", label = "Class" },
+	{ id = "chain", label = "Chain" },
+}
+
+local function asSet(list)
+	local set = {}
+	for _, id in ipairs(list or {}) do set[id] = true end
+	return set
+end
+
+-- ids split by filter: { all = ids, zone = {...}, class = {...}, chain = {...} }
+function QL.FilterLogQuests(ids, ctx)
+	local out = { all = ids, zone = {}, class = {}, chain = {} }
+	local area = QL.PlayerZone and QL.PlayerZone()
+	local zone = asSet(area and QL.ZoneQuests(area))
+	local class = asSet(ctx.classFlag and QL.ClassQuests(ctx.classFlag))
+	for _, id in ipairs(ids) do
+		if zone[id] then out.zone[#out.zone + 1] = id end
+		if class[id] then out.class[#out.class + 1] = id end
+		if QL.ChainSummary(id, ctx) then out.chain[#out.chain + 1] = id end
+	end
+	return out
+end
+
+local function chip(i)
+	local T, C = QL.Theme, QL.Theme.C
+	local b = frame.logChips[i]
+	if b then return b end
+	b = CreateFrame("Button", nil, frame)
+	b:SetHeight(20)
+	b.bg = T.Fill(b, { 0, 0, 0, 0 })
+	b.text = T.Text(b, 10, C.muted, nil, true)
+	b.text:SetPoint("CENTER", 0, 1)
+	b.text:SetJustifyH("CENTER")
+	b.under = b:CreateTexture(nil, "OVERLAY")
+	b.under:SetTexture(T.WHITE)
+	b.under:SetPoint("BOTTOMLEFT", 4, 0); b.under:SetPoint("BOTTOMRIGHT", -4, 0)
+	b.under:SetHeight(2)
+	T.Color(b.under, C.accent)
+	b:SetScript("OnClick", function(self) QL.Set("currentLogFilter", self.filter) end)
+	b:SetScript("OnEnter", function(self) if not self.active then T.Color(self.bg, C.rowHover) end end)
+	b:SetScript("OnLeave", function(self) T.Color(self.bg, { 0, 0, 0, 0 }) end)
+	b:RegisterForDrag("LeftButton")
+	b:SetScript("OnDragStart", function() frame:StartMoving() end)
+	b:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
+	frame.logChips[i] = b
+	return b
+end
+
+local function drawChips(y, groups, filter)
+	local T, C = QL.Theme, QL.Theme.C
+	local x = 10
+	for i, f in ipairs(LOG_FILTERS) do
+		local b = chip(i)
+		b.filter = f.id
+		b.active = f.id == filter
+		local n = #groups[f.id]
+		b.text:SetText(L(f.label) .. " " .. (b.active and T.Hex(C.text) or T.Hex(C.dim)) .. n .. "|r")
+		b.text:SetTextColor(unpack(b.active and C.accent or (n > 0 and C.muted or C.dim)))
+		b.under:SetShown(b.active)
+		b:SetWidth(math.max(44, (b.text:GetStringWidth() or 40) + 16))
+		b:ClearAllPoints()
+		b:SetPoint("TOPLEFT", x, y)
+		b:Show()
+		x = x + (b:GetWidth() or 50) + 2
+	end
+	return y - 24
+end
+
 local function drawLog(y, ctx, currentId)
 	local T, C = QL.Theme, QL.Theme.C
 	local ids = QL.LogQuests(ctx, currentId)
 	local head = frame.logHead
 	for _, r in ipairs(frame.logRows) do r:Hide() end
+	for _, b in ipairs(frame.logChips) do b:Hide() end
 	frame.logMore:Hide()
 	if #ids == 0 then head:Hide(); return y end
 	head:ClearAllPoints()
@@ -312,6 +388,18 @@ local function drawLog(y, ctx, currentId)
 	head:Show()
 	y = y - 26
 	if folded then return y end
+	local filter = QL.DB().currentLogFilter or "all"
+	local groups = QL.FilterLogQuests(ids, ctx)
+	if not groups[filter] then filter = "all" end
+	y = drawChips(y, groups, filter)
+	ids = groups[filter]
+	if #ids == 0 then
+		frame.logMore:ClearAllPoints()
+		frame.logMore:SetPoint("TOPLEFT", 14, y - 2)
+		frame.logMore:SetText(L("No quests under this filter"))
+		frame.logMore:Show()
+		return y - 20
+	end
 	local ready = T.STATUS.done
 	for i, id in ipairs(ids) do
 		if i > logMax() then
