@@ -184,6 +184,16 @@ local TR = {
 	["Turkish needs WoWTR"] = "Türkçe için WoWTR gerekir",
 	-- route
 	["Route"] = "Rota",
+	-- dungeons and difficulty
+	["Dungeon"] = "Zindan",
+	["Raid"] = "Baskın",
+	["Battleground"] = "Savaş alanı",
+	["Difficulty: "] = "Zorluk: ",
+	["Very hard"] = "Çok zor",
+	["Hard"] = "Zor",
+	["Normal"] = "Normal",
+	["Easy"] = "Kolay",
+	["Trivial"] = "Önemsiz",
 	["Route %d/%d"] = "Rota %d/%d",
 	["Add to the route"] = "Rotaya ekle",
 	["Build route"] = "Rota oluştur",

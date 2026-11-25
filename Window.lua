@@ -167,6 +167,8 @@ local function fillChainRows(list, rows, ctx)
 		local levels = ""
 		if e.minLevel then
 			levels = (e.minLevel == e.maxLevel) and L("Lv %d"):format(e.minLevel) or L("Lv %d–%d"):format(e.minLevel, e.maxLevel)
+			local _, dc = QL.QuestDifficulty(e.maxLevel, ctx.level)
+			if dc then levels = T.Hex(dc) .. levels .. "|r" end
 		end
 		local xp = QL.ChainXP(e.ids, ctx)
 		local xpText
@@ -175,7 +177,10 @@ local function fillChainRows(list, rows, ctx)
 		elseif xp.remaining > 0 then
 			xpText = T.Hex(C.accent) .. "+" .. QL.XPText(xp.remaining) .. "|r"
 		end
-		r.sub:SetText(levels .. "  ·  " .. L("%d/%d done"):format(p.done, p.total) .. (xpText and ("  ·  " .. xpText) or ""))
+		local dungeons = 0
+		for _, id in ipairs(e.ids) do if QL.QuestDungeon(id) then dungeons = dungeons + 1 end end
+		local dungeonText = dungeons > 0 and (T.Hex(C.accent2) .. L("Dungeon") .. (dungeons > 1 and (" ×" .. dungeons) or "") .. "|r") or nil
+		r.sub:SetText(levels .. "  ·  " .. (dungeonText and (dungeonText .. "  ·  ") or "") .. L("%d/%d done"):format(p.done, p.total) .. (xpText and ("  ·  " .. xpText) or ""))
 		local st = CHAIN_STATE[p.state] or CHAIN_STATE.locked
 		local sc = T.STATUS[st[2]]
 		r.chip:SetText(L(st[1]))
@@ -353,11 +358,13 @@ local function renderQuests()
 		r.distId = q.id
 		r.dist:SetText(QL.DistanceMarkup and QL.DistanceMarkup(q.id, ctx) or "")
 		r.title:SetText(QL.QuestTitle(q.id))
-		r.title:SetTextColor(unpack(C.text))
+		r.title:SetTextColor(unpack(QL.TitleColor(q.id, ctx) or C.text))
 		local s = T.STATUS[q.status] or T.STATUS.available
 		local level = QL.QuestLevel(q.id)
 		local chain = QL.ChainSummary(q.id, ctx)
-		r.sub:SetText((level and (L("Lv %d"):format(level) .. "  ·  ") or "") .. T.Hex(s) .. L(s[4]) .. "|r"
+		local dungeon = QL.DungeonMarkup(q.id)
+		r.sub:SetText((level and (QL.LevelMarkup(q.id, ctx) .. "  ·  ") or "") .. (dungeon and (dungeon .. "  ·  ") or "")
+			.. T.Hex(s) .. L(s[4]) .. "|r"
 			.. (chain and ("  ·  " .. L("Chain %d/%d"):format(chain.index, chain.total)) or ""))
 		if q.xp then
 			r.chip:SetText("+" .. QL.XPText(q.xp))
@@ -439,11 +446,12 @@ local function renderSearch()
 		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
 		r.questId, r.openId = id, id
 		r.title:SetText(QL.QuestTitle(id))
-		r.title:SetTextColor(unpack(C.text))
+		r.title:SetTextColor(unpack(QL.TitleColor(id, ctx) or C.text))
 		local s = T.STATUS[QL.NodeStatus(id, ctx)] or T.STATUS.locked
 		local level = QL.QuestLevel(id)
 		local xp = QL.QuestXPAt(id, ctx.level)
-		r.sub:SetText((level and (L("Lv %d"):format(level) .. "  ·  ") or "") .. T.Hex(s) .. L(s[4]) .. "|r"
+		local dungeon = QL.DungeonMarkup(id, true)
+		r.sub:SetText((level and (QL.LevelMarkup(id, ctx) .. "  ·  ") or "") .. (dungeon and (dungeon .. "  ·  ") or "") .. T.Hex(s) .. L(s[4]) .. "|r"
 			.. (xp and ("  ·  " .. T.Hex(C.accent) .. QL.XPText(xp) .. "|r") or ""))
 		r.chip:SetText("#" .. id)
 		r.chip:SetTextColor(unpack(C.dim))

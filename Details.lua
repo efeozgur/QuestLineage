@@ -35,6 +35,123 @@ function QL.QuestXP(id)
 	return nil
 end
 
+-- Dungeons ---------------------------------------------------------------------------------------
+--   QL.QuestDungeon(id) -> { area, name, kind = dungeon|raid|battleground } | nil
+-- From QuestieDB's support data (ZoneDB.private.dungeons: [area] = {name, altAreas, parent, ...}):
+-- a quest is a dungeon quest when its zone is one, or a creature it needs lives in one.
+
+local RAIDS = { [1977] = true, [2159] = true, [2677] = true, [2717] = true, [3428] = true, [3429] = true, [3456] = true, [3606] = true }
+local BATTLEGROUNDS = { [2597] = true, [3277] = true, [3358] = true }
+
+local dungeonAreas -- area (or alternative area) -> main area
+local function dungeonTable()
+	local m = support("ZoneDB")
+	local d = m and m.private and m.private.dungeons
+	return type(d) == "table" and d or nil
+end
+
+local function dungeonArea(area)
+	if type(area) ~= "number" or area <= 0 then return nil end
+	if not dungeonAreas then
+		dungeonAreas = {}
+		for main, entry in pairs(dungeonTable() or {}) do
+			dungeonAreas[main] = main
+			if type(entry) == "table" and type(entry[2]) == "table" then
+				for _, alt in ipairs(entry[2]) do dungeonAreas[alt] = main end
+			end
+		end
+	end
+	return dungeonAreas[area]
+end
+
+local dungeonCache = {}
+QL.On("INDEX_READY", function() dungeonCache = {}; dungeonAreas = nil end)
+
+function QL.QuestDungeon(id)
+	local cached = dungeonCache[id]
+	if cached ~= nil then return cached or nil end
+	local main = dungeonArea(QL.Q(id, "zoneOrSort"))
+	if not main then
+		for _, t in ipairs(QL.QuestTasks(id)) do
+			if t.npc then
+				main = dungeonArea(QL.N(t.npc, "zoneID"))
+				if main then break end
+			end
+		end
+	end
+	local result = false
+	if main then
+		local entry = (dungeonTable() or {})[main]
+		result = {
+			area = main,
+			name = QL.AreaName(main) or (type(entry) == "table" and entry[1]) or ("#" .. main),
+			kind = RAIDS[main] and "raid" or (BATTLEGROUNDS[main] and "battleground" or "dungeon"),
+		}
+	end
+	dungeonCache[id] = result
+	return result or nil
+end
+
+-- Difficulty ------------------------------------------------------------------------------------
+--   QL.QuestDifficulty(questLevel, playerLevel) -> key, { r, g, b, label }
+-- The game's own scale: 5+ levels above you very hard, 3-4 hard, within 2 normal, below that
+-- easy while it still gives full-ish XP, trivial at the grey level.
+
+QL.DIFFICULTY = {
+	impossible = { 0.973, 0.443, 0.443, "Very hard" },
+	hard       = { 0.984, 0.573, 0.235, "Hard" },
+	normal     = { 0.980, 0.800, 0.082, "Normal" },
+	easy       = { 0.290, 0.871, 0.502, "Easy" },
+	trivial    = { 0.500, 0.530, 0.580, "Trivial" },
+}
+
+-- The level at and below which a quest is grey for a player (Classic's grey-level rule).
+function QL.GreyLevel(p)
+	if p <= 5 then return 0 end
+	if p <= 39 then return p - math.floor(p / 10) - 5 end
+	if p <= 59 then return p - math.floor(p / 5) - 1 end
+	return p - 9
+end
+
+function QL.QuestDifficulty(level, player)
+	if type(level) ~= "number" then return nil end
+	player = player or QL.PlayerLevel()
+	local d = level - player
+	local key
+	if d >= 5 then key = "impossible"
+	elseif d >= 3 then key = "hard"
+	elseif d >= -2 then key = "normal"
+	elseif level > QL.GreyLevel(player) then key = "easy"
+	else key = "trivial" end
+	return key, QL.DIFFICULTY[key]
+end
+
+-- "Lv 12" in the quest's difficulty colour.
+function QL.LevelMarkup(id, ctx, fmt)
+	local level = QL.QuestLevel(id)
+	if not level then return "" end
+	local _, c = QL.QuestDifficulty(level, ctx and ctx.level)
+	local text = QL.L(fmt or "Lv %d"):format(level)
+	return c and (QL.Theme.Hex(c) .. text .. "|r") or text
+end
+
+-- The colour a quest's title takes: hard and very hard stand out, trivial fades; nil = default.
+function QL.TitleColor(id, ctx)
+	local key, c = QL.QuestDifficulty(QL.QuestLevel(id), ctx and ctx.level)
+	-- r, g, b only: the label in slot 4 must never reach SetTextColor as alpha
+	if key == "impossible" or key == "hard" or key == "trivial" then return { c[1], c[2], c[3] } end
+	return nil
+end
+
+-- "Dungeon: The Deadmines" in violet, or nil.
+function QL.DungeonMarkup(id, short)
+	local d = QL.QuestDungeon(id)
+	if not d then return nil end
+	local L = QL.L
+	local label = d.kind == "raid" and L("Raid") or (d.kind == "battleground" and L("Battleground") or L("Dungeon"))
+	return QL.Theme.Hex(QL.Theme.C.accent2) .. (short and label or (label .. ": " .. d.name)) .. "|r"
+end
+
 -- XP and levels --------------------------------------------------------------------------------
 --   QL.QuestXPAt(id, playerLevel) -> xp, full   the XP the quest gives at that level (Classic's
 --                                            reduction for quests far below you), and its full XP

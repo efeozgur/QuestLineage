@@ -93,6 +93,26 @@ Eq(list[2].id, 2, "the logged quest")
 Eq(list[2].inLog, true, "marked as logged")
 Eq(#list, 2, "locked and too-high quests left out")
 
+-- dungeons: by the quest's zone, or by a creature it needs living in one (an alternative area)
+local dz = QL.QuestDungeon(25)
+Eq(dz and dz.name, "The Deadmines", "dungeon by zone")
+Eq(dz.kind, "dungeon", "a dungeon, not a raid")
+Eq(QL.QuestDungeon(26) and QL.QuestDungeon(26).area, 1581, "dungeon by its creature's alternative area")
+Eq(QL.QuestDungeon(3), nil, "a field quest")
+
+-- difficulty against the player's level
+Eq((QL.QuestDifficulty(15, 10)), "impossible", "5 above: very hard")
+Eq((QL.QuestDifficulty(13, 10)), "hard", "3 above: hard")
+Eq((QL.QuestDifficulty(12, 10)), "normal", "2 above: normal")
+Eq((QL.QuestDifficulty(8, 10)), "normal", "2 below: normal")
+Eq((QL.QuestDifficulty(7, 10)), "easy", "3 below: easy")
+Eq(QL.GreyLevel(10), 4, "grey at 4 for level 10")
+Eq((QL.QuestDifficulty(4, 10)), "trivial", "grey: trivial")
+Eq((QL.QuestDifficulty(3, 5)), "normal", "low levels have no grey")
+local tc = QL.TitleColor(25, QL.TestContext({ level = 10 }))
+Eq(#tc, 3, "a title colour is r, g, b only")
+Eq(QL.TitleColor(3, QL.TestContext({ level = 5 })), nil, "a normal quest keeps the default colour")
+
 -- live objectives only for a quest in the log
 Eq(QL.LiveObjectives(3), nil, "not in the log")
 

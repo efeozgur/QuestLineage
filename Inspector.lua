@@ -139,6 +139,9 @@ function Inspector.New(parent)
 	hero.status:SetPoint("LEFT", hero.dot, "RIGHT", 7, 0)
 	hero.level = T.Text(overlay, 12, C.muted)
 	hero.level:SetPoint("LEFT", hero.status, "RIGHT", 14, 0)
+	hero.tag = T.Text(overlay, 11, C.accent2, nil, true)
+	hero.tag:SetPoint("TOPLEFT", PAD, -14)
+	hero.tag:SetShadowOffset(1, -1)
 	hero.giver = T.Text(overlay, 11, C.dim)
 	hero.giver:SetPoint("TOPRIGHT", -PAD, -14)
 	hero.giver:SetJustifyH("RIGHT")
@@ -448,7 +451,10 @@ function Inspector:Show(id, chain)
 	hero.status:SetTextColor(s[1], s[2], s[3], 1)
 	local level = QL.QuestLevel(id)
 	local req = QL.Q(id, "requiredLevel")
-	local lv = level and L("Level %d"):format(level) or ""
+	local lv = level and QL.LevelMarkup(id, ctx, "Level %d") or ""
+	local dkey, dc = QL.QuestDifficulty(level, ctx.level)
+	if dc and (dkey == "hard" or dkey == "impossible") then lv = lv .. " " .. T.Hex(dc) .. "(" .. L(dc[4]) .. ")|r" end
+	hero.tag:SetText(QL.DungeonMarkup(id) or "")
 	if type(req) == "number" and req > 0 and level and req ~= level then lv = lv .. "  ·  " .. L("needs %d"):format(req) end
 	local heroXP = QL.QuestXPAt(id, ctx.level)
 	if heroXP then lv = lv .. "  ·  " .. T.Hex(C.accent) .. QL.XPText(heroXP) .. "|r" end

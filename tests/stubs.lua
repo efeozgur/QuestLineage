@@ -32,6 +32,8 @@ local QUESTS = {
 	[21] = { zoneOrSort = 1637, name = "Warrior's Reward", questLevel = 10, requiredLevel = 10, requiredClasses = 1, preQuestSingle = { 20 } },
 	[22] = { zoneOrSort = 1637, name = "Shield Lesson", questLevel = 4, requiredLevel = 4, requiredClasses = 1 },
 	[23] = { zoneOrSort = 1637, name = "Arcane Study", questLevel = 4, requiredLevel = 4, requiredClasses = 128 },
+	[25] = { zoneOrSort = 1581, name = "Into the Mines", questLevel = 18, requiredLevel = 14 },
+	[26] = { zoneOrSort = 1637, name = "Captain's Orders", questLevel = 20, requiredLevel = 16, objectives = { { { 103 } } } },
 	[24] = { zoneOrSort = 1637, name = "Every Class", questLevel = 4, requiredLevel = 4, requiredClasses = 1535 },
 	[15] = { zoneOrSort = 215, name = "Plains Feast", questLevel = 6, requiredLevel = 3, preQuestSingle = { 14 } },
 }
@@ -39,6 +41,7 @@ local NPCS = {
 	[100] = { name = "Bob", questStarts = { 1 }, zoneID = 14, spawns = { [14] = { { 45.2, 63.1 } } } },
 	[101] = { name = "Alice", questStarts = { 2, 10 }, spawns = { [215] = { { 10, 10 } }, [14] = { { 50, 50 } } } },
 	[102] = { name = "Boar", zoneID = 14 },
+	[103] = { name = "Pirate Captain", zoneID = 10029 },
 }
 
 local function entity(rows)
@@ -76,6 +79,7 @@ LibQuestieDB = {
 				uiMapIdToAreaId = "return { [1411] = 14, [1412] = 215 }",
 				uiMapIdToAreaIdOverride = "return { [1414] = 10073 }",
 				subZoneToParentZone = "return { [220] = 215 }",
+				dungeons = { [1581] = { "The Deadmines", { 10029 }, 40, {} }, [2717] = { "Molten Core", nil, 51, {} } },
 				areaIdToUiMapId = "return { [14] = 1411, [215] = 1412 }",
 			} }
 		end,
