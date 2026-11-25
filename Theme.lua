@@ -250,6 +250,42 @@ function T.Bar(parent, h)
 	return bar
 end
 
+-- Level bar: where the character is in its level (a muted fill) and what an XP gain adds on
+-- top of it (the accent gradient). :Set(gain) takes QL.LevelGain's result; a gain that crosses
+-- into the next level fills the rest of the bar and shows a tick per level crossed.
+function T.LevelBar(parent, h)
+	local C = T.C
+	local bar = CreateFrame("Frame", nil, parent)
+	bar:SetHeight(h or 6)
+	bar.track = T.Fill(bar, C.track, "ARTWORK")
+	bar.base = bar:CreateTexture(nil, "ARTWORK", nil, 1)
+	bar.base:SetTexture(WHITE)
+	bar.base:SetPoint("TOPLEFT"); bar.base:SetPoint("BOTTOMLEFT")
+	color(bar.base, { C.text[1], C.text[2], C.text[3], 0.28 })
+	bar.add = bar:CreateTexture(nil, "ARTWORK", nil, 2)
+	bar.add:SetTexture(WHITE)
+	bar.add:SetPoint("TOPLEFT", bar.base, "TOPRIGHT")
+	bar.add:SetPoint("BOTTOMLEFT", bar.base, "BOTTOMRIGHT")
+	T.Gradient(bar.add, "HORIZONTAL", C.accent, C.accent2)
+	local function layout(self)
+		local w = self:GetWidth() or 0
+		local g = self.gain
+		if not g then self.base:Hide(); self.add:Hide(); return end
+		local from = g.startFrac or 0
+		local to = (g.level > g.startLevel) and 1 or (g.frac or from)
+		self.base:SetWidth(math.max(0.01, w * from))
+		self.base:SetShown(from > 0)
+		self.add:SetWidth(math.max(0.01, w * math.max(0, to - from)))
+		self.add:SetShown(to > from)
+	end
+	function bar:Set(gain)
+		self.gain = gain
+		layout(self)
+	end
+	bar:SetScript("OnSizeChanged", layout)
+	return bar
+end
+
 function T.Input(parent, w, h)
 	local C = T.C
 	local box = CreateFrame("EditBox", nil, parent)

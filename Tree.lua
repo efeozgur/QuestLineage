@@ -47,6 +47,12 @@ function QL.FillQuestTooltip(tip, id, ctx)
 	tip:AddLine((level and ("[" .. level .. "] ") or "") .. QL.QuestTitle(id), r, g, b)
 	local s = T.STATUS[QL.NodeStatus(id, ctx)]
 	if s then tip:AddLine(L(s[4]), s[1], s[2], s[3]) end
+	local xp, full = QL.QuestXPAt(id, ctx.level)
+	if xp then
+		local text = QL.L("Reward: ") .. QL.XPText(xp)
+		if full and full ~= xp then text = text .. "  " .. QL.L("(full: %s)"):format(QL.FormatNumber(full)) end
+		tip:AddLine(text, 0.24, 0.84, 0.78)
+	end
 	local obj = QL.QuestObjectives(id)
 	if obj then tip:AddLine(obj, 1, 1, 1, true) end
 	local giver, ender = QL.QuestGiver(id), QL.QuestEnder(id)
@@ -263,6 +269,7 @@ end
 
 function Tree:Draw(chain, focusId, animate, minW, minH)
 	local T, C = QL.Theme, QL.Theme.C
+	local ctx = QL.Context()
 	self:Clear()
 	local w, h = QL.CanvasSize(chain)
 	self.ox = math.max(0, ((minW or 0) - w) / 2)
@@ -290,7 +297,11 @@ function Tree:Draw(chain, focusId, animate, minW, minH)
 		card.title:SetTextColor(unpack(faded and C.muted or C.text))
 		card.status:SetText(L(s[4]))
 		card.status:SetTextColor(s[1], s[2], s[3], 1)
-		card.level:SetText(node.level and L("Lv %d"):format(node.level) or "")
+		local xp = QL.QuestXPAt(id, ctx and ctx.level)
+		local lv = node.level and L("Lv %d"):format(node.level) or ""
+		if xp and not faded then lv = T.Hex(C.accent) .. QL.XPText(xp) .. "|r  " .. lv
+		elseif xp then lv = QL.XPText(xp) .. "  " .. lv end
+		card.level:SetText(lv)
 		card.warn:SetShown(#node.closes > 0)
 		if card.focused then fx, fy = x, -y end
 	end

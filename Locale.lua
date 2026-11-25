@@ -126,6 +126,24 @@ local TR = {
 	["Click: open or close"] = "Tık: aç / kapat",
 	["Right-click: settings"] = "Sağ tık: ayarlar",
 	["Drag: move round the minimap"] = "Sürükle: mini harita çevresinde taşı",
+	-- XP
+	["%s XP"] = "%s TP",
+	["+%s level"] = "+%s seviye",
+	["reaches Lv %d (%d%%)"] = "Sv %d'e ulaşır (%%%d)",
+	["Lv %d: %d%% » %d%%"] = "Sv %d: %%%d » %%%d",
+	["max level"] = "en yüksek seviye",
+	["Chain completed:"] = "Zincir bitince:",
+	["Chain done, earned:"] = "Zincir bitti, kazanılan:",
+	["(%d without XP data)"] = "(%d görevin TP verisi yok)",
+	["No XP data for this chain."] = "Bu zincir için TP verisi yok.",
+	["Reward: "] = "Ödül: ",
+	["(full: %s)"] = "(tam: %s)",
+	-- quests page
+	["Quests"] = "Görevler",
+	["Chains"] = "Zincirler",
+	["No quests to take here right now."] = "Şu an burada alınacak görev yok.",
+	["%d quests · %d in your log"] = "%d görev · %d günlükte",
+	["no XP data"] = "TP verisi yok",
 }
 QL.TR = TR
 

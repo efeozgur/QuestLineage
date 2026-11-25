@@ -35,6 +35,145 @@ function QL.QuestXP(id)
 	return nil
 end
 
+-- XP and levels --------------------------------------------------------------------------------
+--   QL.QuestXPAt(id, playerLevel) -> xp, full   the XP the quest gives at that level (Classic's
+--                                            reduction for quests far below you), and its full XP
+--   QL.ChainXP(ids, ctx) -> { total, done, remaining, unknown, count }
+--   QL.LevelGain(xp) -> { levels, level, frac, startLevel, startFrac, approx, capped }
+--   QL.FormatNumber(n) -> "12,450" ("12.450" in Turkish)
+
+-- XP to the next level, levels 1-59 (Classic's table). The current level uses the client's own
+-- UnitXPMax; later levels use this table, so a projection past the current level is approximate.
+local XP_TO_LEVEL = {
+	400, 900, 1400, 2100, 2800, 3600, 4500, 5400, 6500, 7600, 8800, 10100, 11400, 12900, 14400,
+	16000, 17700, 19400, 21300, 23200, 25200, 27300, 29400, 31700, 34000, 36400, 38900, 41400,
+	44300, 47400, 50800, 54500, 58600, 62800, 67100, 71600, 76100, 80800, 85700, 90700, 95800,
+	101000, 106300, 111800, 117500, 123200, 129100, 135100, 141200, 147500, 153900, 160400,
+	167100, 173900, 180800, 187900, 195000, 202300, 209800,
+}
+QL.XP_TO_LEVEL = XP_TO_LEVEL
+
+-- Classic: full XP up to 5 levels above the quest, then 80/60/40/20%, and 10% from 10 above.
+local XP_FACTOR = { [6] = 0.8, [7] = 0.6, [8] = 0.4, [9] = 0.2 }
+
+function QL.XPFactor(playerLevel, questLevel)
+	if not playerLevel or not questLevel then return 1 end
+	local over = playerLevel - questLevel
+	if over <= 5 then return 1 end
+	return XP_FACTOR[over] or 0.1
+end
+
+local function roundXP(xp)
+	-- the client rounds rewards to 5 below 100 XP, to 10 above
+	if xp >= 100 then return math.floor(xp / 10 + 0.5) * 10 end
+	return math.floor(xp / 5 + 0.5) * 5
+end
+
+function QL.QuestXPAt(id, playerLevel)
+	local full = QL.QuestXP(id)
+	if not full then return nil end
+	local f = QL.XPFactor(playerLevel, QL.QuestLevel(id))
+	if f >= 1 then return full, full end
+	return roundXP(full * f), full
+end
+
+function QL.PlayerLevel()
+	local lvl = UnitLevel and call(UnitLevel, "player")
+	return type(lvl) == "number" and lvl > 0 and lvl or 1
+end
+
+function QL.MaxLevel()
+	for _, fn in ipairs({ GetMaxLevelForPlayerExpansion, GetMaxPlayerLevel }) do
+		local v = call(fn)
+		if type(v) == "number" and v > 0 then return v end
+	end
+	return 60
+end
+
+-- The XP of a chain's quests for this character: those it can still do (at its level now),
+-- those already done (full XP), and how many quests have no XP data.
+function QL.ChainXP(ids, ctx)
+	local level = ctx and ctx.level or QL.PlayerLevel()
+	local r = { total = 0, done = 0, remaining = 0, unknown = 0, count = 0 }
+	for _, id in ipairs(ids) do
+		local s = QL.NodeStatus(id, ctx)
+		if s ~= "other" and s ~= "closed" then
+			r.count = r.count + 1
+			if s == "done" then
+				local full = QL.QuestXP(id)
+				if full then r.done = r.done + full; r.total = r.total + full else r.unknown = r.unknown + 1 end
+			else
+				local xp = QL.QuestXPAt(id, level)
+				if xp then r.remaining = r.remaining + xp; r.total = r.total + xp else r.unknown = r.unknown + 1 end
+			end
+		end
+	end
+	return r
+end
+
+-- Where xp more would take the character: whole and fractional levels gained, the level and
+-- fraction it ends at. approx when it runs past the current level (table thresholds).
+function QL.LevelGain(xp, level, have, need)
+	level = level or QL.PlayerLevel()
+	have = have or (UnitXP and call(UnitXP, "player")) or 0
+	need = need or (UnitXPMax and call(UnitXPMax, "player")) or 0
+	if type(need) ~= "number" or need <= 0 then need = XP_TO_LEVEL[level] or 1 end
+	local startFrac = math.min(1, have / need)
+	local maxLevel = QL.MaxLevel()
+	local r = { startLevel = level, startFrac = startFrac, approx = false, capped = false }
+	local lvl, cur, gain = level, have, xp or 0
+	if lvl >= maxLevel then
+		r.level, r.frac, r.levels, r.capped = lvl, startFrac, 0, true
+		return r
+	end
+	while gain > 0 do
+		if cur + gain < need then
+			cur = cur + gain
+			gain = 0
+		else
+			gain = gain - (need - cur)
+			lvl, cur = lvl + 1, 0
+			r.approx = true
+			if lvl >= maxLevel then r.capped = true; break end
+			need = XP_TO_LEVEL[lvl] or math.floor(need * 1.07)
+		end
+	end
+	r.level = lvl
+	r.frac = (lvl >= maxLevel) and 0 or (cur / need)
+	r.levels = (lvl - level) + r.frac - startFrac
+	return r
+end
+
+function QL.FormatNumber(n)
+	n = math.floor((n or 0) + 0.5)
+	local sep = QL.UseTurkish() and "." or ","
+	local s = tostring(math.abs(n))
+	local out = s:reverse():gsub("(%d%d%d)", "%1" .. sep):reverse()
+	if out:sub(1, 1) == sep then out = out:sub(2) end
+	return (n < 0 and "-" or "") .. out
+end
+
+-- "+2,450 XP"
+function QL.XPText(xp)
+	return QL.L("%s XP"):format(QL.FormatNumber(xp))
+end
+
+-- "~+1.4 level · reaches Lv 12 (40%)" / "+0.3 level · Lv 11: 20% » 50%" / "max level"
+function QL.GainText(gain)
+	local L = QL.L
+	if gain.capped and gain.levels <= 0 then return L("max level") end
+	local parts = {}
+	local lv = ("%.1f"):format(gain.levels)
+	if QL.UseTurkish() then lv = lv:gsub("%.", ",") end
+	parts[1] = (gain.approx and "~" or "") .. L("+%s level"):format(lv)
+	if gain.level > gain.startLevel then
+		parts[2] = L("reaches Lv %d (%d%%)"):format(gain.level, math.floor(gain.frac * 100))
+	else
+		parts[2] = L("Lv %d: %d%% » %d%%"):format(gain.level, math.floor(gain.startFrac * 100), math.floor(gain.frac * 100))
+	end
+	return table.concat(parts, "  ·  ")
+end
+
 function QL.FactionName(factionId)
 	if C_Reputation and C_Reputation.GetFactionDataByID then
 		local data = call(C_Reputation.GetFactionDataByID, factionId)

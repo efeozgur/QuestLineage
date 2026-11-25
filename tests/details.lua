@@ -58,6 +58,41 @@ QTR_QuestData = { ["3"] = { Title = "Toplanma", Description = "Uzun bir hikaye.$
 Eq(QL.QuestDescription(3), "Uzun bir hikaye.\nYeni satir.", "story from WoWTR")
 QL.Set("lang", "en")
 
+-- XP at the player's level (Classic's reduction), chain XP, level gain, numbers
+Eq(QL.XPFactor(10, 5), 1, "5 levels above: full")
+Eq(QL.XPFactor(11, 5), 0.8, "6 above: 80%")
+Eq(QL.XPFactor(14, 5), 0.2, "9 above: 20%")
+Eq(QL.XPFactor(20, 5), 0.1, "10+ above: 10%")
+local xp, full = QL.QuestXPAt(3, 12)
+Eq(full, 450, "full XP")
+Eq(xp, 270, "7 levels above: 60% of 450")
+local cx = QL.ChainXP({ 1, 2, 3, 4, 5 }, QL.TestContext({ done = { [5] = true } }))
+Eq(cx.done, 220, "done quests count full XP")
+Eq(cx.remaining, 450, "quests left at your level")
+Eq(cx.unknown, 3, "quests without XP data")
+local g = QL.LevelGain(500, 5, 2000, 2800)
+Eq(g.level, 5, "stays in level 5")
+Check(math.abs(g.frac - 2500 / 2800) < 1e-9, "fraction after")
+Check(math.abs(g.levels - 500 / 2800) < 1e-9, "share of a level")
+Eq(g.approx, false, "within the level: exact")
+g = QL.LevelGain(5000, 5, 2000, 2800) -- 800 to level 6, then 4200 of 3600 -> level 7, 600 into it
+Eq(g.level, 7, "two levels up")
+Check(math.abs(g.frac - 600 / 4500) < 1e-9, "into level 7")
+Eq(g.approx, true, "past the current level: approximate")
+Check(QL.GainText(g):find("reaches Lv 7", 1, true), "gain text: " .. QL.GainText(g))
+Eq(QL.FormatNumber(1234567), "1,234,567", "thousands")
+Eq(QL.FormatNumber(450), "450", "small number")
+Eq(QL.XPText(2450), "2,450 XP", "xp text")
+
+-- normal quest list: available Durotar quests for a level 5 human, most XP first
+QL.zoneChainCache = {}
+local list = QL.ZoneQuestList(14, QL.TestContext({ done = { [1] = true }, log = { [2] = true } }))
+Eq(list[1].id, 5, "most XP first")
+Eq(list[1].xp, 220, "its XP")
+Eq(list[2].id, 2, "the logged quest")
+Eq(list[2].inLog, true, "marked as logged")
+Eq(#list, 2, "locked and too-high quests left out")
+
 -- live objectives only for a quest in the log
 Eq(QL.LiveObjectives(3), nil, "not in the log")
 

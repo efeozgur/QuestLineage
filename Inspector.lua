@@ -60,7 +60,11 @@ local function setCreature(model, npcId, zoom, frozen)
 		model.npcId = npcId
 		if model.ClearModel then pcall(model.ClearModel, model) end
 		if not pcall(model.SetCreature, model, npcId) then model.npcId = nil; return false end
-		if model.SetPortraitZoom then pcall(model.SetPortraitZoom, model, zoom or 0.75) end
+		-- portrait zoom 1 aims the camera at the head (as unit frame portraits do); a partial zoom
+		-- aimed at the chest and cut heads off. The distance scale pulls back to show shoulders.
+		if model.SetPortraitZoom then pcall(model.SetPortraitZoom, model, 1) end
+		if model.SetCamDistanceScale then pcall(model.SetCamDistanceScale, model, zoom or 1) end
+		if model.SetPosition then pcall(model.SetPosition, model, 0, 0, 0) end
 		if frozen then
 			model.freeze()
 			if model.HookScript and not model.qlHooked then
@@ -112,8 +116,8 @@ function Inspector.New(parent)
 	T.Color(hero.iconRing, { 1, 1, 1, 0.08 })
 	hero.model = newModel(hero)
 	if hero.model then
-		hero.model:SetPoint("TOPLEFT", 0, -6)
-		hero.model:SetPoint("BOTTOMRIGHT", 0, 40)
+		hero.model:SetPoint("TOPLEFT", 0, -8)
+		hero.model:SetPoint("BOTTOMRIGHT", 0, 62)
 	end
 	local shade = hero:CreateTexture(nil, "OVERLAY", nil, 1)
 	shade:SetTexture(T.WHITE)
@@ -275,7 +279,7 @@ function Inspector:Row(o)
 	r.dot:SetShown(not hasPic and o.dot ~= nil)
 	if o.dot then r.dot:SetVertexColor(o.dot[1], o.dot[2], o.dot[3], 1) end
 	local modelShown = false
-	if o.npc and r.model then modelShown = setCreature(r.model, o.npc, 0.8, true) end
+	if o.npc and r.model then modelShown = setCreature(r.model, o.npc, 1.05, true) end
 	if r.model and not modelShown then r.model:Hide(); r.model.npcId = nil end
 	r.icon:SetShown(not modelShown and hasPic and true or false)
 	if not modelShown and hasPic then r.icon:SetTexture(o.icon or QUESTION) end
@@ -421,7 +425,7 @@ function Inspector:Show(id, chain)
 	local starter = QL.QuestStarter(id)
 	local modelShown = false
 	if starter and starter.kind == "npc" and hero.model then
-		modelShown = setCreature(hero.model, starter.id, 0.35, false)
+		modelShown = setCreature(hero.model, starter.id, 1.7, false)
 		if modelShown and hero.model.SetFacing then pcall(hero.model.SetFacing, hero.model, -0.35) end
 	end
 	if hero.model and not modelShown then hero.model:Hide(); hero.model.npcId = nil end
@@ -441,6 +445,8 @@ function Inspector:Show(id, chain)
 	local req = QL.Q(id, "requiredLevel")
 	local lv = level and L("Level %d"):format(level) or ""
 	if type(req) == "number" and req > 0 and level and req ~= level then lv = lv .. "  ·  " .. L("needs %d"):format(req) end
+	local heroXP = QL.QuestXPAt(id, ctx.level)
+	if heroXP then lv = lv .. "  ·  " .. T.Hex(C.accent) .. QL.XPText(heroXP) .. "|r" end
 	hero.level:SetText(lv)
 	hero.giver:SetText(starter and starter.name or "")
 
@@ -503,18 +509,26 @@ function Inspector:Show(id, chain)
 	end
 
 	-- rewards
-	local xp = QL.QuestXP(id)
+	local xp, fullXP = QL.QuestXPAt(id, ctx.level)
 	local reps = QL.QuestReputation(id)
 	local items = QL.RewardItems(id)
 	if xp or #reps > 0 or #items > 0 then
 		self:Heading(L("Rewards"))
 		local parts = {}
-		if xp then parts[#parts + 1] = T.Hex(C.accent) .. L("%d XP"):format(xp) .. "|r" end
+		if xp then
+			local t = T.Hex(C.accent) .. QL.XPText(xp) .. "|r"
+			if fullXP and fullXP ~= xp then t = t .. " " .. T.Hex(C.dim) .. L("(full: %s)"):format(QL.FormatNumber(fullXP)) .. "|r" end
+			parts[#parts + 1] = t
+		end
 		for _, r in ipairs(reps) do
 			local sign = r[2] > 0 and "+" or ""
 			parts[#parts + 1] = T.Hex(r[2] > 0 and T.STATUS.done or C.danger) .. sign .. r[2] .. "|r " .. (r[3] or L("Faction #%d"):format(r[1]))
 		end
 		if #parts > 0 then self:Paragraph(table.concat(parts, "    "), C.text, 13) end
+		if xp and status ~= "done" then
+			self.y = self.y + 6
+			self:Paragraph(QL.GainText(QL.LevelGain(xp)), C.muted, 11)
+		end
 		if #items > 0 then self:Tiles(items) end
 	end
 

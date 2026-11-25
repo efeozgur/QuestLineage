@@ -161,7 +161,14 @@ local function renderZone()
 		if e.minLevel then
 			levels = (e.minLevel == e.maxLevel) and L("Lv %d"):format(e.minLevel) or L("Lv %d–%d"):format(e.minLevel, e.maxLevel)
 		end
-		r.sub:SetText(levels .. "  ·  " .. L("%d quests"):format(e.size) .. "  ·  " .. L("%d/%d done"):format(p.done, p.total))
+		local xp = QL.ChainXP(e.ids, ctx)
+		local xpText
+		if p.state == "done" then
+			xpText = xp.done > 0 and (T.Hex(C.muted) .. QL.XPText(xp.done) .. "|r") or nil
+		elseif xp.remaining > 0 then
+			xpText = T.Hex(C.accent) .. "+" .. QL.XPText(xp.remaining) .. "|r"
+		end
+		r.sub:SetText(levels .. "  ·  " .. L("%d/%d done"):format(p.done, p.total) .. (xpText and ("  ·  " .. xpText) or ""))
 		local st = CHAIN_STATE[p.state] or CHAIN_STATE.locked
 		local sc = T.STATUS[st[2]]
 		r.chip:SetText(L(st[1]))
@@ -185,6 +192,63 @@ local function renderZone()
 end
 
 -- Sidebar: Search ---------------------------------------------------------------------------
+
+-- Sidebar: Quests (normal quests: the log, and what this zone offers now; most XP first) ------
+
+local QUEST_ROW_H = 54
+
+local function renderQuests()
+	local T, C = QL.Theme, QL.Theme.C
+	local page = win.questsPage
+	local list = page.list
+	local area, _, name = QL.PlayerZone()
+	page.zone:SetText(name or L("Unknown zone"))
+	if QL.DataStatus() ~= "ok" then
+		page.sub:SetText(L("QuestieDB is missing."))
+		hideRows(list, 1)
+		return
+	end
+	if not QL.IndexReady() then
+		page.sub:SetText(L("Building the chain index..."))
+		hideRows(list, 1)
+		QL.WhenIndexed(QL.RenderWindow)
+		return
+	end
+	local ctx = QL.Context()
+	local quests = QL.ZoneQuestList(area, ctx)
+	local inLog, total = 0, 0
+	for _, q in ipairs(quests) do
+		if q.inLog then inLog = inLog + 1 end
+		total = total + (q.xp or 0)
+	end
+	if #quests == 0 then
+		page.sub:SetText(L("No quests to take here right now."))
+	else
+		page.sub:SetText(L("%d quests · %d in your log"):format(#quests, inLog) .. "  ·  " .. T.Hex(C.accent) .. QL.XPText(total) .. "|r")
+	end
+	for i, q in ipairs(quests) do
+		local r = listRow(list, i, QUEST_ROW_H)
+		r.questId, r.openId = q.id, q.id
+		r.title:SetText(QL.QuestTitle(q.id))
+		r.title:SetTextColor(unpack(C.text))
+		local s = T.STATUS[q.status] or T.STATUS.available
+		local level = QL.QuestLevel(q.id)
+		local chain = QL.ChainSummary(q.id, ctx)
+		r.sub:SetText((level and (L("Lv %d"):format(level) .. "  ·  ") or "") .. T.Hex(s) .. L(s[4]) .. "|r"
+			.. (chain and ("  ·  " .. L("Chain %d/%d"):format(chain.index, chain.total)) or ""))
+		if q.xp then
+			r.chip:SetText("+" .. QL.XPText(q.xp))
+			r.chip:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+		else
+			r.chip:SetText(L("no XP data"))
+			r.chip:SetTextColor(C.dim[1], C.dim[2], C.dim[3], 1)
+		end
+		if r.bar then r.bar:Hide() end
+		selectRow(r, q.id == focusId)
+	end
+	hideRows(list, #quests + 1)
+	list:SetContentHeight(#quests * QUEST_ROW_H + 8)
+end
 
 local function renderSearch()
 	local T, C = QL.Theme, QL.Theme.C
@@ -220,7 +284,9 @@ local function renderSearch()
 		r.title:SetTextColor(unpack(C.text))
 		local s = T.STATUS[QL.NodeStatus(id, ctx)] or T.STATUS.locked
 		local level = QL.QuestLevel(id)
-		r.sub:SetText((level and (L("Lv %d"):format(level) .. "  ·  ") or "") .. T.Hex(s) .. L(s[4]) .. "|r")
+		local xp = QL.QuestXPAt(id, ctx.level)
+		r.sub:SetText((level and (L("Lv %d"):format(level) .. "  ·  ") or "") .. T.Hex(s) .. L(s[4]) .. "|r"
+			.. (xp and ("  ·  " .. T.Hex(C.accent) .. QL.XPText(xp) .. "|r") or ""))
 		r.chip:SetText("#" .. id)
 		r.chip:SetTextColor(unpack(C.dim))
 		if r.bar then r.bar:Hide() end
@@ -283,14 +349,33 @@ local function renderMain(animate)
 	win.infoTitle:SetText(QL.QuestTitle(head))
 	win.infoLevel:SetText(L("Quest chain"))
 	win.infoLevel:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-	local meta = L("%d quests · %d generations"):format(chain.total, #chain.layers)
+	local meta = L("%d quests · %d generations"):format(chain.total, #chain.layers) .. "  ·  " .. L("%d/%d done"):format(chain.doneCount, chain.total)
 	if chain.truncated then meta = meta .. "  ·  " .. L("Showing the nearest %d quests of a larger web."):format(chain.total) end
 	if chain.total < 2 then meta = L("This quest has no chain.") end
 	win.infoMeta:SetText(meta)
-	local frac = chain.doneCount / math.max(1, chain.total)
-	win.infoPct:SetText(("%d%%"):format(math.floor(frac * 100 + 0.5)))
-	win.infoDone:SetText(L("%d/%d done"):format(chain.doneCount, chain.total))
-	win.infoBar:SetValue(frac, frac >= 1 and T.STATUS.done or nil)
+	-- the chain's XP: what is left to earn at your level, and where it takes you
+	local xp = QL.ChainXP(chain.order, ctx)
+	local note = xp.unknown > 0 and ("  " .. T.Hex(C.dim) .. L("(%d without XP data)"):format(xp.unknown) .. "|r") or ""
+	if xp.remaining > 0 then
+		local gain = QL.LevelGain(xp.remaining)
+		win.infoXPLabel:SetText(L("Chain completed:"))
+		win.infoXP:SetText("+" .. QL.XPText(xp.remaining))
+		win.infoXP:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+		win.infoGain:SetText(QL.GainText(gain) .. note)
+		win.levelBar:Set(gain)
+		win.levelBar:Show()
+	elseif xp.done > 0 then
+		win.infoXPLabel:SetText(L("Chain done, earned:"))
+		win.infoXP:SetText(QL.XPText(xp.done))
+		win.infoXP:SetTextColor(T.STATUS.done[1], T.STATUS.done[2], T.STATUS.done[3], 1)
+		win.infoGain:SetText(note)
+		win.levelBar:Hide()
+	else
+		win.infoXPLabel:SetText("")
+		win.infoXP:SetText("")
+		win.infoGain:SetText(xp.unknown > 0 and L("No XP data for this chain.") or "")
+		win.levelBar:Hide()
+	end
 
 	local viewW, viewH = win.canvasScroll:GetWidth() or 600, win.canvasScroll:GetHeight() or 400
 	local fx, fy = win.tree:Draw(chain, focusId, animate, viewW, viewH)
@@ -328,16 +413,21 @@ end
 
 function QL.RenderWindow(animate)
 	if not win or not win:IsShown() then return end
-	local page = QL.DB().page or "zone"
-	win.zoneTab:SetLabel(L("This zone"))
+	local page = QL.DB().page or "quests"
+	win.questsTab:SetLabel(L("Quests"))
+	win.zoneTab:SetLabel(L("Chains"))
 	win.searchTab:SetLabel(L("Search"))
+	win.questsTab:SetActive(page == "quests")
 	win.zoneTab:SetActive(page == "zone")
 	win.searchTab:SetActive(page == "search")
+	win.questsPage:SetShown(page == "quests")
 	win.zonePage:SetShown(page == "zone")
 	win.searchPage:SetShown(page == "search")
 	win.headerSub:SetText(L("Quest chains"))
 	win.legend:SetText(legendText())
-	if page == "zone" then safe("zone list", renderZone) else safe("search", renderSearch) end
+	if page == "quests" then safe("quest list", renderQuests)
+	elseif page == "zone" then safe("zone list", renderZone)
+	else safe("search", renderSearch) end
 	if animate == nil then animate = win.shownFocus ~= focusId end
 	win.shownFocus = focusId
 	safe("tree", renderMain, animate)
@@ -411,12 +501,15 @@ local function createWindow()
 	side:SetWidth(SIDEBAR_W)
 	T.Fill(side, C.sidebar)
 	T.Line(side, C.line, "RIGHT")
-	local tabW = (SIDEBAR_W - 32 - 8) / 2
+	local tabW = (SIDEBAR_W - 32 - 12) / 3
+	f.questsTab = T.Button(side, tabW, 30)
+	f.questsTab:SetPoint("TOPLEFT", 16, -16)
+	f.questsTab:SetScript("OnClick", function() QL.ShowPage("quests") end)
 	f.zoneTab = T.Button(side, tabW, 30)
-	f.zoneTab:SetPoint("TOPLEFT", 16, -16)
+	f.zoneTab:SetPoint("LEFT", f.questsTab, "RIGHT", 6, 0)
 	f.zoneTab:SetScript("OnClick", function() QL.ShowPage("zone") end)
 	f.searchTab = T.Button(side, tabW, 30)
-	f.searchTab:SetPoint("LEFT", f.zoneTab, "RIGHT", 8, 0)
+	f.searchTab:SetPoint("LEFT", f.zoneTab, "RIGHT", 6, 0)
 	f.searchTab:SetScript("OnClick", function() QL.ShowPage("search") end)
 
 	local function page()
@@ -426,22 +519,28 @@ local function createWindow()
 		return pg
 	end
 
-	local zp = page()
-	zp.zone = T.Text(zp, 18, C.text)
-	zp.zone:SetPoint("TOPLEFT", 18, -8)
-	zp.zone:SetPoint("RIGHT", zp, "RIGHT", -16, 0)
-	zp.sub = T.Text(zp, 12, C.muted)
-	zp.sub:SetPoint("TOPLEFT", zp.zone, "BOTTOMLEFT", 0, -6)
-	zp.list = T.Scroll(zp)
-	zp.list:SetPoint("TOPLEFT", 0, -62)
-	zp.list:SetPoint("BOTTOMRIGHT", 0, 8)
-	zp.list.rows = {}
-	local sep = zp:CreateTexture(nil, "BORDER")
-	sep:SetTexture(T.WHITE)
-	sep:SetPoint("TOPLEFT", 16, -58); sep:SetPoint("TOPRIGHT", -16, -58)
-	sep:SetHeight(1)
-	T.Color(sep, C.lineSoft)
-	f.zonePage = zp
+	-- a zone page: zone name, a summary line, a scrolling list
+	local function zonePage()
+		local zp = page()
+		zp.zone = T.Text(zp, 18, C.text)
+		zp.zone:SetPoint("TOPLEFT", 18, -8)
+		zp.zone:SetPoint("RIGHT", zp, "RIGHT", -16, 0)
+		zp.sub = T.Text(zp, 12, C.muted)
+		zp.sub:SetPoint("TOPLEFT", zp.zone, "BOTTOMLEFT", 0, -6)
+		zp.sub:SetPoint("RIGHT", zp, "RIGHT", -16, 0)
+		zp.list = T.Scroll(zp)
+		zp.list:SetPoint("TOPLEFT", 0, -62)
+		zp.list:SetPoint("BOTTOMRIGHT", 0, 8)
+		zp.list.rows = {}
+		local sep = zp:CreateTexture(nil, "BORDER")
+		sep:SetTexture(T.WHITE)
+		sep:SetPoint("TOPLEFT", 16, -58); sep:SetPoint("TOPRIGHT", -16, -58)
+		sep:SetHeight(1)
+		T.Color(sep, C.lineSoft)
+		return zp
+	end
+	f.questsPage = zonePage()
+	f.zonePage = zonePage()
 
 	local sp = page()
 	sp.input = T.Input(sp, SIDEBAR_W - 32, 34)
@@ -487,19 +586,23 @@ local function createWindow()
 	f.infoLevel:SetPoint("TOPLEFT", 26, -14)
 	f.infoTitle = T.Text(info, 19, C.text)
 	f.infoTitle:SetPoint("TOPLEFT", f.infoLevel, "BOTTOMLEFT", 0, -5)
-	f.infoTitle:SetPoint("RIGHT", info, "RIGHT", -230, 0)
+	f.infoTitle:SetPoint("RIGHT", info, "RIGHT", -270, 0)
 	f.infoMeta = T.Text(info, 12, C.muted)
 	f.infoMeta:SetPoint("TOPLEFT", f.infoTitle, "BOTTOMLEFT", 0, -5)
-	f.infoMeta:SetPoint("RIGHT", info, "RIGHT", -230, 0)
-	f.infoPct = T.Text(info, 22, C.accent)
-	f.infoPct:SetPoint("TOPRIGHT", -26, -14)
-	f.infoPct:SetJustifyH("RIGHT")
-	f.infoDone = T.Text(info, 11, C.muted)
-	f.infoDone:SetPoint("RIGHT", f.infoPct, "LEFT", -10, -2)
-	f.infoDone:SetJustifyH("RIGHT")
-	f.infoBar = T.Bar(info, 4)
-	f.infoBar:SetWidth(170)
-	f.infoBar:SetPoint("TOPRIGHT", -26, -50)
+	f.infoMeta:SetPoint("RIGHT", info, "RIGHT", -270, 0)
+	-- right: the chain's XP and its share of your level
+	f.infoXP = T.Text(info, 21, C.accent)
+	f.infoXP:SetPoint("TOPRIGHT", -26, -12)
+	f.infoXP:SetJustifyH("RIGHT")
+	f.infoXPLabel = T.Text(info, 11, C.muted)
+	f.infoXPLabel:SetPoint("RIGHT", f.infoXP, "LEFT", -8, -2)
+	f.infoXPLabel:SetJustifyH("RIGHT")
+	f.infoGain = T.Text(info, 11, C.muted)
+	f.infoGain:SetPoint("TOPRIGHT", -26, -40)
+	f.infoGain:SetJustifyH("RIGHT")
+	f.levelBar = T.LevelBar(info, 5)
+	f.levelBar:SetWidth(220)
+	f.levelBar:SetPoint("TOPRIGHT", -26, -58)
 
 	-- main: legend
 	local legend = CreateFrame("Frame", nil, main)

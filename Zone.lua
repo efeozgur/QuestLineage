@@ -166,6 +166,35 @@ function QL.ZoneChains(area, ctx)
 	return list
 end
 
+-- Normal quests: every quest in the log (wherever it is) and every quest of the zone this
+-- character can take now, most XP first (at its level; quests without XP data last).
+--   QL.ZoneQuestList(area, ctx) -> { { id, status, xp, inLog }, ... }
+function QL.ZoneQuestList(area, ctx)
+	local seen, out = {}, {}
+	local function add(id)
+		if seen[id] then return end
+		seen[id] = true
+		local s = QL.NodeStatus(id, ctx)
+		if s == "active" or s == "ready" or s == "available" then
+			out[#out + 1] = { id = id, status = s, xp = QL.QuestXPAt and QL.QuestXPAt(id, ctx.level) or nil, inLog = s ~= "available" }
+		end
+	end
+	for id in pairs(ctx.log or {}) do
+		if QL.QuestExists(id) then add(id) end
+	end
+	if area then
+		for _, id in ipairs(QL.ZoneQuests(area)) do add(id) end
+	end
+	table.sort(out, function(a, b)
+		local xa, xb = a.xp or -1, b.xp or -1
+		if xa ~= xb then return xa > xb end
+		local la, lb = QL.QuestLevel(a.id) or 0, QL.QuestLevel(b.id) or 0
+		if la ~= lb then return la < lb end
+		return a.id < b.id
+	end)
+	return out
+end
+
 local STATE_ORDER = { active = 1, available = 2, toolow = 3, locked = 4, done = 5 }
 QL.CHAIN_STATE_ORDER = STATE_ORDER
 

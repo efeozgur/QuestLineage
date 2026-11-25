@@ -118,7 +118,9 @@ local function addNpcLines(tooltip, guid)
 		if status ~= "done" and status ~= "other" and status ~= "closed" then
 			local text = QL.SummaryText(questId, ctx)
 			if text then
-				tooltip:AddLine(hex(0.5, 0.83, 1) .. QL.QuestTitle(questId) .. "|r  " .. text, 0.85, 0.85, 0.85, true)
+				local xp = QL.QuestXPAt(questId, ctx.level)
+				local xpText = xp and ("  " .. hex(0.24, 0.84, 0.78) .. QL.XPText(xp) .. "|r") or ""
+				tooltip:AddLine(hex(0.5, 0.83, 1) .. QL.QuestTitle(questId) .. "|r  " .. text .. xpText, 0.85, 0.85, 0.85, true)
 				added = added + 1
 			end
 		end
@@ -184,6 +186,10 @@ local function showOffer()
 	if not strip then buildStrip() end
 	local ctx = QL.Context()
 	local lines = {}
+	local xp = QL.QuestXPAt(questId, ctx.level)
+	if xp then
+		lines[#lines + 1] = hex(0.24, 0.84, 0.78) .. QL.XPText(xp) .. "|r  " .. hex(0.6, 0.62, 0.68) .. QL.GainText(QL.LevelGain(xp)) .. "|r"
+	end
 	local summary = QL.SummaryText(questId, ctx)
 	if summary then lines[#lines + 1] = summary end
 	local closes = {}

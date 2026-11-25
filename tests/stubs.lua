@@ -65,7 +65,7 @@ LibQuestieDB = {
 	}),
 	Support = {
 		Get = function(name)
-			if name == "QuestXP" then return { db = { [3] = { 5, 450 } } } end
+			if name == "QuestXP" then return { db = { [3] = { 5, 450 }, [5] = { 4, 220 } } } end
 			if name ~= "ZoneDB" then return nil end
 			return { private = {
 				uiMapIdToAreaId = "return { [1411] = 14, [1412] = 215 }",
