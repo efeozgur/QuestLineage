@@ -36,6 +36,12 @@ QL.defaults = {
 	currentQuest = true,  -- the current quest window
 	currentCollapsed = false, -- its objectives folded
 	nameplates = true,    -- quest badges and counters on objective creatures' nameplates
+	plateSide = "left",   -- where the badge sits: "left" | "right" | "top"
+	plateColorMode = "accent", -- "accent" | "difficulty" | "custom"
+	plateColor = { 0.984, 0.749, 0.141 }, -- the custom colour
+	plateScale = 1,
+	plateCount = true,    -- the "3/8" counter beside the badge
+	plateDroppers = true, -- also creatures that drop an item an objective collects
 }
 
 -- SavedVariables can be missing on a cold start: always go through DB().

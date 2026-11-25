@@ -1,6 +1,8 @@
 -- Nameplates: a small quest badge and the counter ("3/8") beside the nameplate of every creature
 -- an unfinished objective of a quest in your log needs: to slay, or that drops an item you still
--- collect. Setting nameplates.
+-- collect. Settings: nameplates (on/off), plateSide (left | right | top), plateColorMode (accent |
+-- difficulty | custom) with plateColor, plateScale, plateCount (the counter), plateDroppers (item
+-- droppers too).
 --
 -- Index (rebuilt when the quest log changes): npc id -> the objective rows it counts for
 -- (QL.ObjectiveRows; an item objective's droppers from the item's npcDrops). Badges are our own
@@ -27,7 +29,7 @@ local function rebuild()
 					local npcs = {}
 					if row.task.kind == "npc" then
 						npcs[1] = row.task.id
-					elseif row.task.kind == "item" then
+					elseif row.task.kind == "item" and QL.DB().plateDroppers ~= false then
 						for n, npc in ipairs(QL.Ids(QL.I(row.task.id, "npcDrops"))) do
 							if n > MAX_DROPPERS then break end
 							npcs[#npcs + 1] = npc
@@ -53,8 +55,28 @@ function QL.PlateText(npcId)
 	local list = QL.PlateIndex()[npcId]
 	if not list then return nil end
 	local row = list[1][2]
+	if QL.DB().plateCount == false then return "" end
 	if row.need and row.need > 0 then return ("%d/%d"):format(row.have or 0, row.need) end
 	return ""
+end
+
+-- The badge's colour for an npc: the theme's accent, the difficulty of the quest it counts for,
+-- or the player's own.
+function QL.PlateColor(npcId)
+	local db, C = QL.DB(), QL.Theme.C
+	if db.plateColorMode == "custom" and type(db.plateColor) == "table" then
+		return db.plateColor[1] or 1, db.plateColor[2] or 1, db.plateColor[3] or 1
+	end
+	if db.plateColorMode == "difficulty" then
+		local list = QL.PlateIndex()[npcId]
+		local c
+		if list then
+			local _, dc = QL.QuestDifficulty(QL.QuestLevel(list[1][1]), QL.Context().level)
+			c = dc
+		end
+		if c then return c[1], c[2], c[3] end
+	end
+	return C.accent[1], C.accent[2], C.accent[3]
 end
 
 local function npcIdOf(unit)
@@ -81,20 +103,39 @@ local function badgeFor(plate)
 	local T, C = QL.Theme, QL.Theme.C
 	b = CreateFrame("Frame", nil, plate)
 	b:SetSize(16, 16)
-	-- beside the health bar when the plate has the usual parts, else beside the plate
-	local uf = plate.UnitFrame
-	local anchor = (type(uf) == "table" and type(uf.healthBar) == "table") and uf.healthBar or plate
-	b:SetPoint("RIGHT", anchor, "LEFT", -3, 0)
 	b.icon = b:CreateTexture(nil, "OVERLAY")
 	b.icon:SetTexture(MEDIA .. "quest_mark")
 	b.icon:SetAllPoints()
-	b.icon:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
 	b.text = b:CreateFontString(nil, "OVERLAY")
 	T.SetFont(b.text, 11, true, "OUTLINE")
-	b.text:SetPoint("RIGHT", b, "LEFT", -2, 0)
 	b.text:SetTextColor(1, 1, 1, 1)
+	b.plate = plate
 	badges[plate] = b
 	return b
+end
+
+-- Where the badge sits, by plateSide: left or right of the health bar (the counter on the outer
+-- side), or above the name (the counter after the badge).
+local function placeBadge(b)
+	local plate = b.plate
+	local uf = plate.UnitFrame
+	local bar = (type(uf) == "table" and type(uf.healthBar) == "table") and uf.healthBar or plate
+	local name = (type(uf) == "table" and type(uf.name) == "table") and uf.name or bar
+	local side = QL.DB().plateSide or "left"
+	b:ClearAllPoints()
+	b.text:ClearAllPoints()
+	if side == "right" then
+		b:SetPoint("LEFT", bar, "RIGHT", 3, 0)
+		b.text:SetPoint("LEFT", b, "RIGHT", 2, 0)
+	elseif side == "top" then
+		b:SetPoint("BOTTOM", name, "TOP", -10, 2)
+		b.text:SetPoint("LEFT", b, "RIGHT", 2, 0)
+	else
+		b:SetPoint("RIGHT", bar, "LEFT", -3, 0)
+		b.text:SetPoint("RIGHT", b, "LEFT", -2, 0)
+	end
+	b.side = side
+	b:SetScale(tonumber(QL.DB().plateScale) or 1)
 end
 
 function QL.UpdatePlate(unit)
@@ -106,6 +147,8 @@ function QL.UpdatePlate(unit)
 		return
 	end
 	local b = badgeFor(plate)
+	placeBadge(b)
+	b.icon:SetVertexColor(QL.PlateColor(npcIdOf(unit)))
 	b.text:SetText(text)
 	b:Show()
 end
@@ -131,4 +174,9 @@ QL.Event("NAME_PLATE_UNIT_REMOVED", function(_, unit)
 end)
 QL.On("STATE_CHANGED", function() index = nil; pcall(QL.RefreshPlates) end)
 QL.On("INDEX_READY", function() index = nil; pcall(QL.RefreshPlates) end)
-QL.On("SETTING_CHANGED", function(key) if key == "nameplates" then pcall(QL.RefreshPlates) end end)
+QL.On("SETTING_CHANGED", function(key)
+	if key == "nameplates" or (type(key) == "string" and key:sub(1, 5) == "plate") then
+		index = nil -- plateDroppers changes what is indexed
+		pcall(QL.RefreshPlates)
+	end
+end)

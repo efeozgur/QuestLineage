@@ -519,7 +519,7 @@ QL.Open(3)
 -- Arrow settings ------------------------------------------------------------------------------
 QL.Set("lang", "en")
 QL.ClearArrow()
-local panel = QuestLineageOption1.parent
+local panel = QuestLineageOptionsPanel
 panel:Hide()
 panel:Show() -- OnShow: the preview
 Eq(arrow.shown, true, "the settings page shows a preview arrow")
@@ -824,6 +824,31 @@ Eq(badgeOf("nameplate1").shown, false, "done: the boar's badge goes")
 QL.Set("nameplates", false)
 Eq(badgeOf("nameplate2").shown, false, "the setting hides badges")
 QL.Set("nameplates", true)
+-- nameplate settings from the settings page
+local bob = badgeOf("nameplate2")
+Eq(bob.side, "left", "left of the health bar by default")
+QuestLineagePlateSide2.scripts.OnClick(QuestLineagePlateSide2)
+Eq(QL.DB().plateSide, "right", "right from the settings")
+Eq(bob.side, "right", "the badge moved")
+QuestLineagePlateSide3.scripts.OnClick(QuestLineagePlateSide3)
+Eq(bob.side, "top", "above the name")
+QuestLineagePlateScale.scripts.OnValueChanged(QuestLineagePlateScale, 1.5)
+Eq(bob.scale, 1.5, "badge size")
+QuestLineagePlateColor2.scripts.OnClick(QuestLineagePlateColor2)
+local _, dc = QL.QuestDifficulty(5, 5)
+Eq(bob.icon.vertex[1], dc[1], "difficulty colour (The Gathering, level 5: normal)")
+QuestLineagePlateCount.checked = false
+QuestLineagePlateCount.scripts.OnClick(QuestLineagePlateCount)
+Eq(bob.text.text, "", "counter hidden")
+QuestLineagePlateCount.checked = true
+QuestLineagePlateCount.scripts.OnClick(QuestLineagePlateCount)
+QuestLineagePlatesOn.checked = false
+QuestLineagePlatesOn.scripts.OnClick(QuestLineagePlatesOn)
+Eq(bob.shown, false, "off from the settings page")
+QuestLineagePlatesOn.checked = true
+QuestLineagePlatesOn.scripts.OnClick(QuestLineagePlatesOn)
+QuestLineagePlateSide1.scripts.OnClick(QuestLineagePlateSide1)
+QuestLineagePlateColor1.scripts.OnClick(QuestLineagePlateColor1)
 Eq(#QL.errors, 0, "current quest and plates without errors: " .. table.concat(QL.errors, " | "))
 C_QuestLog = savedLog
 QL.ResetContext()
