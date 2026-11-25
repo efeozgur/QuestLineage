@@ -13,6 +13,8 @@ c = QL.ClassifyNpc(16, "Warrior Trainer")
 Check(has(c, "class:Warrior"), "a class trainer")
 c = QL.ClassifyNpc(16, "Blacksmithing Trainer")
 Check(has(c, "prof:Blacksmithing"), "a profession trainer")
+Check(has(QL.ClassifyNpc(16, "Fishing Trainer"), "prof:Fishing"), "a fishing trainer")
+Check(has(QL.ClassifyNpc(16, "Expert Fishing Trainer"), "prof:Fishing"), "an expert fishing trainer")
 c = QL.ClassifyNpc(16, "Weapon Master")
 Check(has(c, "weaponmaster"), "a weapon master")
 c = QL.ClassifyNpc(16, "Riding Trainer")
@@ -64,6 +66,10 @@ Eq(QL.NearestServices("classTrainer", 1)[1].id, 203, "Thrag")
 GetNumSkillLines = function() return 2 end
 GetSkillLineInfo = function(i) if i == 1 then return "Professions", true end return "Mining", false end
 Eq(QL.KnownProfessions()[1], "Mining", "known profession from the skill lines")
+GetNumSkillLines = nil
+Eq(#QL.KnownProfessions(), 0, "nothing known")
+Eq(QL.NearestServices("profTrainer", 1)[1].id, 204, "no profession yet: any profession trainer")
+GetNumSkillLines = function() return 2 end
 Eq(QL.NearestServices("profTrainer", 1)[1].id, 204, "the mining trainer")
 
 -- the quick bar: a click points the arrow at the nearest, again at the next

@@ -204,8 +204,11 @@ local function entriesFor(key)
 		return k and index.services[k] or {}
 	end
 	if key == "profTrainer" then
+		-- the trainers of the professions you know; none known yet: any profession trainer
+		local profs = QL.KnownProfessions()
+		if #profs == 0 then profs = QL.PROFESSIONS end
 		local out = {}
-		for _, p in ipairs(QL.KnownProfessions()) do
+		for _, p in ipairs(profs) do
 			for _, e in ipairs(index.services[QL.ProfessionKey(p)] or {}) do out[#out + 1] = e end
 		end
 		return out
@@ -221,6 +224,7 @@ function QL.NearestServices(key, count)
 	w, h = mapSize(map)
 	if not w then return {} end
 	local cacheKey = key .. "@" .. map
+	if key == "profTrainer" then cacheKey = cacheKey .. "@" .. table.concat(QL.KnownProfessions(), ",") end
 	local list = projected[cacheKey]
 	if not list then
 		list = {}

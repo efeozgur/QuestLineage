@@ -211,6 +211,7 @@ local TR = {
 	["Stable master"] = "Ahır ustası",
 	["Spirit healer"] = "Ruh şifacısı",
 	["Trainers"] = "Eğitmenler",
+	["Professions"] = "Meslekler",
 	["Vendors"] = "Satıcılar",
 	["Services"] = "Hizmetler",
 	["trainer"] = "eğitmeni",

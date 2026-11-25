@@ -1,8 +1,9 @@
 -- "Where?" quick bar: a slim strip of service icons under the arrow, for asking the way without
 -- opening the window. Click an icon: the arrow turns to the nearest such NPC (and the world map
 -- draws it). Click it again within 10 seconds: the next nearest. Hover: the three nearest.
--- "⋯" opens a small panel with every category, grouped: trainers, vendors, services (each of
--- the character's professions gets its own tile).
+-- "⋯" opens a small panel with every category, grouped: trainers, professions (all of them, so a
+-- trainer can be found before the profession is learnt; the known ones first and lit), vendors,
+-- services.
 --
 -- Setting quickBar; the minimap button's Shift-click shows or hides it. The bar stands on its own:
 -- drag it by its grip, its edge or any icon to put it anywhere (quickBarPoint).
@@ -13,6 +14,7 @@ local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
 local PRIMARY = { "repair", "inn", "flight", "classTrainer", "profTrainer", "food", "mail" }
 local GROUPS = {
 	{ key = "trainers", label = "Trainers" },
+	{ key = "professions", label = "Professions" },
 	{ key = "vendors", label = "Vendors" },
 	{ key = "services", label = "Services" },
 }
@@ -124,32 +126,61 @@ local function buildPanel()
 	panel:Hide()
 end
 
+-- The professions, the character's known ones first. -> keys, known set
+local function professionKeys()
+	local known, keys = {}, {}
+	for _, p in ipairs(QL.KnownProfessions()) do known[p] = true; keys[#keys + 1] = QL.ProfessionKey(p) end
+	for _, p in ipairs(QL.PROFESSIONS) do
+		if not known[p] then keys[#keys + 1] = QL.ProfessionKey(p) end
+	end
+	return keys, known
+end
+
 local function fillPanel()
 	local T, C = QL.Theme, QL.Theme.C
+	-- tiles and headings are made once and reused
+	panel.tiles = panel.tiles or {}
+	panel.heads = panel.heads or {}
 	for _, p in ipairs(panel.parts) do p:Hide() end
 	panel.parts = {}
 	local COLS, TILE_W, TILE_H = 6, 60, 50
 	local y = -12
-	for _, g in ipairs(GROUPS) do
-		local keys = {}
-		for _, s in ipairs(QL.SERVICES) do
-			if s.group == g.key and s.key ~= "profTrainer" then keys[#keys + 1] = s.key end
+	for gi, g in ipairs(GROUPS) do
+		local keys, known = {}, {}
+		if g.key == "professions" then
+			keys, known = professionKeys()
+		else
+			for _, s in ipairs(QL.SERVICES) do
+				if s.group == g.key and s.key ~= "profTrainer" then keys[#keys + 1] = s.key end
+			end
 		end
-		if g.key == "trainers" then
-			for _, p in ipairs(QL.KnownProfessions()) do keys[#keys + 1] = QL.ProfessionKey(p) end
+		local head = panel.heads[gi]
+		if not head then
+			head = T.Text(panel, 11, C.muted, nil, true)
+			panel.heads[gi] = head
 		end
-		local head = T.Text(panel, 11, C.muted, nil, true)
+		head:ClearAllPoints()
 		head:SetPoint("TOPLEFT", 12, y)
 		head:SetText(L(g.label))
+		head:Show()
 		panel.parts[#panel.parts + 1] = head
 		y = y - 18
 		for i, key in ipairs(keys) do
-			local short = key:sub(1, 5) == "prof:" and L(key:sub(6)) or (QL.SERVICE_BY_KEY[key] and L(QL.SERVICE_BY_KEY[key].label) or key)
-			local b = serviceButton(panel, key, 30, short)
-			if key:sub(1, 5) == "prof:" then b.icon:SetTexture(iconPath("book")) end
-			b:SetSize(TILE_W, TILE_H)
+			local b = panel.tiles[key]
+			if not b then
+				local isProf = key:sub(1, 5) == "prof:"
+				local short = isProf and L(key:sub(6)) or (QL.SERVICE_BY_KEY[key] and L(QL.SERVICE_BY_KEY[key].label) or key)
+				b = serviceButton(panel, key, 30, short)
+				if isProf then b.icon:SetTexture(iconPath("book")) end
+				b:SetSize(TILE_W, TILE_H)
+				panel.tiles[key] = b
+			end
+			-- a known profession is lit in the accent
+			b:SetActive(known[key:sub(6)] and true or false)
 			local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
+			b:ClearAllPoints()
 			b:SetPoint("TOPLEFT", 8 + col * TILE_W, y - row * TILE_H)
+			b:Show()
 			panel.parts[#panel.parts + 1] = b
 		end
 		y = y - math.ceil(#keys / COLS) * TILE_H - 8

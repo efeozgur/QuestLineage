@@ -652,7 +652,18 @@ Check(qpnl and qpnl.shown, "more panel open")
 Eq(qpnl.point[1], "TOP", "the more panel opens downward, under the bar")
 local tiles = 0
 for _, part in ipairs(qpnl.parts) do if part.key then tiles = tiles + 1 end end
-Check(tiles >= 18, "every category has a tile: " .. tiles)
+Check(tiles >= 18 + 14, "every category and all 14 professions have a tile: " .. tiles)
+local fishing
+for _, part in ipairs(qpnl.parts) do if part.key == "prof:Fishing" then fishing = part end end
+Check(fishing and fishing.shown, "Fishing is there even when not learnt")
+Eq(fishing.active, false, "not lit: not known")
+local before = 0
+for _ in pairs(qpnl.tiles) do before = before + 1 end
+qb.more.scripts.OnClick(qb.more)
+qb.more.scripts.OnClick(qb.more)
+local after = 0
+for _ in pairs(qpnl.tiles) do after = after + 1 end
+Eq(after, before, "tiles are reused, not made again")
 qb.more.scripts.OnClick(qb.more)
 Eq(qpnl.shown, false, "and closes")
 -- the setting and the minimap Shift-click
