@@ -639,6 +639,12 @@ Check(arrow.label.text:find("Nearest", 1, true), "why: " .. arrow.label.text)
 qb.buttons[1].scripts.OnEnter(qb.buttons[1])
 Check(QuestLineageTooltip.lines[2].text:find("Grezz", 1, true), "tooltip lists the nearest: " .. QuestLineageTooltip.lines[2].text)
 qb.buttons[1].scripts.OnLeave(qb.buttons[1])
+-- it stands on its own: dragging moves the bar, not the arrow, and its place is kept
+Eq(qb.point[2], UIParent, "anchored to the screen, not to the arrow")
+qb.buttons[2].scripts.OnDragStart(qb.buttons[2])
+qb.buttons[2].scripts.OnDragStop(qb.buttons[2])
+Check(QL.DB().quickBarPoint, "its place is saved")
+Eq(QL.DB().arrowPoint, nil, "the arrow did not move")
 -- the more panel
 qb.more.scripts.OnClick(qb.more)
 local qpnl = QuestLineageQuickPanel

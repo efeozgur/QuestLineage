@@ -216,7 +216,10 @@ local function buildArrowSection(y)
 	local r = CreateFrame("Button", "QuestLineageArrowReset", panel, "UIPanelButtonTemplate")
 	r:SetSize(160, 24)
 	r:SetPoint("TOPLEFT", 20, y)
-	r:SetScript("OnClick", function() if QL.ResetArrowPosition then QL.ResetArrowPosition() end end)
+	r:SetScript("OnClick", function()
+		if QL.ResetArrowPosition then QL.ResetArrowPosition() end
+		if QL.ResetQuickBarPosition then QL.ResetQuickBarPosition() end
+	end)
 	a.reset = r
 	return y - 30
 end

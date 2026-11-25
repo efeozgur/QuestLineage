@@ -234,6 +234,7 @@ local TR = {
 	["Next nearest (%d): "] = "Sıradaki (%d.): ",
 	["Click: point the arrow · again: the next one"] = "Tık: oku çevir · tekrar: sıradaki",
 	["More: every trainer, vendor and service"] = "Daha fazla: tüm eğitmenler, satıcılar ve hizmetler",
+	["Drag: move the bar"] = "Sürükle: çubuğu taşı",
 	["Route on the world map"] = "Rota dünya haritasında",
 	["Click: open in QuestLineage"] = "Tık: QuestLineage'da aç",
 	["about %s in all"] = "toplam yaklaşık %s",

@@ -4,8 +4,8 @@
 -- "⋯" opens a small panel with every category, grouped: trainers, vendors, services (each of
 -- the character's professions gets its own tile).
 --
--- Setting quickBar; the minimap button's Shift-click shows or hides it. The bar is anchored under
--- the arrow, so it moves with it (dragging the bar drags the arrow).
+-- Setting quickBar; the minimap button's Shift-click shows or hides it. The bar stands on its own:
+-- drag it by its grip, its edge or any icon to put it anywhere (quickBarPoint).
 
 local _, QL = ...
 
@@ -19,6 +19,21 @@ local GROUPS = {
 local CYCLE_TIME = 10
 
 local bar, panel
+
+local function startMove() if bar then bar:StartMoving() end end
+local function stopMove()
+	if not bar then return end
+	bar:StopMovingOrSizing()
+	local point, _, relPoint, x, y = bar:GetPoint(1)
+	QL.DB().quickBarPoint = { point, relPoint, x, y }
+end
+
+-- Icons capture the mouse: let them pass a drag on to the bar (a click still clicks).
+local function draggable(b)
+	b:RegisterForDrag("LeftButton")
+	b:SetScript("OnDragStart", startMove)
+	b:SetScript("OnDragStop", stopMove)
+end
 local last = { key = nil, at = 0, index = 0 }
 
 local function L(s) return QL.L(s) end
@@ -87,6 +102,7 @@ local function serviceButton(parent, key, size, caption)
 	local enter, leave = b:GetScript("OnEnter"), b:GetScript("OnLeave")
 	b:SetScript("OnEnter", function(self) enter(self); pcall(showTip, self, self.key) end)
 	b:SetScript("OnLeave", function(self) leave(self); QL.Tip():Hide() end)
+	if parent == bar then draggable(b) end
 	return b
 end
 
@@ -153,28 +169,40 @@ end
 
 local function build()
 	local T, C = QL.Theme, QL.Theme.C
-	local arrow = QL.ArrowFrame and QL.ArrowFrame()
 	bar = CreateFrame("Frame", "QuestLineageQuickBar", UIParent)
 	bar:SetFrameStrata("DIALOG")
 	bar:SetClampedToScreen(true)
-	local SIZE, GAP = 30, 2
+	bar:SetMovable(true)
+	local SIZE, GAP, GRIP = 30, 2, 12
 	local count = #PRIMARY + 1
-	bar:SetSize(8 + count * (SIZE + GAP), SIZE + 8)
-	if arrow then
-		bar:SetPoint("TOP", arrow, "BOTTOM", 0, -2)
+	bar:SetSize(GRIP + 8 + count * (SIZE + GAP), SIZE + 8)
+	local p = QL.DB().quickBarPoint
+	if type(p) == "table" and p[1] then
+		bar:SetPoint(p[1], UIParent, p[2], p[3], p[4])
 	else
-		bar:SetPoint("TOP", UIParent, "TOP", 0, -300)
+		bar:SetPoint("TOP", UIParent, "TOP", 0, -330)
 	end
 	T.Fill(bar, { 0.055, 0.063, 0.082, 0.88 })
 	T.Border(bar, C.line)
+	-- the grip: two columns of small dots on the left
+	for row = 0, 2 do
+		for col = 0, 1 do
+			local d = bar:CreateTexture(nil, "ARTWORK")
+			d:SetTexture(T.WHITE)
+			d:SetSize(2, 2)
+			d:SetPoint("LEFT", 5 + col * 4, (1 - row) * 5)
+			d:SetVertexColor(C.muted[1], C.muted[2], C.muted[3], 0.8)
+		end
+	end
 	bar.buttons = {}
 	for i, key in ipairs(PRIMARY) do
 		local b = serviceButton(bar, key, SIZE)
-		b:SetPoint("LEFT", 4 + (i - 1) * (SIZE + GAP), 0)
+		b:SetPoint("LEFT", GRIP + 4 + (i - 1) * (SIZE + GAP), 0)
 		bar.buttons[i] = b
 	end
 	local more = QL.Theme.IconButton(bar, iconPath("more"), SIZE)
-	more:SetPoint("LEFT", 4 + #PRIMARY * (SIZE + GAP), 0)
+	more:SetPoint("LEFT", GRIP + 4 + #PRIMARY * (SIZE + GAP), 0)
+	draggable(more)
 	more:SetScript("OnClick", function() QL.ToggleQuickPanel() end)
 	local enter, leave = more:GetScript("OnEnter"), more:GetScript("OnLeave")
 	more:SetScript("OnEnter", function(self)
@@ -182,21 +210,25 @@ local function build()
 		local tip = QL.Tip()
 		tip:SetOwner(self, "ANCHOR_BOTTOM")
 		tip:AddLine(L("More: every trainer, vendor and service"), 1, 1, 1)
+		tip:AddLine(L("Drag: move the bar"), 0.6, 0.6, 0.6)
 		tip:Show()
 	end)
 	more:SetScript("OnLeave", function(self) leave(self); QL.Tip():Hide() end)
 	bar.more = more
-	-- dragging the bar drags the arrow it hangs from
+	-- its own place: drag it anywhere
 	bar:EnableMouse(true)
 	bar:RegisterForDrag("LeftButton")
-	bar:SetScript("OnDragStart", function() if arrow then arrow:StartMoving() end end)
-	bar:SetScript("OnDragStop", function()
-		if not arrow then return end
-		arrow:StopMovingOrSizing()
-		local point, _, relPoint, x, y = arrow:GetPoint(1)
-		QL.DB().arrowPoint = { point, relPoint, x, y }
-	end)
+	bar:SetScript("OnDragStart", startMove)
+	bar:SetScript("OnDragStop", stopMove)
 	bar:SetShown(QL.DB().quickBar ~= false)
+end
+
+function QL.ResetQuickBarPosition()
+	QL.DB().quickBarPoint = nil
+	if bar then
+		bar:ClearAllPoints()
+		bar:SetPoint("TOP", UIParent, "TOP", 0, -330)
+	end
 end
 
 function QL.ToggleQuickBar()
