@@ -17,7 +17,7 @@ closes for good. Each card shows the quest's state for your character.
 
 | Place | What you get |
 |---|---|
-| `/ql` window | The chain tree. Search by quest name or id. Click a card to recentre on it, Shift-click to link it in chat. Mouse wheel scrolls, Shift+wheel scrolls sideways, drag the background to pan. |
+| `/ql` window | **This zone**: every quest chain with a quest in the zone you are in, the ones in progress first, with progress bars; it follows you from zone to zone. **Search**: any quest by name or id, as you type. Picking one opens its family tree on the right. Click a card to recentre on it, Shift-click to link it in chat. Mouse wheel scrolls, Shift+wheel scrolls sideways, drag the background to pan. |
 | Quest log | A **Chain** button on the selected quest. |
 | NPC tooltips | For each chained quest the NPC gives: `Chain 2/5 · next: <quest>`. |
 | Quest offer window | A strip under the window: the chain position, a **Chain** button, and a warning when taking the quest closes other quests for good (exclusive quests), or when it is only a breadcrumb. |

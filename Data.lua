@@ -42,6 +42,7 @@ function QL.ResetData()
 	lib, libState, libReason = nil, nil, nil
 	QL.index = nil
 	QL.indexing = nil
+	if QL.ResetZones then QL.ResetZones() end
 end
 
 local function get(entity, id, field)
@@ -80,13 +81,34 @@ end
 -- index.names = { {id, lowercase name}, ... }  for the search box
 
 local function newIndex()
-	return { dependents = {}, names = {} }
+	return { dependents = {}, names = {}, byZone = {} }
+end
+
+-- index.byZone[area] = quest ids: the quest's own zone, and the zones its givers stand in
+-- (subzones folded into their zone by QL.TopArea, Zone.lua).
+local function indexZones(index, id)
+	local seen = {}
+	local function add(area)
+		area = QL.TopArea and QL.TopArea(area) or area
+		if type(area) ~= "number" or area <= 0 or seen[area] then return end
+		seen[area] = true
+		local list = index.byZone[area]
+		if not list then list = {}; index.byZone[area] = list end
+		list[#list + 1] = id
+	end
+	add(QL.Q(id, "zoneOrSort"))
+	local by = QL.Q(id, "startedBy")
+	if type(by) == "table" then
+		for _, npc in ipairs(QL.Ids(by[1])) do add(QL.N(npc, "zoneID")) end
+		for _, obj in ipairs(QL.Ids(by[2])) do add(QL.O(obj, "zoneID")) end
+	end
 end
 
 local function indexOne(index, id)
 	local name = QL.Q(id, "name")
 	if type(name) ~= "string" then return end
 	index.names[#index.names + 1] = { id, name:lower() }
+	indexZones(index, id)
 	local dep = index.dependents
 	local function add(p, kind)
 		local list = dep[p]

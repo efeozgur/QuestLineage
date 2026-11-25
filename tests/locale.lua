@@ -13,7 +13,7 @@ QL.Set("lang", "tr")
 Check(not QL.HasWoWTR(), "no WoWTR")
 Check(not QL.UseTurkish(), "Turkish needs WoWTR")
 Eq(QL.L("Chain"), "Chain", "still English")
-Eq(QL.FontPath(), "Fonts\\FRIZQT__.TTF", "game font")
+Eq(QL.FontPath(), "Fonts\\ARIALN.TTF", "one font")
 
 -- WoWTR loaded
 QTR_QuestData = { ["1"] = { Title = "İlk Adımlar", Objectives = "Bob ile konuş." } }
@@ -24,7 +24,7 @@ Eq(QL.QuestTitle(1), "İlk Adımlar", "title from WoWTR")
 Eq(QL.QuestObjectives(1), "Bob ile konuş.", "objectives from WoWTR")
 Eq(QL.QuestTitle(2), "Second Steps", "untranslated quest keeps its English title")
 Eq(QL.L("Quest #%d"):format(5), "Görev #5", "format string")
-Check(QL.FontPath():find("WoWTR", 1, true), "WoWTR font for Turkish letters")
+Eq(QL.FontPath(), "Fonts\\ARIALN.TTF", "same font in Turkish (it has the Turkish letters)")
 
 -- back to English with WoWTR still loaded
 QL.Set("lang", "en")

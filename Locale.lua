@@ -74,6 +74,29 @@ local TR = {
 	["Version: "] = "Sürüm: ",
 	[" errors (/ql errors)"] = " hata (/ql errors)",
 	["Quest #%d"] = "Görev #%d",
+	-- window
+	["This zone"] = "Bu bölge",
+	["Search"] = "Ara",
+	["Quest chains"] = "Görev zincirleri",
+	["Unknown zone"] = "Bilinmeyen bölge",
+	["QuestieDB is missing."] = "QuestieDB yok.",
+	["QuestieDB is missing"] = "QuestieDB yok",
+	["QuestLineage reads its quest data from the QuestieDB addon."] = "QuestLineage görev verisini QuestieDB eklentisinden okur.",
+	["No quest data for this zone."] = "Bu bölge için görev verisi yok.",
+	["No quest chains in this zone."] = "Bu bölgede görev zinciri yok.",
+	["%d chains · %d open · %d quests"] = "%d zincir · %d açık · %d görev",
+	["Lv %d–%d"] = "Sv %d–%d",
+	["%d quests"] = "%d görev",
+	["In progress"] = "Devam ediyor",
+	["Completed"] = "Tamamlandı",
+	["Quest name or id"] = "Görev adı veya id",
+	["Type at least two letters."] = "En az iki harf yaz.",
+	["No quest found."] = "Görev bulunamadı.",
+	["%d quests found"] = "%d görev bulundu",
+	["This takes a few seconds once per session."] = "Oturum başına bir kez, birkaç saniye sürer.",
+	["Pick a quest chain"] = "Bir görev zinciri seç",
+	["Choose one from this zone on the left, or search for any quest."] = "Soldan bu bölgedeki bir zinciri seç ya da herhangi bir görevi ara.",
+	["%d quests · %d generations"] = "%d görev · %d nesil",
 }
 QL.TR = TR
 
@@ -118,12 +141,11 @@ function QL.QuestObjectives(questId)
 	return nil
 end
 
--- Fonts: Turkish letters (ş ğ ı İ) need WoWTR's font; English keeps the game's.
-local TR_FONT = "Interface\\AddOns\\WoWTR\\Assets\\Fonts\\frizquadrata_tr.ttf"
-local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
+-- One font everywhere: the game's Arial Narrow reads cleanly and has the Turkish letters
+-- (ş ğ ı İ), so English and Turkish look the same.
+local DEFAULT_FONT = "Fonts\\ARIALN.TTF"
 
 function QL.FontPath()
-	if QL.UseTurkish() then return TR_FONT end
 	return DEFAULT_FONT
 end
 

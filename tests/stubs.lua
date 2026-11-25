@@ -9,23 +9,27 @@
 --   3 --all--> 8 (Orc only)
 --   3 --parent--> 9 (must be on 3)
 --   11 <-> 12 (a cycle) ; 10 stands alone
+--   14 --any--> 15 (in Mulgore = area 215; 14 in its subzone 220)
+-- Zones: 1-12 are in Durotar (area 14, uiMap 1411); 1 by its giver Bob's zone, not its own field.
 
 local QUESTS = {
 	[1] = { name = "First Steps", questLevel = 2, requiredLevel = 1, nextQuestInChain = 2, startedBy = { { 100 } }, finishedBy = { { 101 } }, objectivesText = { "Talk to Bob." } },
-	[2] = { name = "Second Steps", questLevel = 3, requiredLevel = 2, preQuestSingle = { 1 } },
-	[3] = { name = "The Gathering", questLevel = 5, requiredLevel = 4, preQuestGroup = { 2, 4 } },
-	[4] = { name = "Side Road", questLevel = 6, requiredLevel = 6, breadcrumbs = { 5 } },
-	[5] = { name = "Rumours", questLevel = 4, requiredLevel = 1, breadcrumbForQuestId = 4 },
-	[6] = { name = "Left Path", questLevel = 7, requiredLevel = 5, preQuestGroup = { 3 }, exclusiveTo = { 7 } },
-	[7] = { name = "Right Path", questLevel = 7, requiredLevel = 5, preQuestGroup = { 3 }, exclusiveTo = { 6 } },
-	[8] = { name = "Horde Only", questLevel = 7, requiredLevel = 5, preQuestGroup = { 3 }, requiredRaces = 2 },
-	[9] = { name = "While You Are There", questLevel = 6, requiredLevel = 5, parentQuest = 3 },
-	[10] = { name = "Lonely Quest", questLevel = 10, requiredLevel = 8 },
-	[11] = { name = "Loop A", questLevel = 10, nextQuestInChain = 12, preQuestSingle = { 12 } },
-	[12] = { name = "Loop B", questLevel = 10, preQuestSingle = { 11 } },
+	[2] = { zoneOrSort = 14, name = "Second Steps", questLevel = 3, requiredLevel = 2, preQuestSingle = { 1 } },
+	[3] = { zoneOrSort = 14, name = "The Gathering", questLevel = 5, requiredLevel = 4, preQuestGroup = { 2, 4 } },
+	[4] = { zoneOrSort = 14, name = "Side Road", questLevel = 6, requiredLevel = 6, breadcrumbs = { 5 } },
+	[5] = { zoneOrSort = 14, name = "Rumours", questLevel = 4, requiredLevel = 1, breadcrumbForQuestId = 4 },
+	[6] = { zoneOrSort = 14, name = "Left Path", questLevel = 7, requiredLevel = 5, preQuestGroup = { 3 }, exclusiveTo = { 7 } },
+	[7] = { zoneOrSort = 14, name = "Right Path", questLevel = 7, requiredLevel = 5, preQuestGroup = { 3 }, exclusiveTo = { 6 } },
+	[8] = { zoneOrSort = 14, name = "Horde Only", questLevel = 7, requiredLevel = 5, preQuestGroup = { 3 }, requiredRaces = 2 },
+	[9] = { zoneOrSort = 14, name = "While You Are There", questLevel = 6, requiredLevel = 5, parentQuest = 3 },
+	[10] = { zoneOrSort = 14, name = "Lonely Quest", questLevel = 10, requiredLevel = 8 },
+	[11] = { zoneOrSort = 14, name = "Loop A", questLevel = 10, nextQuestInChain = 12, preQuestSingle = { 12 } },
+	[12] = { zoneOrSort = 14, name = "Loop B", questLevel = 10, preQuestSingle = { 11 } },
+	[14] = { zoneOrSort = 220, name = "Plains Hunt", questLevel = 4, requiredLevel = 1 },
+	[15] = { zoneOrSort = 215, name = "Plains Feast", questLevel = 6, requiredLevel = 3, preQuestSingle = { 14 } },
 }
 local NPCS = {
-	[100] = { name = "Bob", questStarts = { 1 } },
+	[100] = { name = "Bob", questStarts = { 1 }, zoneID = 14 },
 	[101] = { name = "Alice", questStarts = { 2, 10 } },
 }
 
@@ -53,13 +57,23 @@ LibQuestieDB = {
 	Npc = entity(NPCS),
 	Object = entity({}),
 	Item = entity({}),
+	Support = {
+		Get = function(name)
+			if name ~= "ZoneDB" then return nil end
+			return { private = {
+				uiMapIdToAreaId = "return { [1411] = 14, [1412] = 215 }",
+				uiMapIdToAreaIdOverride = "return { [1414] = 10073 }",
+				subZoneToParentZone = "return { [220] = 215 }",
+			} }
+		end,
+	},
 }
 
 QuestLineageDB = nil
 QTR_QuestData = nil
 
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "State.lua", "Chain.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 QL.QUESTS = QUESTS

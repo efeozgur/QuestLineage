@@ -85,12 +85,17 @@ C_QuestLog = {
 local tooltipPost
 TooltipDataProcessor = { AddTooltipPostCall = function(_, fn) tooltipPost = fn end }
 Enum = { TooltipDataType = { Unit = 2 } }
+C_Map = {
+	GetBestMapForUnit = function() return 1411 end,
+	GetMapInfo = function(id) if id == 1411 then return { name = "Durotar", parentMapID = 1414 } end end,
+}
+function GetCursorPosition() return 0, 0 end
 Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function() return 1 end } end, RegisterAddOnCategory = function() end }
 
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "State.lua", "Chain.lua", "TreeFrame.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Theme.lua", "Tree.lua", "Window.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -98,22 +103,72 @@ Check(SlashCmdList.QUESTLINEAGE, "slash command registered")
 Check(tooltipPost, "tooltip hook installed")
 Check(QuestLineageOption1, "options built")
 
--- The window on quest 3 (the index builds through the frame slicer) --------------------
-QL.Open(3)
-local f = QuestLineageFrame
-Check(f and f.shown, "window shown")
-for _ = 1, 5 do
-	for _, fr in ipairs(frames) do
-		local up = fr.scripts.OnUpdate
-		if up then up(fr) end
+local function runUpdates()
+	for _ = 1, 5 do
+		for _, fr in ipairs(frames) do
+			local up = fr.scripts.OnUpdate
+			if up then up(fr, 0.05) end
+		end
 	end
 end
 
+-- Opening before the index exists shows the building state, then the tree --------------------
+QL.ToggleWindow()
+local f = QuestLineageFrame
+Check(f and f.shown, "window shown")
+runUpdates()
 Check(QL.IndexReady(), "index built by the slicer")
-QL.RenderWindow()
-Eq(f.title.text:find("The Gathering", 1, true) ~= nil, true, "title is the focused quest")
-Check(f.sub.text:find("1/8", 1, true), "progress 1/8 done: " .. f.sub.text)
-Eq(f.message.shown, false, "no message over a chain")
+QL.Open(3)
+Eq(f.infoTitle.text, "The Gathering", "info bar title is the focused quest")
+Check(f.infoDone.text:find("1/8", 1, true), "progress 1/8 done: " .. f.infoDone.text)
+Eq(f.infoPct.text, "13%", "percent done")
+Eq(f.empty.shown, false, "no empty state over a chain")
+Check(f.legend.text:find("requires", 1, true), "legend drawn")
+
+-- This zone: Durotar's two chains, the one in progress first ------------------------------------
+QL.ShowPage("zone")
+local zp = f.zonePage
+Eq(zp.shown, true, "zone page shown")
+Eq(f.searchPage.shown, false, "search page hidden")
+Eq(f.zoneTab.active, true, "zone tab active")
+Eq(zp.zone.text, "Durotar", "zone name")
+Check(zp.sub.text:find("2 chains", 1, true), "zone summary: " .. zp.sub.text)
+local rows = {}
+for _, r in ipairs(zp.list.rows) do if r.shown then rows[#rows + 1] = r end end
+Eq(#rows, 2, "two chain rows")
+Eq(rows[1].chip.text, "In progress", "chain with a logged quest first")
+Eq(rows[1].openId, 2, "it opens at the quest in the log")
+Eq(rows[1].selected, true, "the open chain's row is selected")
+Eq(rows[2].chip.text, "Locked", "the loop chain needs itself, so it is locked")
+Check(rows[1].sub.text:find("8 quests", 1, true), "row sub line: " .. rows[1].sub.text)
+rows[2].scripts.OnClick(rows[2])
+Check(f.infoTitle.text:find("Loop", 1, true), "clicking a row opens its tree: " .. f.infoTitle.text)
+Eq(rows[2].selected, true, "clicked row selected")
+Eq(rows[1].selected, false, "other row not selected")
+
+-- Search: as you type -------------------------------------------------------------------------------
+QL.ShowPage("search")
+local sp = f.searchPage
+Eq(sp.shown, true, "search page shown")
+sp.input:SetText("p")
+sp.input.scripts.OnTextChanged(sp.input, true)
+Check(sp.sub.text:find("two letters", 1, true), "asks for two letters")
+sp.input:SetText("path")
+sp.input.scripts.OnTextChanged(sp.input, true)
+Eq(sp.sub.text, "2 quests found", "two hits")
+local hits = {}
+for _, r in ipairs(sp.list.rows) do if r.shown then hits[#hits + 1] = r end end
+Eq(#hits, 2, "two result rows")
+Eq(hits[1].title.text, "Left Path", "first hit")
+Eq(hits[1].chip.text, "#6", "id chip")
+hits[1].scripts.OnClick(hits[1])
+Eq(f.infoTitle.text, "Left Path", "result opens its tree")
+QL.Open("gathering")
+Eq(QL.DB().page, "search", "text opens the search page")
+Eq(f.infoTitle.text, "The Gathering", "best hit focused")
+QL.Open(10)
+Eq(f.infoMeta.text, "This quest has no chain.", "a lone quest says so")
+QL.Open(3)
 
 -- Family-tree layout: first quests on top, each generation lower, siblings on one row, centred
 local chain = QL.BuildChain(3, QL.Context())
@@ -129,34 +184,30 @@ Eq(y6, y9, "siblings on one row")
 Check(x6 ~= x9, "siblings side by side")
 local cw, ch = QL.CanvasSize(chain)
 Check(cw > 0 and ch > 0, "canvas size")
-Eq(#chain.layers[3], 1, "generation 3 is the gathering alone")
-Eq(#chain.layers[4], 3, "three quests follow it")
-local middle = chain.layers[4][2]
-Eq(x3, (pos(middle)), "a lone card sits centred above its three children")
+Eq(#chain.layers[4], 3, "three quests follow the gathering")
+Eq(x3, (pos(chain.layers[4][2])), "a lone card sits centred above its three children")
+Check(f.tree.ox >= 0, "narrow trees are centred in the view")
 
 -- Unfolding: a new focus starts transparent and ends fully shown
 QL.Open(2)
-local faded = false
 local cards = {}
-for _, fr in ipairs(frames) do
-	if fr.kind == "Button" and fr.questId and fr.shown then cards[#cards + 1] = fr end
-end
+for i = 1, f.tree.usedCards do cards[#cards + 1] = f.tree.cards[i] end
+Eq(#cards, 8, "eight cards")
+local faded = false
 for _, c in ipairs(cards) do if (c.alpha or 1) < 1 then faded = true end end
 Check(faded, "cards start faded")
 for _ = 1, 60 do
-	local up = f.unfolder.scripts.OnUpdate
-	if up then up(f.unfolder, 0.05) end
+	local up = f.tree.unfolder.scripts.OnUpdate
+	if up then up(f.tree.unfolder, 0.05) end
 end
 for _, c in ipairs(cards) do Eq(c.alpha, 1, "card fully shown after unfolding") end
-Eq(f.unfolder.scripts.OnUpdate, nil, "unfold stops itself")
-QL.Open(3)
-
--- a search with several hits shows the result list
-QL.Open("path")
-Check(f.results.shown, "results list for several matches")
-Check(f.title.text:find("Left Path", 1, true), "first match focused")
-QL.Open("no such quest")
-Check(f.message.text:find("No quest found", 1, true), "not found message")
+Eq(f.tree.unfolder.scripts.OnUpdate, nil, "unfold stops itself")
+local focused = 0
+for _, c in ipairs(cards) do if c.focused then focused = focused + 1 end end
+Eq(focused, 1, "one focused card")
+-- a quest-log refresh repaints without unfolding again
+QL.RenderWindow(false)
+for i = 1, f.tree.usedCards do Eq(f.tree.cards[i].alpha, 1, "no unfold on refresh") end
 
 -- Tooltip line on an NPC that starts a chained quest (Alice gives 2 and 10) -----------------
 QL.ClearChainCache()
@@ -185,8 +236,9 @@ QuestLineageOption1.checked = true
 QuestLineageOption1.scripts.OnClick(QuestLineageOption1)
 Eq(QL.DB().lang, "tr", "language set from the options")
 QL.Open(3)
-Check(f.title.text:find("Toplanma", 1, true), "Turkish title in the window")
-Check(f.sub.text:find("tamam", 1, true), "Turkish interface text")
+Eq(f.infoTitle.text, "Toplanma", "Turkish title in the window")
+Check(f.infoDone.text:find("tamam", 1, true), "Turkish interface text")
+Eq(f.zoneTab.label.text, "Bu bölge", "Turkish tab label")
 
 -- Slash commands do not error
 QL.Command("status")

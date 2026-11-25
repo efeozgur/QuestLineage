@@ -12,8 +12,11 @@
 Core.lua
 Locale.lua
 Data.lua
+Zone.lua
 State.lua
 Chain.lua
-TreeFrame.lua
+Theme.lua
+Tree.lua
+Window.lua
 Hooks.lua
 Options.lua
