@@ -144,6 +144,35 @@ local function selectRow(r, on)
 	r.mark:SetShown(on)
 end
 
+-- Filtering a page's list by what is typed in its filter box: a quest matches when its title
+-- (as shown, Turkish or English) or its English name contains the text; a chain matches when
+-- any of its quests does.
+local function pageQuery(page)
+	local t = page.filter and page.filter:GetText() or ""
+	t = t:gsub("^%s+", ""):gsub("%s+$", "")
+	if t == "" then return nil end
+	return t:lower()
+end
+
+local function questMatches(id, q)
+	if not q then return true end
+	local shown = QL.QuestTitle(id)
+	if type(shown) == "string" and shown:lower():find(q, 1, true) then return true end
+	local en = QL.Q(id, "name")
+	return type(en) == "string" and en:lower():find(q, 1, true) ~= nil
+end
+
+local function filterChainRows(rows, q)
+	if not q then return rows end
+	local out = {}
+	for _, row in ipairs(rows) do
+		for _, id in ipairs(row.entry.ids) do
+			if questMatches(id, q) then out[#out + 1] = row; break end
+		end
+	end
+	return out
+end
+
 -- Chain rows (the Chains and Class pages): the chain's first quest, levels, done count, XP
 -- still to earn, its state, the distance to the quest the row opens, and a progress bar.
 -- rows = { { entry = QL.GroupChains entry, progress = QL.ChainProgress }, ... }
@@ -241,8 +270,14 @@ local function renderZone()
 		if row.progress.state ~= "done" then open = open + 1 end
 		quests = quests + row.entry.size
 	end
+	page.filter:SetPlaceholder(L("Filter chains by quest name"))
+	local q = pageQuery(page)
+	local all = #rows
+	rows = filterChainRows(rows, q)
 	if not area then
 		page.sub:SetText(L("No quest data for this zone."))
+	elseif q then
+		page.sub:SetText(L("%d of %d match"):format(#rows, all))
 	elseif #rows == 0 then
 		page.sub:SetText(L("No quest chains in this zone."))
 	else
@@ -300,7 +335,13 @@ local function renderClass()
 		quests = quests + row.entry.size
 		xpLeft = xpLeft + QL.ChainXP(row.entry.ids, ctx).remaining
 	end
-	if #rows == 0 then
+	page.filter:SetPlaceholder(L("Filter class quests"))
+	local q = pageQuery(page)
+	local all = #rows
+	rows = filterChainRows(rows, q)
+	if q then
+		page.sub:SetText(L("%d of %d match"):format(#rows, all))
+	elseif #rows == 0 then
 		page.sub:SetText(L("No class quests found for your class."))
 	else
 		local text = L("%d quests · %d open · %d to do now"):format(quests, open, now)
@@ -338,7 +379,17 @@ local function renderQuests()
 		if q.inLog then inLog = inLog + 1 end
 		total = total + (q.xp or 0)
 	end
-	if #quests == 0 then
+	page.filter:SetPlaceholder(L("Filter quests by name"))
+	local q = pageQuery(page)
+	local all = #quests
+	if q then
+		local kept = {}
+		for _, item in ipairs(quests) do if questMatches(item.id, q) then kept[#kept + 1] = item end end
+		quests = kept
+	end
+	if q then
+		page.sub:SetText(L("%d of %d match"):format(#quests, all))
+	elseif #quests == 0 then
 		page.sub:SetText(L("No quests to take here right now."))
 	else
 		page.sub:SetText(L("%d quests · %d in your log"):format(#quests, inLog) .. "  ·  " .. T.Hex(C.accent) .. QL.XPText(total) .. "|r")
@@ -748,8 +799,20 @@ local function createWindow()
 		zp.sub = T.Text(zp, 12, C.muted)
 		zp.sub:SetPoint("TOPLEFT", zp.zone, "BOTTOMLEFT", 0, -6)
 		zp.sub:SetPoint("RIGHT", zp, "RIGHT", -16, 0)
+		-- the filter box: narrows the list as you type
+		zp.filter = T.Input(zp, SIDEBAR_W - 32, 28)
+		zp.filter:SetPoint("TOPLEFT", 16, -66)
+		local waiting
+		zp.filter:SetScript("OnTextChanged", function(self, user)
+			self.hint:SetShown((self:GetText() or "") == "")
+			if not user or waiting then return end
+			waiting = true
+			local run = function() waiting = nil; if win:IsShown() then QL.RenderWindow(false) end end
+			if C_Timer and C_Timer.After then C_Timer.After(0.2, run) else run() end
+		end)
+		zp.filter:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 		zp.list = T.Scroll(zp)
-		zp.list:SetPoint("TOPLEFT", 0, -62)
+		zp.list:SetPoint("TOPLEFT", 0, -102)
 		zp.list:SetPoint("BOTTOMRIGHT", 0, 8)
 		zp.list.rows = {}
 		local sep = zp:CreateTexture(nil, "BORDER")

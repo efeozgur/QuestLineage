@@ -248,6 +248,44 @@ Eq(f.inspector.hero.title.text, "Shield Lesson", "a class row opens its quest")
 Eq(QL.ArrowQuest(), 22, "and points the arrow")
 QL.ClearArrow()
 
+-- Filter boxes on the Quests, Chains and Class pages ------------------------------------------------
+QL.ShowPage("quests")
+local qpf = f.questsPage
+qpf.filter:SetText("rum")
+qpf.filter.scripts.OnTextChanged(qpf.filter, true)
+local kept = {}
+for _, r in ipairs(qpf.list.rows) do if r.shown then kept[#kept + 1] = r.questId end end
+Eq(table.concat(kept, ","), "5", "only Rumours matches 'rum'")
+Eq(qpf.sub.text, "1 of 2 match", "how many match")
+qpf.filter:SetText("")
+qpf.filter.scripts.OnTextChanged(qpf.filter, true)
+kept = {}
+for _, r in ipairs(qpf.list.rows) do if r.shown then kept[#kept + 1] = r.questId end end
+Eq(#kept, 2, "an empty filter shows all again")
+QL.ShowPage("zone")
+local zpf = f.zonePage
+zpf.filter:SetText("loop")
+zpf.filter.scripts.OnTextChanged(zpf.filter, true)
+kept = {}
+for _, r in ipairs(zpf.list.rows) do if r.shown then kept[#kept + 1] = r end end
+Eq(#kept, 1, "one chain has a quest named Loop")
+Check(kept[1].title.text:find("Loop", 1, true), "the loop chain: " .. kept[1].title.text)
+zpf.filter:SetText("gathering")
+zpf.filter.scripts.OnTextChanged(zpf.filter, true)
+kept = {}
+for _, r in ipairs(zpf.list.rows) do if r.shown then kept[#kept + 1] = r end end
+Eq(#kept, 1, "a chain matches by any of its quests, not only its first")
+zpf.filter:SetText("")
+zpf.filter.scripts.OnTextChanged(zpf.filter, true)
+QL.ShowPage("class")
+f.classPage.filter:SetText("shield")
+f.classPage.filter.scripts.OnTextChanged(f.classPage.filter, true)
+kept = {}
+for _, r in ipairs(f.classPage.list.rows) do if r.shown then kept[#kept + 1] = r.questId end end
+Eq(table.concat(kept, ","), "22", "class quests filter too")
+f.classPage.filter:SetText("")
+f.classPage.filter.scripts.OnTextChanged(f.classPage.filter, true)
+
 -- Search: as you type -------------------------------------------------------------------------------
 QL.ShowPage("search")
 local sp = f.searchPage
