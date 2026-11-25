@@ -167,6 +167,18 @@ local TR = {
 	["Arrow frame: not built yet (pick a quest in the Quests list)"] = "Ok henüz oluşmadı (Görevler listesinden bir görev seç)",
 	["No target."] = "Hedef yok.",
 	["%s k yd"] = "%s bin yd",
+	-- arrow settings
+	["Arrow"] = "Ok",
+	["Colour"] = "Renk",
+	["By direction (ahead, to the side, behind)"] = "Yöne göre (önünde, yanında, arkanda)",
+	["The theme's colour"] = "Temanın rengi",
+	["My own colour"] = "Kendi rengim",
+	["Pick a colour"] = "Renk seç",
+	["Size: %d%%"] = "Boyut: %%%d",
+	["Glow behind the arrow"] = "Okun arkasında parıltı",
+	["Reset position"] = "Konumu sıfırla",
+	["The arrow turns here as a preview while this page is open. Drag it to move it."] = "Bu sayfa açıkken ok önizleme olarak döner. Taşımak için sürükle.",
+	["Arrow preview"] = "Ok önizlemesi",
 }
 QL.TR = TR
 

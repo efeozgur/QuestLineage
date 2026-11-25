@@ -26,6 +26,10 @@ QL.defaults = {
 	hideOther = true,     -- leave out quests this race/class can never take
 	minimapButton = true, -- the button on the minimap's rim
 	minimapAngle = 215,   -- where on the rim, in degrees
+	arrowColorMode = "direction", -- "direction" (by facing), "accent" (the theme's), "custom"
+	arrowColor = { 0.239, 0.839, 0.776 }, -- the custom colour
+	arrowScale = 1,       -- the arrow's size
+	arrowGlow = true,     -- the soft glow behind it
 }
 
 -- SavedVariables can be missing on a cold start: always go through DB().

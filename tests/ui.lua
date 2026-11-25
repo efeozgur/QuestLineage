@@ -31,6 +31,7 @@ local function mock(kind, name)
 	end
 	function mt.SetGradient(self, dir, c1, c2) self.gradient = { dir, c1, c2 } end
 	function mt.SetRotation(self, r) self.rotation = r end
+	function mt.SetScale(self, v) self.scale = v end
 	function mt.SetFrameStrata(self, v) self.strata = v end
 	function mt.GetFrameStrata(self) return self.strata end
 	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
@@ -415,6 +416,54 @@ local r2 = QL.ArrowColor(math.pi)
 Check(math.abs(r1 - QL.Theme.C.accent[1]) < 1e-9, "ahead: accent")
 Check(math.abs(r2 - QL.Theme.C.danger[1]) < 1e-9, "behind: red")
 QL.Open(3)
+
+-- Arrow settings ------------------------------------------------------------------------------
+QL.Set("lang", "en")
+QL.ClearArrow()
+local panel = QuestLineageOption1.parent
+panel:Hide()
+panel:Show() -- OnShow: the preview
+Eq(arrow.shown, true, "the settings page shows a preview arrow")
+QL.UpdateArrow()
+Eq(arrow.title.text, "Arrow preview", "preview text")
+-- colour: the theme's accent
+QuestLineageArrowMode2.scripts.OnClick(QuestLineageArrowMode2)
+Eq(QL.DB().arrowColorMode, "accent", "accent mode")
+local ar, ag, ab = QL.ArrowTint(math.pi)
+Eq(ar, QL.Theme.C.accent[1], "accent even when behind")
+Eq(QuestLineageArrowMode2.checked, true, "its box ticked")
+Eq(QuestLineageArrowMode1.checked, false, "the others not")
+-- colour: my own, through the game's colour picker
+ColorPickerFrame = { SetupColorPickerAndShow = function(self, info) self.info = info end, GetColorRGB = function() return 0.9, 0.2, 0.6 end }
+QuestLineageArrowSwatch.scripts.OnClick(QuestLineageArrowSwatch)
+Check(ColorPickerFrame.info and ColorPickerFrame.info.swatchFunc, "colour picker opened")
+ColorPickerFrame.info.swatchFunc()
+Eq(QL.DB().arrowColorMode, "custom", "picking a colour selects my own colour")
+Eq(QL.DB().arrowColor[2], 0.2, "colour saved")
+Check(QL.defaults.arrowColor[2] ~= 0.2, "the defaults stay untouched")
+local cr, cg, cb = QL.ArrowTint(0)
+Eq(cr, 0.9, "custom colour used")
+QL.UpdateArrow()
+Eq(arrow.arrow.vertex[1], 0.9, "the arrow is painted in it")
+-- size
+QuestLineageArrowScale.scripts.OnValueChanged(QuestLineageArrowScale, 1.53)
+Eq(QL.DB().arrowScale, 1.55, "size snaps to 5% steps")
+Eq(arrow.scale, 1.55, "the arrow grows")
+QuestLineageArrowScale.scripts.OnValueChanged(QuestLineageArrowScale, 9)
+Eq(QL.DB().arrowScale, 2, "capped at 200%")
+-- glow
+QuestLineageArrowGlow.checked = false
+QuestLineageArrowGlow.scripts.OnClick(QuestLineageArrowGlow)
+Eq(arrow.glow.shown, false, "glow off")
+QuestLineageArrowGlow.checked = true
+QuestLineageArrowGlow.scripts.OnClick(QuestLineageArrowGlow)
+Eq(arrow.glow.shown, true, "glow on")
+-- leaving the page hides the preview when no quest is set
+panel:Hide()
+Eq(arrow.shown, false, "preview gone with the page")
+-- back to the defaults
+QuestLineageArrowMode1.scripts.OnClick(QuestLineageArrowMode1)
+Eq(QL.DB().arrowColorMode, "direction", "by direction again")
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton

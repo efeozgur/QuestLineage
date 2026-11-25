@@ -6,7 +6,10 @@
 --   QL.ClearArrow()
 --   QL.ArrowQuest() -> questId | nil
 --
--- Colour shows how well you face it: the accent when ahead, amber to the side, red behind.
+-- Colour (setting arrowColorMode): by direction (the accent when you face it, amber to the side,
+-- red behind; the default), the theme's accent, or a colour of your own (arrowColor).
+-- Size: arrowScale. Glow: arrowGlow. While the settings page is open the arrow shows a turning
+-- preview when it has no quest (QL.ArrowPreview).
 -- Left-drag moves it (arrowPoint), right-click stops it. It follows the quest: once the
 -- objectives are done it turns to the hand-in; when the quest is handed in it says so and stops.
 
@@ -45,6 +48,28 @@ function QL.ArrowColor(rotation)
 	local accuracy = 1 - err / math.pi
 	if accuracy >= 0.5 then return blend(AMBER, C.accent, (accuracy - 0.5) * 2) end
 	return blend(C.danger, AMBER, accuracy * 2)
+end
+
+-- The arrow's colour for a rotation, by the colour setting.
+function QL.ArrowTint(rotation)
+	local db, C = QL.DB(), QL.Theme.C
+	if db.arrowColorMode == "accent" then return C.accent[1], C.accent[2], C.accent[3] end
+	if db.arrowColorMode == "custom" and type(db.arrowColor) == "table" then
+		return db.arrowColor[1] or 1, db.arrowColor[2] or 1, db.arrowColor[3] or 1
+	end
+	return QL.ArrowColor(rotation or 0)
+end
+
+local preview = false
+
+-- Size and glow from the settings; called on build and on every setting change.
+function QL.ApplyArrowSettings()
+	if not frame then return end
+	local db = QL.DB()
+	local scale = tonumber(db.arrowScale) or 1
+	if scale < 0.4 then scale = 0.4 elseif scale > 2.5 then scale = 2.5 end
+	frame:SetScale(scale)
+	frame.glow:SetShown(db.arrowGlow ~= false)
 end
 
 local function build()
@@ -105,6 +130,7 @@ local function build()
 		GameTooltip:Show()
 	end)
 	f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	QL.ApplyArrowSettings()
 	f:SetScript("OnUpdate", function(_, elapsed)
 		elapsedSince = elapsedSince + (elapsed or 0)
 		if elapsedSince < UPDATE then return end
@@ -120,8 +146,27 @@ local function setRotation(r)
 	frame.shade:SetRotation(r)
 end
 
+-- A slowly turning sample for the settings page.
+local function drawPreview()
+	local t = GetTime and GetTime() or 0
+	local rot = (t * 0.9) % (2 * math.pi)
+	frame.arrow:SetRotation(rot)
+	frame.shade:SetRotation(rot)
+	local r, g, b = QL.ArrowTint(rot)
+	frame.arrow:SetVertexColor(r, g, b, 1)
+	frame.glow:SetVertexColor(r, g, b, 1)
+	frame.glow:SetAlpha(0.32)
+	frame.title:SetText(L("Arrow preview"))
+	frame.dist:SetText(L("%d yd"):format(120))
+	frame.label:SetText(L("Drag: move · Right-click: stop"))
+end
+
 function QL.UpdateArrow()
-	if not frame or not target then return end
+	if not frame then return end
+	if not target then
+		if preview then drawPreview() end
+		return
+	end
 	local loc = QL.Locate(target)
 	frame.title:SetText(QL.QuestTitle(questId))
 	frame.label:SetText(target.label or "")
@@ -151,11 +196,11 @@ function QL.UpdateArrow()
 	end
 	local facing = GetPlayerFacing and GetPlayerFacing()
 	if facing ~= nil and issecretvalue and issecretvalue(facing) then facing = nil end
-	local r, g, b = C.accent[1], C.accent[2], C.accent[3]
+	local r, g, b = QL.ArrowTint(0)
 	if facing then
 		local rot = QL.Bearing(loc.dx, loc.dy, facing)
 		setRotation(rot)
-		r, g, b = QL.ArrowColor(rot)
+		r, g, b = QL.ArrowTint(rot)
 	end
 	frame.arrow:SetVertexColor(r, g, b, 1)
 	frame.glow:SetVertexColor(r, g, b, 1)
@@ -230,12 +275,42 @@ end
 function QL.ClearArrow()
 	questId, target = nil, nil
 	saved()[charKey()] = nil
-	if frame then frame:Hide() end
+	if frame and not preview then frame:Hide() end
 	QL.Fire("ARROW_CHANGED", nil)
+end
+
+-- The settings page shows the arrow while it is open, so size and colour changes can be seen.
+function QL.ArrowPreview(on)
+	preview = on and true or false
+	if preview then
+		if not frame and CreateFrame then
+			local ok, err = pcall(build)
+			if not ok then QL.Debug("arrow build: " .. tostring(err)); preview = false; return end
+		end
+		frame:Show()
+		pcall(QL.UpdateArrow)
+	elseif frame and not target then
+		frame:Hide()
+	end
+end
+
+function QL.ResetArrowPosition()
+	QL.DB().arrowPoint = nil
+	if frame then
+		frame:ClearAllPoints()
+		frame:SetPoint("TOP", UIParent, "TOP", 0, -140)
+	end
 end
 
 function QL.ArrowQuest() return questId end
 function QL.ArrowTarget() return target end
+
+QL.On("SETTING_CHANGED", function(key)
+	if type(key) == "string" and key:sub(1, 5) == "arrow" then
+		QL.ApplyArrowSettings()
+		if frame and frame:IsShown() then pcall(QL.UpdateArrow) end
+	end
+end)
 
 -- quest log changes move the arrow along (objectives done -> hand in; handed in -> stop)
 QL.On("STATE_CHANGED", function()
