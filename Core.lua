@@ -38,6 +38,7 @@ QL.defaults = {
 	currentLogCollapsed = false, -- the "Quests" list under it folded
 	currentLogMax = 15,   -- how many quests that list shows (1-30)
 	currentLogFilter = "all", -- which: "all" | "zone" | "class" | "chain"
+	logObjectives = true, -- the list's rows show their objectives (each row can be minimised: logFolded)
 	questsHideChains = true, -- the main window's Quests tab leaves chain quests to the Chains tab
 	hideGameTracker = false, -- hide the game's own quest tracker (QuestLineage's window replaces it)
 	questAreas = true,    -- the current quest's objective areas on the minimap and world map

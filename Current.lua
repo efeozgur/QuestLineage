@@ -198,6 +198,16 @@ local function build()
 	head.text:SetPoint("LEFT", 14, -2)
 	head.fold = T.Text(head, 13, C.muted, nil, true)
 	head.fold:SetPoint("RIGHT", -14, -2)
+	-- show or hide every quest's objectives at once
+	head.all = CreateFrame("Button", nil, head)
+	head.all:SetSize(90, 18)
+	head.all:SetPoint("RIGHT", head.fold, "LEFT", -10, 0)
+	head.all.text = T.Text(head.all, 10, C.muted, nil, true)
+	head.all.text:SetPoint("RIGHT", 0, 0)
+	head.all.text:SetJustifyH("RIGHT")
+	head.all:SetScript("OnClick", function() QL.ToggleLogObjectives() end)
+	head.all:SetScript("OnEnter", function(self) self.text:SetTextColor(unpack(C.text)) end)
+	head.all:SetScript("OnLeave", function(self) self.text:SetTextColor(unpack(C.muted)) end)
 	head:SetScript("OnClick", function() QL.Set("currentLogCollapsed", not QL.DB().currentLogCollapsed) end)
 	head:RegisterForDrag("LeftButton")
 	head:SetScript("OnDragStart", function() frame:StartMoving() end)
@@ -316,6 +326,44 @@ local function summary(id, ctx)
 	return lines, need > 0 and (have / need) or nil
 end
 
+-- Whether a list row shows its objectives: each quest can be folded on its own (logFolded[id]),
+-- else the list's default (logObjectives, switched for all from the header).
+function QL.LogObjectivesOpen(id)
+	local over = type(QL.DB().logFolded) == "table" and QL.DB().logFolded[id]
+	if over ~= nil then return not over end
+	return QL.DB().logObjectives ~= false
+end
+
+function QL.ToggleLogObjectives(id)
+	local db = QL.DB()
+	if id then
+		local map = type(db.logFolded) == "table" and db.logFolded or {}
+		map[id] = QL.LogObjectivesOpen(id) -- open -> folded, folded -> open
+		db.logFolded = map
+	else
+		-- every quest: the default flips and single choices are forgotten
+		db.logObjectives = not (db.logObjectives ~= false)
+		db.logFolded = {}
+	end
+	pcall(QL.RefreshCurrent)
+end
+
+-- A small "–" / "+" button (minimise / show) in the list's look.
+local function foldButton(parent, onClick)
+	local T, C = QL.Theme, QL.Theme.C
+	local b = CreateFrame("Button", nil, parent)
+	b:SetSize(18, 16)
+	b:SetFrameLevel((parent:GetFrameLevel() or 1) + 5)
+	b.bg = T.Fill(b, { 0, 0, 0, 0 })
+	b.text = T.Text(b, 13, C.muted, nil, true)
+	b.text:SetPoint("CENTER", 0, 1)
+	b.text:SetJustifyH("CENTER")
+	b:SetScript("OnClick", onClick)
+	b:SetScript("OnEnter", function(self) T.Color(self.bg, C.rowHover); self.text:SetTextColor(unpack(C.text)) end)
+	b:SetScript("OnLeave", function(self) T.Color(self.bg, { 0, 0, 0, 0 }); self.text:SetTextColor(unpack(C.muted)) end)
+	return b
+end
+
 local function logRow(i)
 	local T, C = QL.Theme, QL.Theme.C
 	local r = frame.logRows[i]
@@ -325,9 +373,9 @@ local function logRow(i)
 	r.bg = T.Fill(r, { 0, 0, 0, 0 })
 	r.title = T.Text(r, 12, C.text)
 	r.title:SetPoint("TOPLEFT", 30, -4) -- the abandon cross sits before it
-	r.title:SetPoint("RIGHT", r, "RIGHT", -64, 0)
+	r.title:SetPoint("RIGHT", r, "RIGHT", -80, 0)
 	r.right = T.Text(r, 11, C.muted, nil, true)
-	r.right:SetPoint("TOPRIGHT", -14, -5)
+	r.right:SetPoint("TOPRIGHT", -30, -5) -- the minimise button sits to its right
 	r.right:SetJustifyH("RIGHT")
 	r.sub = T.Text(r, 10, C.muted)
 	if r.sub.SetWordWrap then r.sub:SetWordWrap(true) end
@@ -355,6 +403,9 @@ local function logRow(i)
 	-- abandon this quest: a cross that shows while the cursor is on the row (after its scripts)
 	r.drop = QL.AbandonButton(r, function() return r.questId end)
 	r.drop:SetPoint("LEFT", 7, 0)
+	-- minimise: hide or show this quest's objectives
+	r.fold = foldButton(r, function() if r.questId then QL.ToggleLogObjectives(r.questId) end end)
+	r.fold:SetPoint("TOPRIGHT", -8, -3)
 	-- dragging a row moves the window
 	r:RegisterForDrag("LeftButton")
 	r:SetScript("OnDragStart", function() frame:StartMoving() end)
@@ -451,6 +502,8 @@ local function drawLog(y, ctx, currentId)
 	local folded = QL.DB().currentLogCollapsed
 	head.text:SetText(L("QUESTS") .. "  " .. T.Hex(C.muted) .. #ids .. "|r")
 	head.fold:SetText(folded and "+" or "–")
+	head.all:SetShown(not folded)
+	head.all.text:SetText((QL.DB().logObjectives ~= false) and L("– objectives") or L("+ objectives"))
 	head:Show()
 	y = y - 26
 	if folded then return y end
@@ -494,8 +547,16 @@ local function drawLog(y, ctx, currentId)
 			local level = QL.QuestLevel(id)
 			r.right:SetText(level and QL.LevelMarkup(id, ctx) or "")
 			r.right:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
-			r.sub:SetText(table.concat(lines, "\n"))
+			if QL.LogObjectivesOpen(id) or #lines == 0 then
+				r.sub:SetText(table.concat(lines, "\n"))
+			else
+				-- minimised: one line with how far it is
+				local p = QL.QuestCompletion(id, ctx)
+				r.sub:SetText(p and (T.Hex(C.dim) .. L("%d/%d objectives · %d%%"):format(p.done, p.total, p.percent) .. "|r") or "")
+			end
 		end
+		r.fold:SetShown(not isReady and #lines > 0)
+		r.fold.text:SetText(QL.LogObjectivesOpen(id) and "–" or "+")
 		if frac and not isReady then
 			r.bar:Show()
 			r.bar:SetValue(frac)
