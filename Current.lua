@@ -167,12 +167,19 @@ local function build()
 	frame.stateDot:SetTexture("Interface\\AddOns\\QuestLineage\\Media\\disc")
 	frame.stateDot:SetSize(7, 7)
 	frame.stateDot:SetPoint("TOPLEFT", 14, -53)
+	-- how far the quest is: "2/3 objectives · 72%" on the state line, and a bar under it
+	frame.progress = T.Text(frame, 11, C.accent, nil, true)
+	frame.progress:SetPoint("TOPRIGHT", -14, -48)
+	frame.progress:SetJustifyH("RIGHT")
 	frame.state = T.Text(frame, 11, C.muted)
 	frame.state:SetPoint("LEFT", frame.stateDot, "RIGHT", 7, 0)
-	frame.state:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+	frame.state:SetPoint("RIGHT", frame.progress, "LEFT", -8, 0)
+	frame.bar = T.Bar(frame, 3)
+	frame.bar:SetPoint("TOPLEFT", 14, -64)
+	frame.bar:SetPoint("TOPRIGHT", -14, -64)
 	frame.sep = frame:CreateTexture(nil, "BORDER")
 	frame.sep:SetTexture(T.WHITE)
-	frame.sep:SetPoint("TOPLEFT", 14, -68); frame.sep:SetPoint("TOPRIGHT", -14, -68)
+	frame.sep:SetPoint("TOPLEFT", 14, -74); frame.sep:SetPoint("TOPRIGHT", -14, -74)
 	frame.sep:SetHeight(1)
 	T.Color(frame.sep, C.lineSoft)
 	frame.rows = {}
@@ -500,7 +507,7 @@ function QL.RefreshCurrent(flashes)
 	local ctx = QL.Context()
 	local id = QL.CurrentQuest(ctx)
 	local T, C = QL.Theme, QL.Theme.C
-	local currentParts = { frame.label, frame.meta, frame.title, frame.stateDot, frame.state }
+	local currentParts = { frame.label, frame.meta, frame.title, frame.stateDot, frame.state, frame.progress, frame.bar }
 	if not id then
 		-- no current quest: the window shows the log alone (or nothing when the log is empty)
 		frame.questId = nil
@@ -539,9 +546,24 @@ function QL.RefreshCurrent(flashes)
 	local d = QL.DistanceText and QL.DistanceText(id, ctx)
 	frame.state:SetText(T.Hex(s) .. stage .. "|r" .. (d and ("  ·  " .. d) or ""))
 
+	-- completion: objectives done and the share of all counters
+	local p = QL.QuestCompletion(id, ctx)
+	if p then
+		local g = T.STATUS.done
+		local full = p.fraction >= 1
+		frame.progress:SetText(L("%d/%d objectives · %d%%"):format(p.done, p.total, p.percent))
+		frame.progress:SetTextColor(unpack(full and { g[1], g[2], g[3], 1 } or C.accent))
+		frame.bar:SetValue(p.fraction, full and g or nil)
+	else
+		frame.progress:SetText("")
+	end
+	frame.progress:SetShown(p ~= nil)
+	frame.bar:SetShown(p ~= nil)
+	frame.completion = p
+
 	-- objectives
 	local rows = QL.DB().currentCollapsed and {} or QL.ObjectiveRows(id, ctx)
-	local y = -76
+	local y = -82
 	for i, o in ipairs(rows) do
 		local r = frame.rows[i]
 		if not r then r = newRow(); frame.rows[i] = r end
@@ -580,6 +602,34 @@ function QL.RefreshCurrent(flashes)
 	y = drawLog(y, ctx, id)
 	frame:SetHeight(-y + 8)
 	frame:Show()
+end
+
+-- How far a logged quest is: { done, total (objectives), fraction, percent } from its objective
+-- rows; a counter counts by its units (3 of 5 ribs = 3/5), one without a counter as 0 or 1. A
+-- quest the game calls complete is 100%. nil for a quest with nothing to count that is not done.
+function QL.QuestCompletion(id, ctx)
+	ctx = ctx or QL.Context()
+	local rows = QL.ObjectiveRows(id, ctx) or {}
+	local have, need, done = 0, 0, 0
+	for _, o in ipairs(rows) do
+		if o.need and o.need > 0 then
+			need = need + o.need
+			have = have + math.min(o.have or 0, o.need)
+		else
+			need = need + 1
+			have = have + (o.done and 1 or 0)
+		end
+		-- a full counter counts as done even when the client has not flagged it yet
+		if o.done or (o.need and o.need > 0 and (o.have or 0) >= o.need) then done = done + 1 end
+	end
+	local complete = ctx.complete and ctx.complete[id]
+	if #rows == 0 then
+		if not complete then return nil end
+		return { done = 1, total = 1, fraction = 1, percent = 100 }
+	end
+	local fraction = complete and 1 or (need > 0 and have / need or 0)
+	if complete then done = #rows end
+	return { done = done, total = #rows, fraction = fraction, percent = math.floor(fraction * 100 + 0.5) }
 end
 
 -- The game's own quest tracker ----------------------------------------------------------------------

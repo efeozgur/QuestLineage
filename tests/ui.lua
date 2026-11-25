@@ -1121,6 +1121,17 @@ ribs = 3
 QL.ResetContext()
 Eq(cur.rows[2].count.text, "3/5", "counter updated")
 Check(cur.rows[2].flashT > 0, "the row flashes")
+-- completion: Bob 0/1 and ribs 3/5 = 3 of 6 units, none of the two objectives done
+Eq(cur.progress.text, "0/2 objectives · 50%", "count and share")
+Eq(cur.bar.shown, true, "with a bar")
+Eq(cur.completion.fraction, 0.5, "the bar at half")
+ribs = 5
+QL.ResetContext()
+Eq(cur.progress.text, "1/2 objectives · 83%", "the ribs done: 5 of 6")
+ribs = 3
+QL.ResetContext()
+local p2 = QL.QuestCompletion(3, { complete = { [3] = true }, log = { [3] = true }, done = {}, level = 5 })
+Eq(p2.percent, 100, "a quest the game calls complete is 100%")
 -- the log list under it: the other logged quest (Second Steps)
 Eq(cur.logHead.shown, true, "Quests header shown")
 Check(cur.logHead.text.text:find("QUESTS", 1, true), "header text: " .. cur.logHead.text.text)
