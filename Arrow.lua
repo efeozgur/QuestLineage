@@ -243,7 +243,6 @@ function QL.SetArrowTarget(id, quiet)
 		local ok, err = pcall(build)
 		if not ok then QL.Debug("arrow build: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors"), "error"); return end
 	end
-	local changed = questId ~= id
 	questId = id
 	target = nil
 	refreshTarget()
@@ -256,9 +255,8 @@ function QL.SetArrowTarget(id, quiet)
 		frame:Show()
 		pcall(QL.UpdateArrow)
 	end
-	if changed and not quiet then
-		QL.Print(L("Arrow: ") .. QL.QuestTitle(id) .. "  ·  " .. (target.label or ""))
-	end
+	-- no notification here: the arrow itself shows the quest and what to do (a card on every
+	-- click was noise); only problems are reported
 	QL.Fire("ARROW_CHANGED", id)
 end
 
@@ -301,8 +299,8 @@ function QL.SetArrowPlace(kind, id, opts)
 		frame:Show()
 		pcall(QL.UpdateArrow)
 	end
-	QL.Print(L("Arrow: ") .. (opts.title or "?") .. (opts.label and ("  ·  " .. opts.label) or ""))
-	if #target.points == 0 then QL.Print(L("No location data"), "warn") end
+	-- the arrow names the place itself; only say something when there is nowhere to point
+	if #target.points == 0 then QL.Print(L("No location data") .. ": " .. (opts.title or "?"), "warn") end
 	QL.Fire("ARROW_CHANGED", "place")
 end
 

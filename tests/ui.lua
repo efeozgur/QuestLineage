@@ -738,6 +738,21 @@ Eq(#chat, before + 1, "toasts off: the chat")
 QL.Set("toasts", true)
 DEFAULT_CHAT_FRAME = nil
 
+-- Clicking quests raises no notification (the arrow shows it); only problems do -------------------
+QL.ClearToasts()
+QL.ShowPage("quests")
+for _, r in ipairs(f.questsPage.list.rows) do if r.shown and r.questId == 2 then r.scripts.OnClick(r) end end
+QL.SetArrowTarget(3)
+local cardsUp = 0
+for _, fr in ipairs(frames) do if fr.parent == QuestLineageToasts and fr.text and fr.shown then cardsUp = cardsUp + 1 end end
+Eq(cardsUp, 0, "no card for pointing the arrow at a quest")
+QL.SetArrowPlace("npc", 999, { title = "Nobody" })
+cardsUp = 0
+for _, fr in ipairs(frames) do if fr.parent == QuestLineageToasts and fr.text and fr.shown then cardsUp = cardsUp + 1 end end
+Eq(cardsUp, 1, "but a place with no location says so")
+QL.ClearToasts()
+QL.ClearArrow()
+
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton
 Check(mb and mb.shown, "minimap button shown")
