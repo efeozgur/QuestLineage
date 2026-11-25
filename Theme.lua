@@ -202,6 +202,90 @@ function T.Gradient(tex, direction, c1, c2)
 	color(tex, c1)
 end
 
+-- QuestLineage's own tooltip, in the theme's font (the game's tooltip font has no Turkish
+-- letters on this client, so quest text there came out broken). The same calls as GameTooltip
+-- for what QuestLineage uses: SetOwner(owner, anchor), AddLine(text, r, g, b, wrap), Show, Hide.
+-- Item tiles keep the game's tooltip: the game draws items itself.
+local TIP_W = 300 -- wrapped lines' width
+function T.Tooltip()
+	if T.tip then return T.tip end
+	local C = T.C
+	local tip = CreateFrame("Frame", "QuestLineageTooltip", UIParent)
+	T.tip = tip
+	local frameShow = tip.Show
+	tip:SetFrameStrata("TOOLTIP")
+	tip:SetClampedToScreen(true)
+	tip:Hide()
+	T.Fill(tip, { 0.055, 0.063, 0.082, 0.97 })
+	T.Border(tip, C.line)
+	local top = tip:CreateTexture(nil, "ARTWORK")
+	top:SetTexture(WHITE)
+	top:SetPoint("TOPLEFT", 1, -1); top:SetPoint("TOPRIGHT", -1, -1)
+	top:SetHeight(2)
+	T.Gradient(top, "HORIZONTAL", C.accent, C.accent2)
+	tip.lines, tip.n = {}, 0
+
+	function tip:SetOwner(owner, anchor)
+		self.owner, self.anchor = owner, anchor or "ANCHOR_RIGHT"
+		for _, fs in ipairs(self.lines) do fs:Hide() end
+		self.n = 0
+	end
+	function tip:AddLine(text, r, g, b, wrap)
+		self.n = self.n + 1
+		local fs = self.lines[self.n]
+		if not fs then
+			fs = self:CreateFontString(nil, "OVERLAY")
+			fs:SetJustifyH("LEFT")
+			fs:SetShadowOffset(0, 0)
+			self.lines[self.n] = fs
+		end
+		local first = self.n == 1
+		T.SetFont(fs, first and 14 or 12, first)
+		fs:SetTextColor(r or 1, g or 1, b or 1, 1)
+		fs:SetText(text or "")
+		fs.wrap = wrap and true or false
+		if fs.SetWordWrap then fs:SetWordWrap(fs.wrap) end
+		fs:Show()
+	end
+	function tip:NumLines() return self.n end
+	function tip:Show()
+		if self.n == 0 then self:Hide(); return end
+		-- width: the widest unwrapped line; wrapped lines get a fixed width
+		local w = 0
+		for i = 1, self.n do
+			local fs = self.lines[i]
+			local sw = fs.wrap and TIP_W or (fs:GetStringWidth() or 0)
+			if sw > w then w = sw end
+		end
+		w = math.min(math.max(w, 120), 420)
+		local y = -12
+		for i = 1, self.n do
+			local fs = self.lines[i]
+			fs:ClearAllPoints()
+			fs:SetWidth(w)
+			fs:SetPoint("TOPLEFT", self, "TOPLEFT", 12, y)
+			y = y - (fs:GetStringHeight() or 12) - (i == 1 and 6 or 3)
+		end
+		self:SetSize(w + 24, -y + 9)
+		self:ClearAllPoints()
+		local o, a = self.owner, self.anchor
+		if not o then
+			self:SetPoint("CENTER")
+		elseif a == "ANCHOR_LEFT" then
+			self:SetPoint("TOPRIGHT", o, "TOPLEFT", -8, 0)
+		elseif a == "ANCHOR_BOTTOM" then
+			self:SetPoint("TOP", o, "BOTTOM", 0, -6)
+		elseif a == "ANCHOR_TOP" then
+			self:SetPoint("BOTTOM", o, "TOP", 0, 6)
+		else
+			self:SetPoint("TOPLEFT", o, "TOPRIGHT", 8, 0)
+		end
+		frameShow(self)
+	end
+	return tip
+end
+QL.Tip = function() return T.Tooltip() end
+
 -- Flat button: label, hover lift, an "active" state with an accent underline.
 function T.Button(parent, w, h)
 	local C = T.C

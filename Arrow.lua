@@ -124,12 +124,13 @@ local function build()
 	f.label:SetShadowOffset(1, -1)
 
 	f:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		if questId then QL.FillQuestTooltip(GameTooltip, questId) end
-		GameTooltip:AddLine(L("Drag: move · Right-click: stop"), 0.6, 0.6, 0.6)
-		GameTooltip:Show()
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_BOTTOM")
+		if questId then QL.FillQuestTooltip(tip, questId) end
+		tip:AddLine(L("Drag: move · Right-click: stop"), 0.6, 0.6, 0.6)
+		tip:Show()
 	end)
-	f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	f:SetScript("OnLeave", function() QL.Tip():Hide() end)
 	QL.ApplyArrowSettings()
 	f:SetScript("OnUpdate", function(_, elapsed)
 		elapsedSince = elapsedSince + (elapsed or 0)

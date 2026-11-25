@@ -64,4 +64,4 @@ ayarlardan (`/ql options` veya `/ql lang tr`) Türkçe seçilebilir; görev adla
 
 ## License
 
-MIT (see `LICENSE`). Quest data comes from the QuestieDB addon at run time and is not bundled.
+MIT (see `LICENSE`). The Inter font in `Media/Fonts` is by The Inter Project Authors under the SIL Open Font License 1.1 (`Media/Fonts/Inter-OFL.txt`). Quest data comes from the QuestieDB addon at run time and is not bundled.

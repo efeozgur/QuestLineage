@@ -70,14 +70,15 @@ local function newRow(list, height)
 	r:SetScript("OnEnter", function(self)
 		if not self.selected then T.Color(self.bg, C.rowHover) end
 		if self.questId then
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			QL.FillQuestTooltip(GameTooltip, self.questId)
-			GameTooltip:Show()
+			local tip = QL.Tip()
+			tip:SetOwner(self, "ANCHOR_RIGHT")
+			QL.FillQuestTooltip(tip, self.questId)
+			tip:Show()
 		end
 	end)
 	r:SetScript("OnLeave", function(self)
 		T.Color(self.bg, self.selected and C.rowActive or C.row)
-		GameTooltip:Hide()
+		QL.Tip():Hide()
 	end)
 	r:SetScript("OnClick", function(self)
 		if not self.openId then return end

@@ -333,6 +333,15 @@ Eq(insp.hero.title.text, "Left Path", "clicking a chain row opens it")
 Check(texts("heading", "text"):find("Closes for good", 1, true), "exclusive quest section")
 QL.Open(3)
 
+-- QuestLineage's own tooltip (the theme's font) on a card -------------------------------------
+local tcard = f.tree.cards[1]
+tcard.scripts.OnEnter(tcard)
+local qtip = QuestLineageTooltip
+Check(qtip and qtip.shown, "own tooltip shown")
+Check(qtip.lines[1].text ~= "", "title line")
+tcard.scripts.OnLeave(tcard)
+Eq(qtip.shown, false, "hidden on leave")
+
 -- Tooltip line on an NPC that starts a chained quest (Alice gives 2 and 10) -----------------
 QL.ClearChainCache()
 GameTooltip.lines = {}

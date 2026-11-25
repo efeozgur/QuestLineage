@@ -40,13 +40,14 @@ local function makeButton(parent, name)
 	b:SetSize(80, 22)
 	b:SetScript("OnEnter", function(self)
 		if not self.questId then return end
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:AddLine(L("Show this quest's chain"), 1, 0.82, 0)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_RIGHT")
+		tip:AddLine(L("Show this quest's chain"), 1, 0.82, 0)
 		local text = QL.SummaryText(self.questId)
-		if text then GameTooltip:AddLine(text, 1, 1, 1, true) end
-		GameTooltip:Show()
+		if text then tip:AddLine(text, 1, 1, 1, true) end
+		tip:Show()
 	end)
-	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	b:SetScript("OnLeave", function() QL.Tip():Hide() end)
 	b:SetScript("OnClick", function(self)
 		if self.questId then QL.Open(self.questId) end
 	end)
@@ -105,6 +106,32 @@ local function npcIdFromGuid(guid)
 	return tonumber(id)
 end
 
+-- The game's tooltip font has no Turkish letters on this client: the lines QuestLineage adds get
+-- the theme's font, and each line's own font goes back when the tooltip is cleared, so the
+-- game's and other addons' tooltips are left as they were.
+local restyled = {}
+
+local function lineFontString(tooltip, n)
+	local name = tooltip.GetName and tooltip:GetName()
+	return name and _G[name .. "TextLeft" .. n]
+end
+
+local function restoreFonts()
+	for fs, font in pairs(restyled) do
+		if font[1] then pcall(fs.SetFont, fs, font[1], font[2], font[3]) end
+		restyled[fs] = nil
+	end
+end
+
+local function styleLastLine(tooltip)
+	local n = tooltip.NumLines and tooltip:NumLines()
+	if type(n) ~= "number" or n < 1 then return end
+	local fs = lineFontString(tooltip, n)
+	if type(fs) ~= "table" or not fs.GetFont then return end
+	if not restyled[fs] then restyled[fs] = { fs:GetFont() } end
+	QL.SetFont(fs, 12)
+end
+
 local function addNpcLines(tooltip, guid)
 	if not QL.DB().tooltip then return 0 end
 	local npcId = npcIdFromGuid(guid)
@@ -122,6 +149,7 @@ local function addNpcLines(tooltip, guid)
 				local xp = QL.QuestXPAt(questId, ctx.level)
 				local xpText = xp and ("  " .. hex(0.24, 0.84, 0.78) .. QL.XPText(xp) .. "|r") or ""
 				tooltip:AddLine(hex(0.5, 0.83, 1) .. QL.QuestTitle(questId) .. "|r  " .. text .. xpText, 0.85, 0.85, 0.85, true)
+				styleLastLine(tooltip)
 				added = added + 1
 			end
 		end
@@ -130,6 +158,10 @@ local function addNpcLines(tooltip, guid)
 end
 
 local function hookTooltips()
+	if GameTooltip and GameTooltip.HookScript then
+		pcall(GameTooltip.HookScript, GameTooltip, "OnTooltipCleared", restoreFonts)
+		pcall(GameTooltip.HookScript, GameTooltip, "OnHide", restoreFonts)
+	end
 	if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Unit then
 		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip, data)
 			if tooltip ~= GameTooltip then return end

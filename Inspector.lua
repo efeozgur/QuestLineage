@@ -264,12 +264,13 @@ function Inspector:Row(o)
 		b:SetScript("OnEnter", function(btn)
 			T.Color(btn.bg, C.cardHover)
 			if btn.tip then
-				GameTooltip:SetOwner(btn, "ANCHOR_LEFT")
-				btn.tip(GameTooltip)
-				GameTooltip:Show()
+				local tip = QL.Tip()
+				tip:SetOwner(btn, "ANCHOR_LEFT")
+				btn.tip(tip)
+				tip:Show()
 			end
 		end)
-		b:SetScript("OnLeave", function(btn) T.Color(btn.bg, C.card); GameTooltip:Hide() end)
+		b:SetScript("OnLeave", function(btn) T.Color(btn.bg, C.card); QL.Tip():Hide() end)
 		b:SetScript("OnClick", function(btn) if btn.click then btn.click() end end)
 		return b
 	end)

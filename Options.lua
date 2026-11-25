@@ -158,11 +158,12 @@ local function buildArrowSection(y)
 				end)
 			end)
 			sw:SetScript("OnEnter", function(self)
-				GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-				GameTooltip:AddLine(L("Pick a colour"), 1, 1, 1)
-				GameTooltip:Show()
+				local tip = QL.Tip()
+				tip:SetOwner(self, "ANCHOR_RIGHT")
+				tip:AddLine(L("Pick a colour"), 1, 1, 1)
+				tip:Show()
 			end)
-			sw:SetScript("OnLeave", function() GameTooltip:Hide() end)
+			sw:SetScript("OnLeave", function() QL.Tip():Hide() end)
 			a.swatch = sw
 		end
 		y = y - 26
