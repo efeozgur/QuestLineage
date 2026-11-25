@@ -9,7 +9,8 @@ local _, QL = ...
 
 local RADIUS = 80 -- fallback: half the classic 140px minimap plus the rim
 local RIM = 5     -- how far past the minimap's edge the button's centre sits, so it rides the border
-local ICON = "Interface\\Icons\\INV_Misc_Book_09"
+-- the addon's own logo (Media/icon.tga), as in the AddOns list
+local ICON = "Interface\\AddOns\\QuestLineage\\Media\\icon"
 
 local button
 
@@ -62,7 +63,8 @@ local function build()
 	b.icon:SetTexture(ICON)
 	b.icon:SetSize(17, 17)
 	b.icon:SetPoint("TOPLEFT", 7, -6)
-	b.icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+	-- crop the tile's outline so the tree fills the round button
+	b.icon:SetTexCoord(0.1, 0.9, 0.1, 0.9)
 	local ring = b:CreateTexture(nil, "OVERLAY")
 	ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 	ring:SetSize(53, 53)
