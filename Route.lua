@@ -7,7 +7,8 @@
 -- the player stands, so nearby pick-ups, kills and hand-ins of different quests interleave.
 -- The arrow is pointed at the first stop; a handed-in quest leaves the route; an empty route ends.
 --
---   QL.PlanRoute(ids, ctx) -> { order = {ids}, legs = {yards}, total, unplaced = {ids} }
+--   QL.PlanRoute(ids, ctx) -> { order = {ids}, legs = {yards}, total, unplaced = {ids},
+--                                spots = { [i] = {map, x, y} the spot chosen for order[i] } }
 --   QL.StartRoute(ids)  QL.StopRoute()  QL.RouteActive()  QL.RouteInfo() -> { index, total, next }
 --   QL.RouteSelect(id, on)  QL.RouteSelected(id)  QL.RouteSelection() -> ids  QL.ClearRouteSelection()
 
@@ -31,7 +32,7 @@ local function stopPoints(target, map, w, h)
 	for i, p in ipairs(target.points) do
 		if i > MAX_POINTS * 4 or #pts >= MAX_POINTS then break end
 		local x, y = QL.ProjectToMap(p.map, p.x, p.y, map)
-		if x then pts[#pts + 1] = { x * w, y * h } end
+		if x then pts[#pts + 1] = { x * w, y * h, src = p } end
 	end
 	return pts
 end
@@ -82,7 +83,7 @@ end
 
 function QL.PlanRoute(ids, ctx)
 	ctx = ctx or QL.Context()
-	local result = { order = {}, legs = {}, total = 0, unplaced = {} }
+	local result = { order = {}, legs = {}, total = 0, unplaced = {}, spots = {} }
 	local map, px, py = QL.PlayerPosition()
 	local w, h
 	if map then w, h = mapSize(map) end -- (`map and mapSize(map)` would keep only the width)
@@ -113,6 +114,7 @@ function QL.PlanRoute(ids, ctx)
 		local prev = start
 		for _, s in ipairs(seq) do
 			result.order[#result.order + 1] = s.id
+			result.spots[#result.order] = s.at.src
 			local leg = math.sqrt(d2(prev, s.at))
 			result.legs[#result.legs + 1] = leg
 			result.total = result.total + leg
@@ -201,6 +203,7 @@ local function replan(quiet)
 	end
 	local plan = QL.PlanRoute(keep, ctx)
 	route.plan = plan.order
+	route.spots = plan.spots
 	route.total = plan.total
 	route.signature = signature(keep, ctx)
 	local first = plan.order[1]
@@ -241,7 +244,7 @@ function QL.RouteSteering() return route and route.steering or false end
 function QL.RouteInfo()
 	if not route or not route.plan then return nil end
 	local done = route.startCount - #route.ids
-	return { index = done + 1, total = route.startCount, next = route.plan[1], order = route.plan }
+	return { index = done + 1, total = route.startCount, next = route.plan[1], order = route.plan, spots = route.spots or {}, length = route.total }
 end
 
 -- The position of a quest in the current plan (1 = next), or nil.

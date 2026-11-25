@@ -62,9 +62,25 @@ def search():
     save(img, "nav_search.tga")
 
 
+def disc():
+    """A filled circle: route stop badges, the player's dot, the flowing lights."""
+    img, d = canvas()
+    d.ellipse((s(2), s(2), s(62), s(62)), fill=W)
+    save(img, "disc.tga")
+
+
+def ring():
+    """A circle outline round a stop badge."""
+    img, d = canvas()
+    d.ellipse((s(3), s(3), s(61), s(61)), outline=W, width=s(5))
+    save(img, "ring.tga")
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     quests()
     chains()
     shield()
     search()
+    disc()
+    ring()

@@ -16,6 +16,7 @@ local arrowUI = {}
 local ROWS = {
 	{ key = "lang", label = "Use Turkish (needs WoWTR)", note = "Quest titles, objectives and the interface in Turkish, from WoWTR.", lang = true },
 	{ key = "minimapButton", label = "Button on the minimap" },
+	{ key = "mapRoute", label = "Route on the world map" },
 	{ key = "tooltip", label = "Chain line on NPC tooltips" },
 	{ key = "logButton", label = "Chain button in the quest log" },
 	{ key = "detailButton", label = "Chain button and warnings on the quest offer window" },

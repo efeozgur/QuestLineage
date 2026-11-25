@@ -67,6 +67,9 @@ local function mock(kind, name)
 	function mt.GetPoint() return "CENTER", nil, "CENTER", 0, 0 end
 	function mt.CreateTexture(self) local t = mock("Texture"); t.parent = self; return t end
 	function mt.CreateFontString(self) local t = mock("FontString"); t.parent = self; return t end
+	function mt.CreateLine(self) local t = mock("Line"); t.parent = self; return t end
+	function mt.SetScale(self, v) self.scale = v end
+	function mt.GetScale(self) return self.scale or 1 end
 	return setmetatable(o, mt)
 end
 
@@ -80,6 +83,12 @@ function CreateFrame(kind, name, parent)
 	return f
 end
 UIParent = mock("Frame", "UIParent")
+WorldMapFrame = mock("Frame", "WorldMapFrame")
+WorldMapFrame.shown = false
+local mapCanvas = mock("Frame", "MapCanvas")
+WorldMapFrame.GetCanvas = function() return mapCanvas end
+WorldMapFrame.GetMapID = function() return 1411 end
+WorldMapFrame.ScrollContainer = mock("Frame", "MapScroll")
 Minimap = mock("Frame", "Minimap")
 UISpecialFrames = {}
 GameTooltip = mock("GameTooltip", "GameTooltip")
@@ -125,7 +134,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -555,6 +564,35 @@ Eq(QL.RouteActive(), false, "a hand-picked arrow ends the route")
 QL.ClearArrow()
 QL.ClearRouteSelection()
 Eq(#QL.errors, 0, "route flow without errors: " .. table.concat(QL.errors, " | "))
+
+-- World map: the arrow's quest drawn on it -------------------------------------------------------
+QL.SetArrowTarget(3)
+WorldMapFrame.shown = true
+WorldMapFrame.scripts.OnShow(WorldMapFrame)
+local pts = QL.MapRoutePoints(1411, 600, 400)
+Check(pts.player, "the player on the map")
+Eq(#pts.stops, 1, "the arrow's quest is the one stop")
+Check(math.abs(pts.stops[1][1] - 0.452 * 600) < 1e-6 and math.abs(pts.stops[1][2] + 0.631 * 400) < 1e-6, "canvas position of Bob")
+QL.RefreshMapRoute()
+local shownBadges, shownLines = 0, 0
+for _, fr in ipairs(frames) do
+	if fr.kind == "Button" and fr.questId == 3 and fr.num and fr.shown then shownBadges = shownBadges + 1; Eq(fr.num.text, "1", "badge number") end
+end
+Eq(shownBadges, 1, "one stop badge")
+for _, fr in ipairs(frames) do
+	if fr.parent == mapCanvas and fr.scripts.OnUpdate then fr.scripts.OnUpdate(fr, 0.3); fr.scripts.OnUpdate(fr, 0.02) end
+end
+Eq(#QL.errors, 0, "map route draws without errors: " .. table.concat(QL.errors, " | "))
+-- a route with placed stops draws one badge per stop
+QL.SetArrowTarget(3)
+QL.Set("mapRoute", false)
+QL.RefreshMapRoute()
+local hiddenAll = true
+for _, fr in ipairs(frames) do if fr.kind == "Button" and fr.num and fr.questId == 3 and fr.shown then hiddenAll = false end end
+Check(hiddenAll, "the setting turns it off")
+QL.Set("mapRoute", true)
+QL.ClearArrow()
+WorldMapFrame.shown = false
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton

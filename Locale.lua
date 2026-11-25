@@ -186,6 +186,9 @@ local TR = {
 	["Route"] = "Rota",
 	-- dungeons and difficulty
 	["Dungeon"] = "Zindan",
+	["Route on the world map"] = "Rota dünya haritasında",
+	["Click: open in QuestLineage"] = "Tık: QuestLineage'da aç",
+	["about %s in all"] = "toplam yaklaşık %s",
 	["Raid"] = "Baskın",
 	["Battleground"] = "Savaş alanı",
 	["Difficulty: "] = "Zorluk: ",

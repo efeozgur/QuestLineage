@@ -23,6 +23,7 @@ Inspector.lua
 Window.lua
 Arrow.lua
 Route.lua
+MapRoute.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua

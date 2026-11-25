@@ -36,6 +36,7 @@ SPOTS = { [1] = { { 0.1, 0.1 }, { 0.55, 0.5 } }, [2] = { { 0.9, 0.9 } } }
 plan = QL.PlanRoute({ 2, 1 }, QL.TestContext())
 Eq(plan.order[1], 1, "its near spot makes quest 1 the first stop")
 Check(math.abs(plan.legs[1] - 50) < 1e-6, "measured at the near spot")
+Eq(plan.spots[1].x, 0.55, "the chosen spot is kept for the map")
 
 -- a stop that cannot be measured goes last
 SPOTS = { [1] = { { 0.6, 0.5 } }, [2] = { { 0.7, 0.5 } } }

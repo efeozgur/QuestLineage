@@ -30,6 +30,7 @@ QL.defaults = {
 	arrowColor = { 0.239, 0.839, 0.776 }, -- the custom colour
 	arrowScale = 1,       -- the arrow's size
 	arrowGlow = true,     -- the soft glow behind it
+	mapRoute = true,      -- the route (or the arrow's quest) drawn on the world map
 }
 
 -- SavedVariables can be missing on a cold start: always go through DB().
