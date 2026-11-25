@@ -56,6 +56,7 @@ local function mock(kind, name)
 		if was and self.scripts.OnHide then self.scripts.OnHide(self) end
 	end
 	function mt.SetShown(self, v) if v then self:Show() else self:Hide() end end
+	function mt.SetEnabled(self, v) self.enabled = v and true or false end
 	function mt.IsShown(self) return self.shown end
 	function mt.SetText(self, t) self.text = t or "" end
 	function mt.GetText(self) return self.text end
@@ -655,6 +656,30 @@ Eq(arrow.glow.shown, false, "glow off")
 QuestLineageArrowGlow.checked = true
 QuestLineageArrowGlow.scripts.OnClick(QuestLineageArrowGlow)
 Eq(arrow.glow.shown, true, "glow on")
+-- the menu: one page at a time, remembered
+QuestLineageOptionsPage2.scripts.OnClick(QuestLineageOptionsPage2)
+Eq(QL.DB().optionsPage, "tracking", "Quest tracking page chosen")
+Eq(QuestLineageOption7:GetParent().shown, true, "its page shows (the quest card setting)")
+Eq(QuestLineageOption1:GetParent().shown, false, "the General page is hidden")
+Eq(QuestLineageOptionsPage2.active, true, "its menu entry is lit")
+Eq(QuestLineageOption7.note.text, "QuestLineage's own page: XP, objectives, rewards, the chain, Accept and Decline.", "every setting says what it does")
+-- a setting that depends on another is dimmed while that one is off
+QL.Set("questCard", false)
+Eq(QuestLineageOption8.enabled, false, "hiding the game's window needs the card")
+Eq(QuestLineageOption10.enabled, true, "the old strip is for when the card is off")
+QL.Set("questCard", true)
+Eq(QuestLineageOption8.enabled, true, "available again")
+Eq(QuestLineageOption10.enabled, false, "and the strip setting dims")
+-- nameplate options dim while nameplates are off
+QL.Set("nameplates", false)
+Eq(QuestLineagePlateCount.enabled, false, "plate options dim when off")
+QL.Set("nameplates", true)
+-- Turkish labels
+QL.Set("lang", "tr")
+Eq(QuestLineageOptionsPage2.label.text, "Görev takibi", "menu in Turkish")
+Eq(QuestLineageOption7.note.text, "QuestLineage'ın kendi sayfası: XP, hedefler, ödüller, zincir, Kabul et ve Reddet.", "descriptions in Turkish")
+QL.Set("lang", "en")
+QuestLineageOptionsPage1.scripts.OnClick(QuestLineageOptionsPage1)
 -- leaving the page hides the preview when no quest is set
 panel:Hide()
 Eq(arrow.shown, false, "preview gone with the page")

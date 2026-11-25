@@ -1,40 +1,79 @@
 -- Settings page: in the game's Settings > AddOns list when the client has the Settings API,
 -- else in the old Interface Options. `/ql options` opens it.
 --
--- The page scrolls (the game's settings window does not scroll a long canvas by itself):
---   General      on/off toggles
---   Arrow        colour (by direction / the theme's / my own, from the game's colour picker),
---                size, glow, position reset; while the page is open the arrow shows a turning
---                preview (QL.ArrowPreview)
---   Nameplates   on/off, where the badge sits (left / right / above), colour (the theme's /
---                the quest's difficulty / my own), size, the counter, item droppers too
+-- A menu on the left, one page on the right (scrolling when long; the game's settings window does
+-- not scroll a canvas by itself). Each page is grouped under small headings; every setting has a
+-- grey line saying what it does; a setting that depends on another is indented and dimmed while
+-- the other is off. The page last shown is remembered (optionsPage).
+--   General          language, notifications, the minimap button, quest lists
+--   Quest tracking   the current quest window, the quest card at NPCs, tooltips, the quest log
+--   Maps             quest areas, the world map route, the way to your corpse
+--   Arrow            colour (by direction / the theme's / my own, from the game's colour picker),
+--                    size, glow, the "Where?" bar, position reset; while the settings are open
+--                    the arrow shows a turning preview (QL.ArrowPreview)
+--   Nameplates       on/off, position, colour, size, shift, the counter, item droppers
+-- Frame names stay stable for tests: QuestLineageOption<n> (n in ROWS order, 1 = language),
+-- QuestLineageArrow*, QuestLineagePlate*, QuestLineageOptionsPage<n> (menu buttons).
 
 local _, QL = ...
 
 local function L(s) return QL.L(s) end
 
+local NAV_W, CONTENT_W = 150, 470
+
 local panel, root, category
 local checks = {}
 local arrowUI, plateUI = {}, {}
+local pages, navButtons = {}, {}
+local texts = {} -- { fontString, englishText, size, bold } re-labelled on refresh
 
+-- Plain settings: one check with its description. parent = the setting it depends on.
 local ROWS = {
-	{ key = "lang", label = "Use Turkish (needs WoWTR)", note = "Quest titles, objectives and the interface in Turkish, from WoWTR.", lang = true },
-	{ key = "minimapButton", label = "Button on the minimap" },
-	{ key = "mapRoute", label = "Route on the world map" },
-	{ key = "quickBar", label = "\"Where?\" bar under the arrow (trainers, vendors, services)" },
-	{ key = "toasts", label = "Messages in a notification window (off: in the chat)" },
-	{ key = "currentQuest", label = "Current quest window (stage and objectives)" },
-	{ key = "hideGameTracker", label = "Hide the game's own quest tracker" },
-	{ key = "questAreas", label = "Current quest's areas on the minimap and world map" },
-	{ key = "hideGameAreas", label = "Hide the game's own blue quest area on the minimap" },
-	{ key = "corpseRoute", label = "When I die, show the way to my corpse" },
-	{ key = "questCard", label = "Open QuestLineage's quest card when an NPC offers a quest" },
-	{ key = "hideGameQuestFrame", label = "Hide the game's quest window while the card is open" },
-	{ key = "openOnAccept", label = "Open the QuestLineage window when I accept a quest" },
-	{ key = "tooltip", label = "Chain line on NPC tooltips" },
-	{ key = "logButton", label = "Chain button in the quest log" },
-	{ key = "detailButton", label = "Chain button and warnings on the quest offer window" },
-	{ key = "hideOther", label = "Hide quests your race or class can never take" },
+	{ key = "lang", lang = true, page = "general", group = "Language",
+		label = "Use Turkish (needs WoWTR)", note = "Quest titles, objectives and the interface in Turkish, from WoWTR." },
+	{ key = "toasts", page = "general", group = "Notifications and buttons",
+		label = "Messages in a notification window", note = "Off: results and errors go to the chat instead." },
+	{ key = "minimapButton", page = "general", group = "Notifications and buttons",
+		label = "Button on the minimap", note = "Click: open QuestLineage. Shift-click: show or hide the \"Where?\" bar." },
+	{ key = "hideOther", page = "general", group = "Quest lists",
+		label = "Hide quests your race or class can never take", note = "Keeps chains and lists to what this character can do." },
+
+	{ key = "currentQuest", page = "tracking", group = "Current quest window",
+		label = "Current quest window", note = "The quest you are on with its objectives, and every other quest in your log under it." },
+	{ key = "hideGameTracker", page = "tracking", group = "Current quest window",
+		label = "Hide the game's own quest tracker", note = "Use QuestLineage's window instead of the game's list (applied after combat)." },
+	{ key = "questCard", page = "tracking", group = "At the NPC",
+		label = "Quest card when an NPC offers a quest", note = "QuestLineage's own page: XP, objectives, rewards, the chain, Accept and Decline." },
+	{ key = "hideGameQuestFrame", parent = "questCard", page = "tracking", group = "At the NPC",
+		label = "Hide the game's quest window while the card is open", note = "Only the card shows; closing it ends the conversation." },
+	{ key = "openOnAccept", page = "tracking", group = "At the NPC",
+		label = "Open the QuestLineage window when I accept a quest", note = "The quest opens with its chain tree." },
+	{ key = "detailButton", page = "tracking", group = "At the NPC", parentOff = "questCard",
+		label = "Chain button and warnings under the game's quest window", note = "Used when the quest card is off." },
+	{ key = "tooltip", page = "tracking", group = "Tooltips and the quest log",
+		label = "Chain line on NPC tooltips", note = "Hovering a quest giver shows where its quest stands in a chain." },
+	{ key = "logButton", page = "tracking", group = "Tooltips and the quest log",
+		label = "Chain button in the quest log", note = "Opens the selected quest's chain." },
+
+	{ key = "questAreas", page = "maps", group = "Quests",
+		label = "Current quest's areas", note = "Soft rings where the objectives are, on the minimap and world map. Hover one for the quest." },
+	{ key = "hideGameAreas", page = "maps", group = "Quests",
+		label = "Hide the game's blue quest area on the minimap", note = "Leaves only QuestLineage's rings." },
+	{ key = "mapRoute", page = "maps", group = "Quests",
+		label = "Route on the world map", note = "The route you build in the Quests list, with numbered stops." },
+	{ key = "corpseRoute", page = "maps", group = "When you die",
+		label = "The way to my corpse", note = "A glowing path on both maps, and the arrow points at the corpse." },
+
+	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
+		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
+}
+
+local PAGES = {
+	{ id = "general", title = "General", hint = "Language, notifications and the addon's buttons." },
+	{ id = "tracking", title = "Quest tracking", hint = "The current quest window, quests offered by NPCs, tooltips." },
+	{ id = "maps", title = "Maps", hint = "What QuestLineage draws on the minimap and the world map." },
+	{ id = "arrow", title = "Arrow", hint = "The arrow's look and the \"Where?\" bar under it." },
+	{ id = "plates", title = "Nameplates", hint = "A quest badge and counter beside the creatures your quests need." },
 }
 
 local ARROW_COLORS = {
@@ -89,22 +128,36 @@ local function pickColor(r, g, b, onChange)
 end
 QL.PickColor = pickColor
 
--- Building blocks ---------------------------------------------------------------------------------
+-- Building blocks (they draw on `root`, the page being built) ------------------------------------
 
-local function heading(y)
-	local fs = root:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	fs:SetPoint("TOPLEFT", 16, y)
+-- A text kept in the chosen language: re-labelled on every refresh.
+local function text(y, english, size, color, x, bold)
+	local T = QL.Theme
+	local fs = T.Text(root, size, color or T.C.text, nil, bold)
+	fs:SetPoint("TOPLEFT", x or 16, y)
+	fs:SetPoint("RIGHT", root, "RIGHT", -16, 0)
+	if fs.SetWordWrap then fs:SetWordWrap(true) end
+	texts[#texts + 1] = { fs = fs, en = english, size = size, bold = bold }
 	return fs
 end
 
-local function note(y)
-	local fs = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	fs:SetPoint("TOPLEFT", 20, y)
-	return fs
+-- A group heading: small accent capitals with a thin line beside them.
+local function groupHeading(y, english)
+	local T, C = QL.Theme, QL.Theme.C
+	local fs = text(y, english, 10, C.accent, 16, true)
+	fs:SetPoint("RIGHT", root, "LEFT", 300, 0)
+	local line = root:CreateTexture(nil, "BORDER")
+	line:SetTexture(T.WHITE)
+	line:SetHeight(1)
+	line:SetPoint("TOPLEFT", 16, y - 16)
+	line:SetPoint("RIGHT", root, "RIGHT", -16, 0)
+	T.Color(line, C.lineSoft)
+	return y - 26
 end
 
+-- the old helpers the Arrow and Nameplates pages use
 local function label(y)
-	local fs = root:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	local fs = QL.Theme.Text(root, 12, QL.Theme.C.text)
 	fs:SetPoint("TOPLEFT", 20, y)
 	return fs
 end
@@ -163,7 +216,7 @@ local function slider(name, key, min, max, y, sizeLabel, opts)
 	local T = QL.Theme
 	opts = opts or {}
 	local step = opts.step or 0.05
-	local text = opts.text or sizeText
+	local textOf = opts.text or sizeText
 	local ends = opts.ends or percent
 	local s = CreateFrame("Slider", name, root)
 	s:SetOrientation("HORIZONTAL")
@@ -179,10 +232,10 @@ local function slider(name, key, min, max, y, sizeLabel, opts)
 	track:SetHeight(4)
 	track:SetVertexColor(1, 1, 1, 0.18)
 	s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-	s.low = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	s.low = T.Text(root, 10, T.C.dim)
 	s.low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
 	s.low:SetText(ends(min))
-	s.high = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	s.high = T.Text(root, 10, T.C.dim)
 	s.high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", 0, -2)
 	s.high:SetText(ends(max))
 	s:SetScript("OnValueChanged", function(self, v)
@@ -190,10 +243,10 @@ local function slider(name, key, min, max, y, sizeLabel, opts)
 		v = math.floor(math.max(min, math.min(max, v or 1)) / step + 0.5) * step
 		if v ~= QL.DB()[key] then
 			QL.Set(key, v)
-			sizeLabel:SetText(text(v))
+			sizeLabel:SetText(textOf(v))
 		end
 	end)
-	s.text = text
+	s.text = textOf
 	return s
 end
 
@@ -212,35 +265,61 @@ end
 
 -- Refresh ------------------------------------------------------------------------------------------
 
+local function enabled(row, db)
+	if row.parent then return db[row.parent] ~= false end
+	if row.parentOff then return db[row.parentOff] == false end
+	return true
+end
+
+local function showPage(id)
+	local C = QL.Theme.C
+	for pid, page in pairs(pages) do page:SetShown(pid == id) end
+	for _, b in ipairs(navButtons) do
+		local on = b.pageId == id
+		b.active = on
+		QL.Theme.Color(b.bg, on and C.rowActive or { 0, 0, 0, 0 })
+		b.bar:SetShown(on)
+		b.label:SetTextColor(unpack(on and C.text or C.muted))
+	end
+	local page = pages[id]
+	if page and panel and panel.scroll then
+		panel.scroll:SetVerticalScroll(0)
+		panel.scroll:SetContentHeight(page.contentHeight or 400)
+	end
+end
+
 local function refresh()
 	if not panel then return end
 	local db = QL.DB()
-	QL.SetFont(root.title, 16)
-	root.title:SetText(L("Quest Lineage") .. "  |cff888888" .. QL.version .. "|r")
+	local T, C = QL.Theme, QL.Theme.C
+	QL.SetFont(panel.title, 15)
+	panel.title:SetText(L("Quest Lineage"))
+	panel.version:SetText(QL.version or "")
+	for _, t in ipairs(texts) do
+		T.SetFont(t.fs, t.size, t.bold)
+		t.fs:SetText(L(t.en))
+	end
+	for _, b in ipairs(navButtons) do b.label:SetText(L(b.title)) end
 	for i, row in ipairs(ROWS) do
 		local c = checks[i]
-		local text = setLabel(c, L(row.label))
+		local fs = setLabel(c, L(row.label))
 		if row.lang then
 			c:SetChecked(db.lang == "tr")
 			c:SetEnabled(QL.HasWoWTR())
 			local v = QL.HasWoWTR() and 1 or 0.5
-			if text then text:SetTextColor(v, v, v) end
-			QL.SetFont(c.note, 11)
-			c.note:SetText(L(row.note))
+			if fs then fs:SetTextColor(v, v, v) end
 		else
 			c:SetChecked(db[row.key] and true or false)
+			local on = enabled(row, db)
+			c:SetEnabled(on)
+			if fs then fs:SetTextColor(unpack(on and C.text or C.dim)) end
+			if c.note then c.note:SetTextColor(unpack(on and C.muted or C.dim)) end
 		end
 	end
 
 	-- arrow
 	local a = arrowUI
-	if a.heading then
-		QL.SetFont(a.heading, 14)
-		a.heading:SetText(L("Arrow"))
-		QL.SetFont(a.hint, 11)
-		a.hint:SetText(L("The arrow turns here as a preview while this page is open. Drag it to move it."))
-		QL.SetFont(a.colorLabel, 12)
-		a.colorLabel:SetText(L("Colour"))
+	if a.colorLabel then
 		for i, m in ipairs(ARROW_COLORS) do
 			setLabel(a.modes[i], L(m.label))
 			a.modes[i]:SetChecked((db.arrowColorMode or "direction") == m.mode)
@@ -249,140 +328,206 @@ local function refresh()
 		a.swatch.fill:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1, 1)
 		local scale = tonumber(db.arrowScale) or 1
 		setSlider(a.slider, scale)
-		QL.SetFont(a.sizeLabel, 12)
 		a.sizeLabel:SetText(L("Size: %d%%"):format(math.floor(scale * 100 + 0.5)))
 		setLabel(a.glow, L("Glow behind the arrow"))
 		a.glow:SetChecked(db.arrowGlow ~= false)
-		a.reset:SetText(L("Reset position"))
-		if a.reset.GetFontString and a.reset:GetFontString() then QL.SetFont(a.reset:GetFontString(), 12) end
+		a.reset:SetLabel(L("Reset positions"))
 	end
 
 	-- nameplates
 	local p = plateUI
-	if p.heading then
-		QL.SetFont(p.heading, 14)
-		p.heading:SetText(L("Nameplates"))
-		QL.SetFont(p.hint, 11)
-		p.hint:SetText(L("A quest badge and counter beside the creatures your quests need."))
+	if p.on then
+		local on = db.nameplates ~= false
 		setLabel(p.on, L("Quest counters on nameplates"))
-		p.on:SetChecked(db.nameplates ~= false)
-		QL.SetFont(p.sideLabel, 12)
-		p.sideLabel:SetText(L("Position"))
+		p.on:SetChecked(on)
 		for i, m in ipairs(PLATE_SIDES) do
 			setLabel(p.sides[i], L(m.label))
 			p.sides[i]:SetChecked((db.plateSide or "left") == m.mode)
+			p.sides[i]:SetEnabled(on)
 		end
-		QL.SetFont(p.colorLabel, 12)
-		p.colorLabel:SetText(L("Colour"))
 		for i, m in ipairs(PLATE_COLORS) do
 			setLabel(p.colors[i], L(m.label))
 			p.colors[i]:SetChecked((db.plateColorMode or "accent") == m.mode)
+			p.colors[i]:SetEnabled(on)
 		end
 		local c = type(db.plateColor) == "table" and db.plateColor or { 1, 1, 1 }
 		p.swatch.fill:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1, 1)
 		local scale = tonumber(db.plateScale) or 1
 		setSlider(p.slider, scale)
-		QL.SetFont(p.sizeLabel, 12)
 		p.sizeLabel:SetText(L("Size: %d%%"):format(math.floor(scale * 100 + 0.5)))
 		local dx = tonumber(db.plateOffsetX) or 0
 		setSlider(p.offset, dx)
-		QL.SetFont(p.offsetLabel, 12)
 		p.offsetLabel:SetText(offsetText(dx))
 		setLabel(p.count, L("Show the counter (3/8)"))
 		p.count:SetChecked(db.plateCount ~= false)
+		p.count:SetEnabled(on)
 		setLabel(p.droppers, L("Also on creatures that drop an item you collect"))
 		p.droppers:SetChecked(db.plateDroppers ~= false)
+		p.droppers:SetEnabled(on)
 	end
+	showPage(db.optionsPage or "general")
 end
 QL.RefreshOptions = refresh
 
--- Sections -----------------------------------------------------------------------------------------
+-- Pages -------------------------------------------------------------------------------------------
 
-local function buildArrowSection(y)
+-- The plain rows of one page, under their group headings.
+local function buildRows(pageId, y)
+	local group
+	for i, row in ipairs(ROWS) do
+		if row.page == pageId then
+			if row.group ~= group then
+				if group then y = y - 8 end
+				group = row.group
+				y = groupHeading(y, group)
+			end
+			local x = (row.parent or row.parentOff) and 40 or 16
+			local c = check("QuestLineageOption" .. i, x, y, function(self)
+				if row.lang then
+					QL.Set("lang", self:GetChecked() and "tr" or "en")
+				else
+					QL.Set(row.key, self:GetChecked() and true or false)
+				end
+				refresh()
+			end)
+			c.note = text(y - 24, row.note, 11, QL.Theme.C.muted, x + 30)
+			checks[i] = c
+			y = y - 52
+		end
+	end
+	return y
+end
+
+local function buildArrowPage(y)
 	local a = arrowUI
-	a.heading = heading(y); y = y - 24
-	a.hint = note(y); y = y - 22
-	a.colorLabel = label(y); y = y - 20
+	y = groupHeading(y, "Look")
+	text(y, "The arrow turns here as a preview while the settings are open. Drag it to move it.", 11, QL.Theme.C.muted, 20)
+	y = y - 30
+	a.colorLabel = text(y, "Colour", 12, QL.Theme.C.text, 20)
+	y = y - 20
 	a.modes, y = radios("QuestLineageArrowMode", ARROW_COLORS, "arrowColorMode", y)
 	a.swatch = swatch("QuestLineageArrowSwatch", a.modes[3], "arrowColor", "arrowColorMode")
 	y = y - 8
 	a.sizeLabel = label(y); y = y - 22
 	a.slider = slider("QuestLineageArrowScale", "arrowScale", 0.5, 2, y, a.sizeLabel); y = y - 40
 	a.glow = check("QuestLineageArrowGlow", 16, y, function(self) QL.Set("arrowGlow", self:GetChecked() and true or false); refresh() end)
-	y = y - 36
-	local r = CreateFrame("Button", "QuestLineageArrowReset", root, "UIPanelButtonTemplate")
-	r:SetSize(160, 24)
+	y = y - 44
+	y = buildRows("arrow", y)
+	y = groupHeading(y - 4, "Position")
+	text(y, "Puts the arrow and the \"Where?\" bar back at the top of the screen.", 11, QL.Theme.C.muted, 20)
+	y = y - 24
+	local r = QL.Theme.Button(root, 170, 26)
 	r:SetPoint("TOPLEFT", 20, y)
 	r:SetScript("OnClick", function()
 		if QL.ResetArrowPosition then QL.ResetArrowPosition() end
 		if QL.ResetQuickBarPosition then QL.ResetQuickBarPosition() end
 	end)
 	a.reset = r
-	return y - 40
+	_G.QuestLineageArrowReset = r
+	return y - 44
 end
 
-local function buildPlateSection(y)
+local function buildPlatePage(y)
 	local p = plateUI
-	p.heading = heading(y); y = y - 24
-	p.hint = note(y); y = y - 22
+	local C = QL.Theme.C
 	p.on = check("QuestLineagePlatesOn", 16, y, function(self) QL.Set("nameplates", self:GetChecked() and true or false); refresh() end)
-	y = y - 34
-	p.sideLabel = label(y); y = y - 20
+	y = y - 40
+	y = groupHeading(y, "Position")
 	p.sides, y = radios("QuestLineagePlateSide", PLATE_SIDES, "plateSide", y)
-	y = y - 8
-	p.colorLabel = label(y); y = y - 20
+	y = y - 6
+	p.offsetLabel = label(y); y = y - 22
+	p.offset = slider("QuestLineagePlateOffset", "plateOffsetX", -40, 40, y, p.offsetLabel, { step = 1, text = offsetText, ends = pixels })
+	y = y - 44
+	y = groupHeading(y, "Look")
+	p.colorLabel = text(y, "Colour", 12, C.text, 20)
+	y = y - 20
 	p.colors, y = radios("QuestLineagePlateColor", PLATE_COLORS, "plateColorMode", y)
 	p.swatch = swatch("QuestLineagePlateSwatch", p.colors[3], "plateColor", "plateColorMode")
 	y = y - 8
 	p.sizeLabel = label(y); y = y - 22
-	p.slider = slider("QuestLineagePlateScale", "plateScale", 0.5, 2, y, p.sizeLabel); y = y - 40
-	p.offsetLabel = label(y); y = y - 22
-	p.offset = slider("QuestLineagePlateOffset", "plateOffsetX", -40, 40, y, p.offsetLabel, { step = 1, text = offsetText, ends = pixels })
-	y = y - 40
+	p.slider = slider("QuestLineagePlateScale", "plateScale", 0.5, 2, y, p.sizeLabel); y = y - 44
+	y = groupHeading(y, "What shows")
 	p.count = check("QuestLineagePlateCount", 16, y, function(self) QL.Set("plateCount", self:GetChecked() and true or false); refresh() end)
 	y = y - 30
 	p.droppers = check("QuestLineagePlateDroppers", 16, y, function(self) QL.Set("plateDroppers", self:GetChecked() and true or false); refresh() end)
-	return y - 40
+	return y - 44
+end
+
+local function navButton(i, def)
+	local T, C = QL.Theme, QL.Theme.C
+	local b = CreateFrame("Button", "QuestLineageOptionsPage" .. i, panel)
+	b:SetSize(NAV_W - 16, 30)
+	b:SetPoint("TOPLEFT", 8, -64 - (i - 1) * 34)
+	b.bg = T.Fill(b, { 0, 0, 0, 0 })
+	b.bar = b:CreateTexture(nil, "OVERLAY")
+	b.bar:SetTexture(T.WHITE)
+	b.bar:SetPoint("TOPLEFT"); b.bar:SetPoint("BOTTOMLEFT")
+	b.bar:SetWidth(3)
+	T.Gradient(b.bar, "VERTICAL", C.accent2, C.accent)
+	b.label = T.Text(b, 12, C.muted, nil, true)
+	b.label:SetPoint("LEFT", 14, 0)
+	b.pageId, b.title = def.id, def.title
+	b:SetScript("OnClick", function(self)
+		QL.DB().optionsPage = self.pageId
+		showPage(self.pageId)
+	end)
+	b:SetScript("OnEnter", function(self) if not self.active then T.Color(self.bg, C.rowHover); self.label:SetTextColor(unpack(C.text)) end end)
+	b:SetScript("OnLeave", function(self) if not self.active then T.Color(self.bg, { 0, 0, 0, 0 }); self.label:SetTextColor(unpack(C.muted)) end end)
+	navButtons[i] = b
+	return b
 end
 
 local function build()
-	local T = QL.Theme
+	local T, C = QL.Theme, QL.Theme.C
 	panel = CreateFrame("Frame", "QuestLineageOptionsPanel")
 	panel.name = "QuestLineage"
-	-- everything sits on a scroll child: the page is longer than the settings window
+
+	-- the menu
+	local nav = CreateFrame("Frame", nil, panel)
+	nav:SetPoint("TOPLEFT"); nav:SetPoint("BOTTOMLEFT")
+	nav:SetWidth(NAV_W)
+	T.Fill(nav, C.sidebar)
+	T.Line(nav, C.line, "RIGHT")
+	local logo = nav:CreateTexture(nil, "ARTWORK")
+	logo:SetTexture("Interface\\AddOns\\QuestLineage\\Media\\icon")
+	logo:SetSize(26, 26)
+	logo:SetPoint("TOPLEFT", 12, -14)
+	panel.title = T.Text(nav, 15, C.text, nil, true)
+	panel.title:SetPoint("LEFT", logo, "RIGHT", 8, 5)
+	panel.version = T.Text(nav, 10, C.dim)
+	panel.version:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -2)
+	for i, def in ipairs(PAGES) do navButton(i, def) end
+
+	-- the page area
 	local scroll = T.Scroll(panel)
-	scroll:SetPoint("TOPLEFT", 0, -4)
+	scroll:SetPoint("TOPLEFT", NAV_W, -4)
 	scroll:SetPoint("BOTTOMRIGHT", -4, 4)
-	root = scroll.child
-	root:SetWidth(560)
-	root.title = root:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-	root.title:SetPoint("TOPLEFT", 16, -12)
-	local y = -52
-	for i, row in ipairs(ROWS) do
-		local c = check("QuestLineageOption" .. i, 16, y, function(self)
-			if row.lang then
-				QL.Set("lang", self:GetChecked() and "tr" or "en")
-			else
-				QL.Set(row.key, self:GetChecked() and true or false)
-			end
-			refresh()
-		end)
-		if row.note then
-			c.note = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-			c.note:SetPoint("TOPLEFT", c, "BOTTOMLEFT", 30, 2)
-			y = y - 16
-		end
-		checks[i] = c
-		y = y - 34
-	end
-	y = y - 12
-	y = buildArrowSection(y)
-	y = buildPlateSection(y)
-	scroll:SetContentHeight(-y + 20)
 	panel.scroll = scroll
+	for _, def in ipairs(PAGES) do
+		local page = CreateFrame("Frame", nil, scroll.child)
+		page:SetPoint("TOPLEFT")
+		page:SetWidth(CONTENT_W)
+		page:SetHeight(1)
+		root = page
+		text(-14, def.title, 16, C.text, 16, true)
+		text(-36, def.hint, 11, C.muted, 16)
+		local y = -66
+		if def.id == "arrow" then
+			y = buildArrowPage(y)
+		elseif def.id == "plates" then
+			y = buildPlatePage(y)
+		else
+			y = buildRows(def.id, y)
+		end
+		page.contentHeight = -y + 20
+		page:SetHeight(page.contentHeight)
+		page:Hide()
+		pages[def.id] = page
+	end
+	scroll.child:SetWidth(CONTENT_W)
+
 	panel:SetScript("OnShow", function()
 		refresh()
-		scroll:SetContentHeight(-y + 20)
 		if QL.ArrowPreview then QL.ArrowPreview(true) end
 	end)
 	panel:SetScript("OnHide", function()
@@ -397,8 +542,9 @@ local function build()
 	end
 end
 
-function QL.OpenOptions()
+function QL.OpenOptions(pageId)
 	if not panel then return end
+	if pageId then QL.DB().optionsPage = pageId end
 	if category and Settings and Settings.OpenToCategory then
 		local id = category.GetID and category:GetID() or category.ID
 		Settings.OpenToCategory(id)
