@@ -7,14 +7,23 @@
 
 local _, QL = ...
 
-local RADIUS = 80 -- the minimap is 140 wide: a 31px button sits on its rim at 80
+local RADIUS = 80 -- fallback: half the classic 140px minimap plus the rim
+local RIM = 5     -- how far past the minimap's edge the button's centre sits, so it rides the border
 local ICON = "Interface\\Icons\\INV_Misc_Book_09"
 
 local button
 
+-- The rim's radius from the minimap's own size: a fixed 80 put the button inside Forever's
+-- larger minimap.
+function QL.MinimapRadius()
+	local w = Minimap and Minimap.GetWidth and Minimap:GetWidth()
+	if type(w) == "number" and w > 0 then return w / 2 + RIM end
+	return RADIUS
+end
+
 function QL.MinimapPosition(angle, radius)
 	local a = math.rad(angle or 0)
-	radius = radius or RADIUS
+	radius = radius or QL.MinimapRadius()
 	return math.cos(a) * radius, math.sin(a) * radius
 end
 
@@ -24,6 +33,7 @@ local function place()
 	button:ClearAllPoints()
 	button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
+QL.PlaceMinimapButton = place
 
 -- The cursor's angle round the minimap's centre, in degrees.
 local function cursorAngle()
@@ -82,6 +92,8 @@ local function build()
 	end)
 	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	place()
+	-- the minimap can change size (other addons, the client's own settings): follow it
+	if Minimap.HookScript then Minimap:HookScript("OnSizeChanged", place) end
 	b:SetShown(QL.DB().minimapButton ~= false)
 end
 

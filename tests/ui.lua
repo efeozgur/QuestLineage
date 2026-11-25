@@ -345,15 +345,22 @@ Eq(f.inspector.hero.title.text, "Toplanma", "Turkish title in the detail panel")
 Check(f.infoMeta.text:find("tamam", 1, true), "Turkish interface text")
 Eq(f.zoneTab.label.text, "Zincirler", "Turkish tab label")
 Eq(f.questsTab.label.text, "Görevler", "Turkish quests tab")
-Eq(f.infoXP.text, "+670 TP", "Turkish XP")
+Eq(f.infoXP.text, "+670 XP", "XP stays XP in Turkish")
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton
 Check(mb and mb.shown, "minimap button shown")
-local x, y = QL.MinimapPosition(0)
+-- the rim follows the minimap's size: half its width plus 5, so the button rides the border
+local realWidth = Minimap.GetWidth
+Minimap.GetWidth = function() return 140 end
+Eq(QL.MinimapRadius(), 75, "classic 140px minimap")
+Minimap.GetWidth = function() return 198 end
+Eq(QL.MinimapRadius(), 104, "a larger minimap pushes the button out to its edge")
+Minimap.GetWidth = realWidth
+local x, y = QL.MinimapPosition(0, 80)
 Eq(math.floor(x + 0.5), 80, "angle 0 is right of centre")
 Eq(math.floor(y + 0.5), 0, "angle 0 on the centre line")
-x, y = QL.MinimapPosition(90)
+x, y = QL.MinimapPosition(90, 80)
 Eq(math.floor(x + 0.5), 0, "angle 90 above")
 Eq(math.floor(y + 0.5), 80, "angle 90 above")
 local wasShown = f.shown
