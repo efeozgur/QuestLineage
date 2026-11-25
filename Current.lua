@@ -162,7 +162,7 @@ local function build()
 	frame.meta:SetJustifyH("RIGHT")
 	frame.title = T.Text(frame, 15, C.text, nil, true)
 	frame.title:SetPoint("TOPLEFT", 14, -28)
-	frame.title:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+	frame.title:SetPoint("RIGHT", frame, "RIGHT", -30, 0) -- room for the abandon cross
 	frame.stateDot = frame:CreateTexture(nil, "ARTWORK")
 	frame.stateDot:SetTexture("Interface\\AddOns\\QuestLineage\\Media\\disc")
 	frame.stateDot:SetSize(7, 7)
@@ -206,6 +206,10 @@ local function build()
 		tip:Show()
 	end)
 	frame:SetScript("OnLeave", function() QL.Tip():Hide() end)
+	-- abandon the current quest: a small cross in the corner while the cursor is on the window
+	-- (made after the window's own OnEnter/OnLeave, which it hooks)
+	frame.drop = QL.AbandonButton(frame, function() return frame.questId end)
+	frame.drop:SetPoint("TOPRIGHT", -8, -26)
 	local since = 0
 	frame:SetScript("OnUpdate", function(self, elapsed)
 		elapsed = elapsed or 0.016
@@ -220,6 +224,47 @@ local function build()
 		if since >= 1 then since = 0; pcall(QL.RefreshCurrent) end
 	end)
 	frame:Hide()
+end
+
+-- A small "abandon" cross for a quest in the log: shown while the cursor is on its owner (and only
+-- for quests in the log); asks before dropping it.
+function QL.AbandonButton(owner, questOf)
+	local T, C = QL.Theme, QL.Theme.C
+	local b = CreateFrame("Button", nil, owner)
+	b:SetSize(18, 18)
+	b:SetFrameLevel((owner:GetFrameLevel() or 1) + 5)
+	b.bg = T.Fill(b, { 0, 0, 0, 0 })
+	b.x = T.Text(b, 14, C.dim)
+	b.x:SetPoint("CENTER", 0, 1)
+	b.x:SetText("×")
+	b:SetScript("OnClick", function() local id = questOf(); if id then QL.ConfirmAbandon(id) end end)
+	b:SetScript("OnEnter", function(self)
+		T.Color(self.bg, { C.danger[1], C.danger[2], C.danger[3], 0.18 })
+		self.x:SetTextColor(C.danger[1], C.danger[2], C.danger[3], 1)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_RIGHT")
+		tip:AddLine(L("Abandon quest"), C.danger[1], C.danger[2], C.danger[3])
+		tip:Show()
+	end)
+	b:SetScript("OnLeave", function(self)
+		T.Color(self.bg, { 0, 0, 0, 0 })
+		self.x:SetTextColor(C.dim[1], C.dim[2], C.dim[3], 1)
+		QL.Tip():Hide()
+		if not (owner.IsMouseOver and owner:IsMouseOver() == true) then self:Hide() end
+	end)
+	b:Hide()
+	local function show()
+		local id = questOf()
+		b:SetShown(id ~= nil and QL.Context().log[id] == true)
+	end
+	if owner.HookScript then
+		owner:HookScript("OnEnter", show)
+		owner:HookScript("OnLeave", function()
+			if not (b.IsMouseOver and b:IsMouseOver() == true) then b:Hide() end
+		end)
+	end
+	b.Refresh = show
+	return b
 end
 
 -- The log list -----------------------------------------------------------------------------------------
@@ -289,6 +334,9 @@ local function logRow(i)
 		tip:Show()
 	end)
 	r:SetScript("OnLeave", function(self) T.Color(self.bg, { 0, 0, 0, 0 }); QL.Tip():Hide() end)
+	-- abandon this quest: a cross that shows while the cursor is on the row (after its scripts)
+	r.drop = QL.AbandonButton(r, function() return r.questId end)
+	r.drop:SetPoint("RIGHT", -6, 4)
 	-- dragging a row moves the window
 	r:RegisterForDrag("LeftButton")
 	r:SetScript("OnDragStart", function() frame:StartMoving() end)

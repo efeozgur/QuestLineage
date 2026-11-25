@@ -1180,6 +1180,45 @@ cur.logChips[1].scripts.OnClick(cur.logChips[1])
 QL.FilterLogQuests = realFilter
 QL.LogQuests = realLog
 QL.RefreshCurrent()
+-- abandoning a quest: the cross on the window, a confirmation, the quest log's own calls
+local dropped = {}
+function GetQuestLogIndexByID(qid) return qid == 3 and 1 or (qid == 2 and 2) or nil end
+function GetQuestLogSelection() return 2 end
+function SelectQuestLogEntry(i) dropped[#dropped + 1] = "select " .. i end
+function SetAbandonQuest() dropped[#dropped + 1] = "mark" end
+function AbandonQuest() dropped[#dropped + 1] = "abandon" end
+QL.SetArrowTarget(3)
+QL.RefreshCurrent()
+Eq(cur.drop.shown, false, "the cross hides until the cursor comes")
+cur.scripts.OnEnter(cur)
+Eq(cur.drop.shown, true, "shows on the window")
+cur.drop.scripts.OnClick(cur.drop)
+local dlg = QuestLineageConfirm
+Check(dlg and dlg.shown, "asks first")
+Eq(dlg.title.text, "Abandon quest?", "the question")
+Check(dlg.text.text:find("The Gathering", 1, true), "names the quest: " .. dlg.text.text)
+dlg.no.scripts.OnClick(dlg.no)
+Eq(dlg.shown, false, "Cancel closes it")
+Eq(#dropped, 0, "nothing abandoned")
+cur.drop.scripts.OnClick(cur.drop)
+dlg.yes.scripts.OnClick(dlg.yes)
+Eq(table.concat(dropped, ","), "select 1,mark,abandon,select 2", "selects the line, marks it, abandons it, puts the selection back")
+Eq(QL.ArrowQuest(), nil, "the arrow lets go of it")
+-- on a list row too
+cur.logRows[1].scripts.OnEnter(cur.logRows[1])
+Eq(cur.logRows[1].drop.shown, true, "a cross on the list row")
+-- without the classic calls: C_QuestLog's
+GetQuestLogIndexByID, GetQuestLogSelection, SelectQuestLogEntry, SetAbandonQuest, AbandonQuest = nil, nil, nil, nil, nil
+dropped = {}
+C_QuestLog.SetSelectedQuest = function(qid) dropped[#dropped + 1] = "select " .. qid end
+C_QuestLog.SetAbandonQuest = function() dropped[#dropped + 1] = "mark" end
+C_QuestLog.AbandonQuest = function() dropped[#dropped + 1] = "abandon" end
+Eq(QL.AbandonQuest(2), true, "abandoned through C_QuestLog")
+Eq(table.concat(dropped, ","), "select 2,mark,abandon", "the same steps")
+C_QuestLog.SetSelectedQuest, C_QuestLog.SetAbandonQuest, C_QuestLog.AbandonQuest = nil, nil, nil
+QL.ClearToasts()
+QL.SetArrowTarget(3)
+QL.RefreshCurrent()
 QL.SetArrowTarget(3)
 QL.RefreshCurrent()
 -- quest areas: Bob's spot becomes an area (the ribs' boars have no spawns in the fixture)

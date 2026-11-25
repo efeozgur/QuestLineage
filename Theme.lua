@@ -501,6 +501,58 @@ function T.Input(parent, w, h)
 end
 
 -- Vertical scroll area: the wheel scrolls, a slim thumb shows where you are.
+-- A small confirmation dialog in the theme's look: title, text, a red action and Cancel. One
+-- frame, reused; Escape cancels.
+function T.Confirm(title, text, action, onYes)
+	local C = T.C
+	local d = T.confirm
+	if not d then
+		d = CreateFrame("Frame", "QuestLineageConfirm", UIParent)
+		d:SetSize(340, 150)
+		d:SetPoint("CENTER", 0, 120)
+		d:SetFrameStrata("DIALOG")
+		d:SetToplevel(true)
+		d:EnableMouse(true)
+		T.Fill(d, C.bg)
+		T.Border(d, C.line)
+		T.Glow(d, C.danger)
+		local top = d:CreateTexture(nil, "ARTWORK")
+		top:SetTexture(WHITE)
+		top:SetPoint("TOPLEFT", 1, -1); top:SetPoint("TOPRIGHT", -1, -1)
+		top:SetHeight(2)
+		color(top, C.danger)
+		d.title = T.Text(d, 14, C.text, nil, true)
+		d.title:SetPoint("TOPLEFT", 18, -18)
+		d.text = T.Text(d, 12, C.muted)
+		d.text:SetPoint("TOPLEFT", d.title, "BOTTOMLEFT", 0, -10)
+		d.text:SetWidth(304)
+		if d.text.SetWordWrap then d.text:SetWordWrap(true) end
+		d.yes = T.Button(d, 120, 30)
+		d.yes:SetPoint("BOTTOMRIGHT", -16, 14)
+		d.yes.label:SetTextColor(C.danger[1], C.danger[2], C.danger[3], 1)
+		T.Border(d.yes, { C.danger[1], C.danger[2], C.danger[3], 0.6 })
+		d.yes:SetScript("OnLeave", function(self) color(self.bg, C.card); self.label:SetTextColor(C.danger[1], C.danger[2], C.danger[3], 1) end)
+		d.no = T.Button(d, 100, 30)
+		d.no:SetPoint("RIGHT", d.yes, "LEFT", -8, 0)
+		d.no:SetScript("OnClick", function() d:Hide() end)
+		d.yes:SetScript("OnClick", function()
+			local fn = d.onYes
+			d:Hide()
+			if fn then fn() end
+		end)
+		if UISpecialFrames then table.insert(UISpecialFrames, "QuestLineageConfirm") end
+		T.confirm = d
+	end
+	d.onYes = onYes
+	d.title:SetText(title)
+	d.text:SetText(text)
+	d.yes:SetLabel(action)
+	d.no:SetLabel(QL.L("Cancel"))
+	d:SetHeight(18 + 20 + 10 + (d.text:GetStringHeight() or 30) + 60)
+	d:Show()
+	return d
+end
+
 function T.Scroll(parent)
 	local C = T.C
 	local sf = CreateFrame("ScrollFrame", nil, parent)

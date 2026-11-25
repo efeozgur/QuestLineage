@@ -85,6 +85,61 @@ function QL.ResetContext()
 	QL.Fire("STATE_CHANGED")
 end
 
+-- Abandoning a quest ----------------------------------------------------------------------------------
+
+-- The quest's line in the quest log, or nil.
+function QL.QuestLogIndex(id)
+	local Q = C_QuestLog
+	local i = Q and call(Q.GetLogIndexForQuestID, id)
+	if type(i) == "number" and i > 0 then return i end
+	i = call(GetQuestLogIndexByID, id)
+	if type(i) == "number" and i > 0 then return i end
+	if GetNumQuestLogEntries and GetQuestLogTitle then
+		for n = 1, call(GetNumQuestLogEntries) or 0 do
+			local _, _, _, isHeader, _, _, _, questId = call(GetQuestLogTitle, n)
+			if not isHeader and questId == id then return n end
+		end
+	end
+	return nil
+end
+
+-- Drops a quest from the log (the quest log's own Abandon, without its confirmation: callers ask
+-- with QL.ConfirmAbandon). The classic calls first (select the line, mark it, abandon), as
+-- Questie does on this client; else C_QuestLog's. true when the client took it.
+function QL.AbandonQuest(id)
+	id = tonumber(id)
+	if not id then return false end
+	local index = QL.QuestLogIndex(id)
+	if index and SelectQuestLogEntry and SetAbandonQuest and AbandonQuest then
+		local before = call(GetQuestLogSelection)
+		call(SelectQuestLogEntry, index)
+		call(SetAbandonQuest)
+		call(AbandonQuest)
+		if type(before) == "number" and before > 0 and before ~= index then call(SelectQuestLogEntry, before) end
+	else
+		local Q = C_QuestLog
+		if not (Q and Q.SetSelectedQuest and Q.SetAbandonQuest and Q.AbandonQuest) then return false end
+		call(Q.SetSelectedQuest, id)
+		call(Q.SetAbandonQuest)
+		call(Q.AbandonQuest)
+	end
+	-- the arrow and the window let go of it at once
+	if QL.ArrowQuest and QL.ArrowQuest() == id and QL.ClearArrow then QL.ClearArrow() end
+	QL.Print(QL.L("Quest abandoned: ") .. QL.QuestTitle(id), "info")
+	QL.Fire("QUEST_ABANDONED", id)
+	return true
+end
+
+-- Asks first (the theme's own dialog; it reads Turkish where the game's popups may not).
+function QL.ConfirmAbandon(id)
+	id = tonumber(id)
+	if not id then return end
+	local L = QL.L
+	QL.Theme.Confirm(L("Abandon quest?"),
+		L("%s leaves your quest log; what you collected for it may be lost. You can take it again from its giver."):format(QL.Theme.Hex(QL.Theme.C.text) .. QL.QuestTitle(id) .. "|r"),
+		L("Abandon"), function() QL.AbandonQuest(id) end)
+end
+
 for _, e in ipairs({ "QUEST_LOG_UPDATE", "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP" }) do
 	QL.Event(e, function() cache = nil; QL.Fire("STATE_CHANGED") end)
 end

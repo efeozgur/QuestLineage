@@ -357,11 +357,22 @@ end
 function Inspector:Buttons(list)
 	local T = QL.Theme
 	local x = PAD
+	local room = (self.content.GetWidth and self.content:GetWidth() or 0)
+	if type(room) ~= "number" or room < 200 then room = 9999 end
 	for _, o in ipairs(list) do
 		local b = self:Take("button", function() return T.Button(self.content, 140, 30) end)
 		b:SetLabel(o.label)
 		b:SetActive(false)
+		local C = T.C
+		local lc = o.danger and C.danger or C.muted
+		b.label:SetTextColor(lc[1], lc[2], lc[3], 1)
 		b:SetWidth(math.max(110, (b.label:GetStringWidth() or 80) + 30))
+		-- a new line when the row is full
+		if x > PAD and x + b:GetWidth() > room - PAD then
+			x = PAD
+			self.y = self.y - 38
+		end
+		b:ClearAllPoints()
 		b:SetPoint("TOPLEFT", self.content, "TOPLEFT", x, self.y)
 		b:SetScript("OnClick", o.click)
 		x = x + b:GetWidth() + 8
@@ -614,6 +625,9 @@ function Inspector:Show(id, chain)
 	actions[#actions + 1] = { label = L("Link in chat"), click = function() QL.InsertQuestLink(id) end }
 	if ctx.log[id] and QuestMapFrame_OpenToQuestDetails then
 		actions[#actions + 1] = { label = L("Open in quest log"), click = function() pcall(QuestMapFrame_OpenToQuestDetails, id) end }
+	end
+	if ctx.log[id] and QL.ConfirmAbandon then
+		actions[#actions + 1] = { label = L("Abandon quest"), danger = true, click = function() QL.ConfirmAbandon(id) end }
 	end
 	self:Buttons(actions)
 	self.scroll:SetContentHeight(-self.y + 12)
