@@ -147,10 +147,17 @@ local function swatch(name, beside, colorKey, modeKey)
 	return sw
 end
 
--- A slider for a numeric setting, in 5% steps, showing its value in the label above it.
-local function slider(name, key, min, max, y, sizeLabel)
+-- A slider for a numeric setting, showing its value in the label above it. Sizes by default
+-- (5% steps, "Size: 120%"); opts = { step, text = function(v) -> label, ends = function(v) -> "" }.
+local function sizeText(v) return L("Size: %d%%"):format(math.floor(v * 100 + 0.5)) end
+local function percent(v) return ("%d%%"):format(v * 100) end
+
+local function slider(name, key, min, max, y, sizeLabel, opts)
 	local T = QL.Theme
-	local step = 0.05
+	opts = opts or {}
+	local step = opts.step or 0.05
+	local text = opts.text or sizeText
+	local ends = opts.ends or percent
 	local s = CreateFrame("Slider", name, root)
 	s:SetOrientation("HORIZONTAL")
 	s:SetSize(240, 16)
@@ -167,20 +174,28 @@ local function slider(name, key, min, max, y, sizeLabel)
 	s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
 	s.low = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	s.low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
-	s.low:SetText(("%d%%"):format(min * 100))
+	s.low:SetText(ends(min))
 	s.high = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	s.high:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", 0, -2)
-	s.high:SetText(("%d%%"):format(max * 100))
+	s.high:SetText(ends(max))
 	s:SetScript("OnValueChanged", function(self, v)
 		if self.updating then return end
 		v = math.floor(math.max(min, math.min(max, v or 1)) / step + 0.5) * step
 		if v ~= QL.DB()[key] then
 			QL.Set(key, v)
-			sizeLabel:SetText(L("Size: %d%%"):format(math.floor(v * 100 + 0.5)))
+			sizeLabel:SetText(text(v))
 		end
 	end)
+	s.text = text
 	return s
 end
+
+local function offsetText(v)
+	v = math.floor(v + 0.5)
+	if v == 0 then return L("Horizontal shift: none") end
+	return L("Horizontal shift: %+d px"):format(v)
+end
+local function pixels(v) return ("%+d"):format(v) end
 
 local function setSlider(s, value)
 	s.updating = true
@@ -262,6 +277,10 @@ local function refresh()
 		setSlider(p.slider, scale)
 		QL.SetFont(p.sizeLabel, 12)
 		p.sizeLabel:SetText(L("Size: %d%%"):format(math.floor(scale * 100 + 0.5)))
+		local dx = tonumber(db.plateOffsetX) or 0
+		setSlider(p.offset, dx)
+		QL.SetFont(p.offsetLabel, 12)
+		p.offsetLabel:SetText(offsetText(dx))
 		setLabel(p.count, L("Show the counter (3/8)"))
 		p.count:SetChecked(db.plateCount ~= false)
 		setLabel(p.droppers, L("Also on creatures that drop an item you collect"))
@@ -310,6 +329,9 @@ local function buildPlateSection(y)
 	y = y - 8
 	p.sizeLabel = label(y); y = y - 22
 	p.slider = slider("QuestLineagePlateScale", "plateScale", 0.5, 2, y, p.sizeLabel); y = y - 40
+	p.offsetLabel = label(y); y = y - 22
+	p.offset = slider("QuestLineagePlateOffset", "plateOffsetX", -40, 40, y, p.offsetLabel, { step = 1, text = offsetText, ends = pixels })
+	y = y - 40
 	p.count = check("QuestLineagePlateCount", 16, y, function(self) QL.Set("plateCount", self:GetChecked() and true or false); refresh() end)
 	y = y - 30
 	p.droppers = check("QuestLineagePlateDroppers", 16, y, function(self) QL.Set("plateDroppers", self:GetChecked() and true or false); refresh() end)

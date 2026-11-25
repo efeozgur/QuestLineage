@@ -40,6 +40,7 @@ QL.defaults = {
 	plateColorMode = "accent", -- "accent" | "difficulty" | "custom"
 	plateColor = { 0.984, 0.749, 0.141 }, -- the custom colour
 	plateScale = 1,
+	plateOffsetX = 0,     -- the badge nudged left (-) or right (+), in pixels
 	plateCount = true,    -- the "3/8" counter beside the badge
 	plateDroppers = true, -- also creatures that drop an item an objective collects
 }

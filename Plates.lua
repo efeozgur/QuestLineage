@@ -122,19 +122,20 @@ local function placeBadge(b)
 	local bar = (type(uf) == "table" and type(uf.healthBar) == "table") and uf.healthBar or plate
 	local name = (type(uf) == "table" and type(uf.name) == "table") and uf.name or bar
 	local side = QL.DB().plateSide or "left"
+	local dx = tonumber(QL.DB().plateOffsetX) or 0 -- the player's own nudge, left (-) or right (+)
 	b:ClearAllPoints()
 	b.text:ClearAllPoints()
 	if side == "right" then
-		b:SetPoint("LEFT", bar, "RIGHT", 3, 0)
+		b:SetPoint("LEFT", bar, "RIGHT", 3 + dx, 0)
 		b.text:SetPoint("LEFT", b, "RIGHT", 2, 0)
 	elseif side == "top" then
-		b:SetPoint("BOTTOM", name, "TOP", -10, 2)
+		b:SetPoint("BOTTOM", name, "TOP", -10 + dx, 2)
 		b.text:SetPoint("LEFT", b, "RIGHT", 2, 0)
 	else
-		b:SetPoint("RIGHT", bar, "LEFT", -3, 0)
+		b:SetPoint("RIGHT", bar, "LEFT", -3 + dx, 0)
 		b.text:SetPoint("RIGHT", b, "LEFT", -2, 0)
 	end
-	b.side = side
+	b.side, b.dx = side, dx
 	b:SetScale(tonumber(QL.DB().plateScale) or 1)
 end
 
