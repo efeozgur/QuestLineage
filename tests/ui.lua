@@ -202,6 +202,15 @@ rows[2].scripts.OnClick(rows[2])
 Check(f.infoTitle.text:find("Loop", 1, true), "clicking a row opens its tree: " .. f.infoTitle.text)
 Eq(rows[2].selected, true, "clicked row selected")
 Eq(rows[1].selected, false, "other row not selected")
+-- every quest click points the arrow: a chain row (at the quest it opens) and a tree card
+rows[1].scripts.OnClick(rows[1])
+Eq(QL.ArrowQuest(), 2, "a chain row points the arrow at its quest in the log")
+local card5
+for i = 1, f.tree.usedCards do if f.tree.cards[i].questId == 5 then card5 = f.tree.cards[i] end end
+card5.scripts.OnClick(card5)
+Eq(QL.ArrowQuest(), 5, "a tree card points the arrow")
+Eq(QuestLineageArrow.shown, true, "the arrow shows")
+QL.ClearArrow()
 
 -- Search: as you type -------------------------------------------------------------------------------
 QL.ShowPage("search")

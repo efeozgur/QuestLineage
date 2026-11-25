@@ -166,7 +166,7 @@ local function renderZone()
 	end
 	for i, row in ipairs(rows) do
 		local r = listRow(list, i, ZONE_ROW_H)
-		r.arrowOnClick = nil
+		r.arrowOnClick = true -- a chain row points the arrow at the quest it opens
 		r.dist:SetText("")
 		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
 		local e, p = row.entry, row.progress
@@ -301,7 +301,7 @@ local function renderSearch()
 	local ctx = QL.Context()
 	for i, id in ipairs(ids) do
 		local r = listRow(list, i, SEARCH_ROW_H)
-		r.arrowOnClick = nil
+		r.arrowOnClick = true
 		r.dist:SetText("")
 		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
 		r.questId, r.openId = id, id

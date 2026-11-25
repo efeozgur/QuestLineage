@@ -242,7 +242,11 @@ function Tree:Card()
 	end)
 	n:SetScript("OnClick", function(card)
 		if IsShiftKeyDown and IsShiftKeyDown() then QL.InsertQuestLink(card.questId)
-		else QL.Open(card.questId) end
+		else
+			-- a card points the arrow at its quest too
+			if QL.SetArrowTarget then pcall(QL.SetArrowTarget, card.questId) end
+			QL.Open(card.questId)
+		end
 	end)
 	self.cards[self.usedCards] = n
 	return n
