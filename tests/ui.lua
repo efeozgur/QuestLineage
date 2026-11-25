@@ -31,6 +31,8 @@ local function mock(kind, name)
 	end
 	function mt.SetGradient(self, dir, c1, c2) self.gradient = { dir, c1, c2 } end
 	function mt.SetRotation(self, r) self.rotation = r end
+	function mt.SetFrameStrata(self, v) self.strata = v end
+	function mt.GetFrameStrata(self) return self.strata end
 	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
 	function mt.SetColorTexture(self, ...) numbers("SetColorTexture", ...) end
 	function mt.SetScript(self, s, fn) self.scripts[s] = fn end
@@ -369,6 +371,9 @@ QL.UpdateArrow()
 Eq(arrow.title.text, "Rumours", "quest name on the arrow")
 Eq(arrow.dist.text, "No location data", "Rumours has no giver data in the fixture")
 Eq(QuestLineageDB.arrowTargets["Tester-Realm"], 5, "kept per character")
+Eq(arrow.strata, "DIALOG", "the arrow is drawn above the window (HIGH), not behind it")
+QL.Command("arrow")
+Eq(#QL.errors, 0, "/ql arrow runs: " .. table.concat(QL.errors, " | "))
 Check(f.questsPage.list.rows[1].title.text:find("»", 1, true), "the arrow's quest is marked in the list")
 -- a quest with a place: The Gathering's giver Bob at 45.2, 63.1; the player at 50, 40
 QL.SetArrowTarget(3)

@@ -54,7 +54,10 @@ local function build()
 	f:SetSize(150, 150)
 	local p = QL.DB().arrowPoint
 	if type(p) == "table" and p[1] then f:SetPoint(p[1], UIParent, p[2], p[3], p[4]) else f:SetPoint("TOP", UIParent, "TOP", 0, -140) end
-	f:SetFrameStrata("MEDIUM")
+	-- Above the QuestLineage window (HIGH, nearly full screen): in MEDIUM the arrow sat behind it
+	-- and never showed while the window was open.
+	f:SetFrameStrata("DIALOG")
+	f:SetFrameLevel(50)
 	f:SetClampedToScreen(true)
 	f:SetMovable(true)
 	f:EnableMouse(true)
@@ -175,20 +178,53 @@ local function refreshTarget()
 	if not target or new.kind ~= target.kind or new.label ~= target.label then target = new end
 end
 
-function QL.SetArrowTarget(id)
+function QL.SetArrowTarget(id, quiet)
 	id = tonumber(id)
 	if not id then return end
-	if not frame and CreateFrame then build() end
+	if not frame and CreateFrame then
+		local ok, err = pcall(build)
+		if not ok then QL.Debug("arrow build: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors")); return end
+	end
+	local changed = questId ~= id
 	questId = id
 	target = nil
 	refreshTarget()
-	if not target then return end
+	if not target then
+		if not quiet then QL.Print(L("Nothing to point at for: ") .. QL.QuestTitle(id)) end
+		return
+	end
 	saved()[charKey()] = id
 	if frame then
 		frame:Show()
 		pcall(QL.UpdateArrow)
 	end
+	if changed and not quiet then
+		QL.Print(L("Arrow: ") .. QL.QuestTitle(id) .. "  ·  " .. (target.label or ""))
+	end
 	QL.Fire("ARROW_CHANGED", id)
+end
+
+-- /ql arrow: what the arrow knows, step by step, to find why it does not show.
+function QL.ArrowDebug(arg)
+	local id = tonumber(arg)
+	if id then QL.SetArrowTarget(id) end
+	QL.Print(L("Arrow quest: ") .. tostring(questId) .. (questId and (" (" .. QL.QuestTitle(questId) .. ")") or ""))
+	if not frame then QL.Print(L("Arrow frame: not built yet (pick a quest in the Quests list)")); return end
+	local point, _, relPoint, x, y = frame:GetPoint(1)
+	QL.Print(("frame: shown=%s visible=%s strata=%s alpha=%.2f scale=%.2f point=%s %s %.0f,%.0f"):format(
+		tostring(frame:IsShown()), tostring(frame:IsVisible()), tostring(frame:GetFrameStrata()),
+		frame:GetAlpha() or -1, frame:GetEffectiveScale() or -1, tostring(point), tostring(relPoint), x or 0, y or 0))
+	QL.Print("texture: " .. tostring(frame.arrow:GetTexture()))
+	if not target then QL.Print(L("No target.")); return end
+	QL.Print(("target: %s · %d points · %s"):format(target.kind, #target.points, tostring(target.label)))
+	local p1 = target.points[1]
+	if p1 then QL.Print(("first point: map %s at %.3f, %.3f"):format(tostring(p1.map), p1.x, p1.y)) end
+	local map, px, py = QL.PlayerPosition()
+	QL.Print(("player: map %s at %s, %s · facing %s"):format(tostring(map), tostring(px), tostring(py), tostring(GetPlayerFacing and GetPlayerFacing())))
+	local loc = QL.Locate(target)
+	if not loc then QL.Print("locate: nil")
+	elseif loc.otherMap then QL.Print("locate: other map " .. tostring(loc.otherMap.map))
+	else QL.Print(("locate: %.0f yd (dx %.0f, dy %.0f)"):format(loc.dist, loc.dx, loc.dy)) end
 end
 
 function QL.ClearArrow()
@@ -221,5 +257,5 @@ end)
 
 QL.Event("PLAYER_LOGIN", function()
 	local id = saved()[charKey()]
-	if id then QL.WhenIndexed(function() QL.SetArrowTarget(id) end) end
+	if id then QL.WhenIndexed(function() QL.SetArrowTarget(id, true) end) end
 end)

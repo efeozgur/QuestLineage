@@ -158,6 +158,14 @@ local TR = {
 	["Drag: move · Right-click: stop"] = "Sürükle: taşı · Sağ tık: durdur",
 	["Point the arrow"] = "Oku göster",
 	["Stop the arrow"] = "Oku durdur",
+	["Arrow: "] = "Ok: ",
+	["Nothing to point at for: "] = "Ok için gösterilecek yer yok: ",
+	["The arrow could not be built: /ql errors"] = "Ok oluşturulamadı: /ql errors",
+	["The arrow is not loaded: quit the game fully and start it again (new files need a restart)."] = "Ok yüklenmemiş: oyunu tamamen kapatıp yeniden aç (yeni dosyalar için /reload yetmez).",
+	["arrow status, or point it at a quest"] = "okun durumu ya da oku bir göreve çevir",
+	["Arrow quest: "] = "Okun görevi: ",
+	["Arrow frame: not built yet (pick a quest in the Quests list)"] = "Ok henüz oluşmadı (Görevler listesinden bir görev seç)",
+	["No target."] = "Hedef yok.",
 }
 QL.TR = TR
 

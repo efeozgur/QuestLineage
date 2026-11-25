@@ -79,7 +79,14 @@ local function newRow(list, height)
 	r:SetScript("OnClick", function(self)
 		if not self.openId then return end
 		-- the Quests list also points the arrow at the quest
-		if self.arrowOnClick and QL.SetArrowTarget then QL.SetArrowTarget(self.openId) end
+		if self.arrowOnClick then
+			if QL.SetArrowTarget then
+				local ok, err = pcall(QL.SetArrowTarget, self.openId)
+				if not ok then QL.Debug("arrow: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors")) end
+			else
+				QL.Print(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart)."))
+			end
+		end
 		QL.Open(self.openId)
 	end)
 	return r

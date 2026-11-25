@@ -133,10 +133,17 @@ function QL.Command(msg)
 	elseif cmd == "errors" then
 		if #QL.errors == 0 then QL.Print(L("No errors.")) end
 		for _, e in ipairs(QL.errors) do QL.Print(e) end
+	elseif cmd == "arrow" then
+		if QL.ArrowDebug then
+			QL.ArrowDebug(rest)
+		else
+			QL.Print(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart)."))
+		end
 	elseif cmd == "help" then
 		QL.Print("/ql  " .. L("open or close the chain window"))
 		QL.Print("/ql <id|name>  " .. L("show the chain of a quest"))
 		QL.Print("/ql status  " .. L("database and language status"))
+		QL.Print("/ql arrow [id]  " .. L("arrow status, or point it at a quest"))
 		QL.Print("/ql lang en|tr  " .. L("interface language"))
 		QL.Print("/ql options  " .. L("settings"))
 	else
