@@ -6,6 +6,7 @@ Needs Pillow. White on transparent, 64x64; the game tints them (muted, or the ac
   nav_class.tga    a shield
   nav_search.tga   a magnifying glass
   corpse.tga       a tombstone (the corpse marker on the maps)
+  speaker.tga      a speaker with sound waves (the quest card's voice button)
 """
 import os
 from PIL import Image, ImageDraw
@@ -225,6 +226,16 @@ def corpse():
     save(img, "corpse.tga")
 
 
+def speaker():
+    """The quest card's voice button: a speaker with two sound waves (tinted in game)."""
+    img, d = canvas()
+    d.rounded_rectangle((s(6), s(23), s(18), s(41)), radius=s(2), fill=W)
+    poly(d, [(18, 23), (32, 11), (32, 53), (18, 41)])
+    for r, w in ((12, 4), (22, 4)):
+        d.arc((s(32 - r), s(32 - r), s(32 + r), s(32 + r)), start=-50, end=50, fill=W, width=s(w))
+    save(img, "speaker.tga")
+
+
 def logo():
     """The addon's own icon (the AddOns list, ## IconTexture): in colour, not tinted by the game.
     A dark rounded tile with a family tree in the accent gradient: one quest above, two below."""
@@ -260,6 +271,7 @@ if __name__ == "__main__":
     logo()
     quest_mark()
     corpse()
+    speaker()
     quests()
     chains()
     shield()

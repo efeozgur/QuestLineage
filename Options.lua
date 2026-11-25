@@ -64,6 +64,8 @@ local ROWS = {
 	{ key = "corpseRoute", page = "maps", group = "When you die",
 		label = "The way to my corpse", note = "A glowing path on both maps, and the arrow points at the corpse." },
 
+	{ key = "voiceAutoplay", parent = "questCard", page = "tracking", group = "Turkish voice-over",
+		label = "Read the quest aloud as soon as the card opens", note = "Off: nothing plays until you click the speaker on the card. Needs WoWTR Voices." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 }

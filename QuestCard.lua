@@ -11,6 +11,13 @@
 --   footer    "Show the quest in the quest list" (the main window opens on it, with its chain
 --             tree), Decline (DeclineQuest), Accept (AcceptQuest)
 --
+-- Turkish voice-over (the WoWTR_Voices addon, through its global WoWTR_Voices; none of its files
+-- change): a speaker in the hero's corner plays or stops the quest's recording (dim when the quest
+-- has none, lit and pulsing while it plays, hidden without the addon). Setting voiceAutoplay
+-- (off): WoWTR_Voices starts the offer's recording by itself; while the card shows that quest
+-- and the setting is off, that automatic start is held back (a check put in front of its
+-- PlayRecord, for this one recording only); on, the card starts it if nothing else did.
+--
 -- Settings: questCard (on), hideGameQuestFrame (the game's window moved off screen and made
 -- invisible while the card shows: Hide() would end the NPC conversation through its OnHide),
 -- openOnAccept (the main window opens on the quest you accept), questCardPoint (where the card
@@ -201,6 +208,50 @@ local function build()
 	close:SetFrameLevel(hero:GetFrameLevel() + 10)
 	card.close = close
 
+	-- the voice-over speaker
+	local sp = CreateFrame("Button", "QuestLineageQuestCardSpeaker", card)
+	sp:SetSize(28, 28)
+	sp:SetPoint("TOPRIGHT", -36, -4)
+	sp:SetFrameLevel(hero:GetFrameLevel() + 10)
+	sp.bg = sp:CreateTexture(nil, "BACKGROUND")
+	sp.bg:SetTexture(MEDIA .. "disc")
+	sp.bg:SetAllPoints()
+	sp.bg:SetVertexColor(C.card[1], C.card[2], C.card[3], 0.9)
+	sp.pulse = sp:CreateTexture(nil, "BORDER")
+	sp.pulse:SetTexture(MEDIA .. "ring")
+	sp.pulse:SetPoint("CENTER")
+	sp.pulse:Hide()
+	sp.icon = sp:CreateTexture(nil, "ARTWORK")
+	sp.icon:SetTexture(MEDIA .. "speaker")
+	sp.icon:SetSize(18, 18)
+	sp.icon:SetPoint("CENTER")
+	sp:SetScript("OnClick", function() if card.questId then QL.ToggleCardVoice(card.questId) end end)
+	sp:SetScript("OnEnter", function(self)
+		local state = card.questId and QL.CardVoiceState(card.questId)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_BOTTOM")
+		tip:AddLine(L("Turkish voice-over"), 1, 1, 1)
+		if state == "playing" then
+			tip:AddLine(L("Playing · click to stop"), C.accent[1], C.accent[2], C.accent[3])
+		elseif state == "ready" then
+			tip:AddLine(L("Click to listen"), C.muted[1], C.muted[2], C.muted[3])
+		else
+			tip:AddLine(L("This quest has no voice-over yet"), C.muted[1], C.muted[2], C.muted[3])
+		end
+		tip:Show()
+	end)
+	sp:SetScript("OnLeave", function() QL.Tip():Hide() end)
+	sp:Hide()
+	card.speaker = sp
+	local tick, clock = 0, 0
+	card:SetScript("OnUpdate", function(_, elapsed)
+		elapsed = elapsed or 0
+		tick, clock = tick + elapsed, clock + elapsed
+		if tick < 0.05 then return end
+		tick = 0
+		pcall(QL.UpdateCardSpeaker, clock)
+	end)
+
 	-- body (scrolls when long)
 	local sf = T.Scroll(card)
 	sf:SetPoint("TOPLEFT", 0, -HERO_H - 12)
@@ -370,6 +421,82 @@ local function rewards(sec)
 	return n > 0 or #lines > 0, rows * 42 + (rows > 0 and 4 or 0)
 end
 
+-- Voice-over (WoWTR_Voices) ----------------------------------------------------------------------
+
+local function voices()
+	local V = rawget(_G, "WoWTR_Voices")
+	if type(V) == "table" and type(V.Play) == "function" and type(V.GetRecord) == "function" then return V end
+	return nil
+end
+local function voiceKey(id) return "quest:" .. tostring(id) .. ":description" end
+
+-- nil without the addon; "playing", "ready" (a recording exists) or "none".
+function QL.CardVoiceState(id)
+	local V = voices()
+	if not V or not id then return nil end
+	if V.playingKey == voiceKey(id) then return "playing" end
+	local npc
+	if type(V.ResolveSpeakerID) == "function" then
+		local ok, n = pcall(V.ResolveSpeakerID, V)
+		if ok then npc = n end
+	end
+	local ok, record = pcall(V.GetRecord, V, id, "description", npc)
+	return (ok and record) and "ready" or "none"
+end
+
+function QL.ToggleCardVoice(id)
+	local V = voices()
+	if not V then return end
+	local state = QL.CardVoiceState(id)
+	if state == "playing" then
+		if type(V.Stop) == "function" then pcall(V.Stop, V) end
+	elseif state == "ready" then
+		pcall(V.Play, V, id, "description", false)
+	end
+	pcall(QL.UpdateCardSpeaker)
+end
+
+function QL.UpdateCardSpeaker(clock)
+	if not card then return end
+	local C = QL.Theme.C
+	local sp = card.speaker
+	local state = card.questId and QL.CardVoiceState(card.questId)
+	sp:SetShown(state ~= nil)
+	sp.state = state
+	if not state then return end
+	if state == "playing" then
+		sp.icon:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+		local t = ((clock or 0) * 0.9) % 1
+		sp.pulse:SetSize(28 + 14 * t, 28 + 14 * t)
+		sp.pulse:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0.8 * (1 - t))
+		sp.pulse:Show()
+	else
+		sp.pulse:Hide()
+		if state == "ready" then
+			sp.icon:SetVertexColor(C.text[1], C.text[2], C.text[3], 1)
+		else
+			sp.icon:SetVertexColor(C.dim[1], C.dim[2], C.dim[3], 0.7)
+		end
+	end
+end
+
+-- WoWTR_Voices starts an offer's recording by itself; hold that back for the quest our card shows
+-- unless voiceAutoplay is on. Only its automatic starts, only this one recording.
+local function guardAutoplay()
+	local V = voices()
+	if not V or V.qlAutoplayGuard or type(V.PlayRecord) ~= "function" then return end
+	local original = V.PlayRecord
+	V.qlAutoplayGuard = true
+	V.PlayRecord = function(self, key, record, automatic, ...)
+		if automatic and card and card:IsShown() and card.questId and key == voiceKey(card.questId)
+			and not QL.DB().voiceAutoplay then
+			return false
+		end
+		return original(self, key, record, automatic, ...)
+	end
+end
+QL.GuardVoiceAutoplay = guardAutoplay
+
 -- The chain box: one dot per link (layer) of the chain, joined by lines; done links green, this
 -- quest's link lit with a ring, links still ahead dim. More than MAX_DOTS links: a window round
 -- this one, with faded ends. Returns the box's height.
@@ -537,6 +664,7 @@ function QL.ShowQuestCard(id)
 	local T, C = QL.Theme, QL.Theme.C
 	local ctx = QL.Context()
 	local known = QL.QuestExists(id)
+	if card.questId ~= id or not card:IsShown() then card.voiceAsked = nil end
 	card.questId = id
 	card.answered = false
 
@@ -622,6 +750,15 @@ function QL.ShowQuestCard(id)
 	placeCard()
 	card.closing = false
 	card:Show()
+	pcall(guardAutoplay)
+	pcall(QL.UpdateCardSpeaker)
+	-- reading aloud by itself only when asked to (and only if WoWTR_Voices did not already)
+	if QL.DB().voiceAutoplay and not card.voiceAsked and C_Timer and C_Timer.After then
+		card.voiceAsked = id
+		C_Timer.After(1.2, function()
+			if card:IsShown() and card.questId == id and QL.CardVoiceState(id) == "ready" then QL.ToggleCardVoice(id) end
+		end)
+	end
 end
 
 function QL.HideQuestCard()

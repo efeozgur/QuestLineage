@@ -494,6 +494,45 @@ for _, t in ipairs(qc.tiles) do if t.shown then shownTiles = shownTiles + 1 end 
 Eq(shownTiles, 3, "one reward and two choices")
 Check(qc.sections.rewards.body.text:find("Choose one of 2", 1, true), "choices explained: " .. qc.sections.rewards.body.text)
 Eq(QuestFrame.alpha, nil, "the game's window untouched by default")
+-- the speaker: hidden without WoWTR Voices
+Eq(qc.speaker.shown, false, "no speaker without WoWTR Voices")
+local played = {}
+local autoStarted = {}
+WoWTR_Voices = {
+	GetRecord = function(_, qid, section) if qid == 6 and section == "description" then return { path = "x" } end end,
+	Play = function(self, qid, section, automatic) played[#played + 1] = qid; self.playingKey = "quest:" .. qid .. ":" .. section end,
+	Stop = function(self) self.playingKey = nil end,
+	PlayRecord = function(self, key, record, automatic) autoStarted[#autoStarted + 1] = key; return true end,
+}
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+Eq(qc.speaker.shown, true, "speaker on the card")
+Eq(qc.speaker.state, "ready", "the quest has a recording")
+Eq(#played, 0, "nothing plays by itself (setting off)")
+-- WoWTR Voices' own automatic start is held back while the card shows the quest
+Eq(WoWTR_Voices:PlayRecord("quest:6:description", {}, true), false, "its autoplay is held back")
+Eq(#autoStarted, 0, "nothing started")
+Eq(WoWTR_Voices:PlayRecord("quest:6:progress", {}, true), true, "other pages untouched")
+Eq(WoWTR_Voices:PlayRecord("quest:6:description", {}, false), true, "and a click still plays")
+qc.speaker.scripts.OnClick(qc.speaker)
+Eq(played[1], 6, "the speaker plays the quest")
+Eq(qc.speaker.state, "playing", "lit while playing")
+qc.speaker.scripts.OnClick(qc.speaker)
+Eq(WoWTR_Voices.playingKey, nil, "a second click stops it")
+-- the setting on: automatic reading is allowed, and the card starts it
+QL.Set("voiceAutoplay", true)
+Eq(WoWTR_Voices:PlayRecord("quest:6:description", {}, true), true, "autoplay allowed when set")
+for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+Eq(played[#played], 6, "the card reads it by itself when set")
+QL.Set("voiceAutoplay", false)
+WoWTR_Voices.playingKey = nil
+-- a quest without a recording: a dim speaker
+function GetQuestID() return 5 end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+Eq(qc.speaker.state, "none", "no recording: dim")
+WoWTR_Voices = nil
+function GetQuestID() return 6 end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
 -- accept
 qc.accept.scripts.OnClick(qc.accept)
 Eq(answered[#answered], "accept", "Accept calls AcceptQuest")
