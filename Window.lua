@@ -524,6 +524,10 @@ function QL.RenderWindow(animate)
 	win.classPage:SetShown(page == "class")
 	win.searchPage:SetShown(page == "search")
 	win.headerSub:SetText(L("Quest chains"))
+	local tr = QL.UseTurkish()
+	win.langEN:SetActive(not tr)
+	win.langTR:SetActive(tr)
+	if not QL.HasWoWTR() then win.langTR.label:SetTextColor(0.4, 0.43, 0.49, 1) end
 	win.legend:SetText(legendText())
 	if page == "quests" then safe("quest list", renderQuests)
 	elseif page == "zone" then safe("zone list", renderZone)
@@ -590,8 +594,41 @@ local function createWindow()
 	local close = T.CloseButton(f)
 	close:SetPoint("TOPRIGHT", -10, -10)
 	close:SetFrameLevel(header:GetFrameLevel() + 5)
+	-- language switch: EN | TR (TR needs WoWTR; dimmed without it)
+	local function langButton(code, label)
+		local b = T.Button(header, 36, 24)
+		b:SetLabel(label)
+		b:SetFrameLevel(header:GetFrameLevel() + 5)
+		b:SetScript("OnClick", function()
+			if code == "tr" and not QL.HasWoWTR() then
+				QL.Print(L("Turkish needs WoWTR; showing English until it is loaded."))
+				return
+			end
+			QL.Set("lang", code)
+			QL.RenderWindow(false)
+		end)
+		local enter = b:GetScript("OnEnter")
+		b:SetScript("OnEnter", function(self)
+			if enter then enter(self) end
+			local tip = QL.Tip()
+			tip:SetOwner(self, "ANCHOR_BOTTOM")
+			tip:AddLine(code == "tr" and "Türkçe" or "English", 1, 1, 1)
+			if code == "tr" and not QL.HasWoWTR() then tip:AddLine(L("Turkish needs WoWTR"), 0.97, 0.44, 0.44) end
+			tip:Show()
+		end)
+		local leave = b:GetScript("OnLeave")
+		b:SetScript("OnLeave", function(self)
+			if leave then leave(self) end
+			QL.Tip():Hide()
+		end)
+		return b
+	end
+	f.langTR = langButton("tr", "TR")
+	f.langTR:SetPoint("RIGHT", close, "LEFT", -10, 0)
+	f.langEN = langButton("en", "EN")
+	f.langEN:SetPoint("RIGHT", f.langTR, "LEFT", -4, 0)
 	f.errorFlag = T.Text(header, 11, C.danger)
-	f.errorFlag:SetPoint("RIGHT", close, "LEFT", -12, 0)
+	f.errorFlag:SetPoint("RIGHT", f.langEN, "LEFT", -12, 0)
 	f.errorFlag:SetJustifyH("RIGHT")
 	f.errorFlag:Hide()
 

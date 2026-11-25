@@ -181,6 +181,7 @@ local TR = {
 	["Arrow preview"] = "Ok önizlemesi",
 	-- class page
 	["Class"] = "Sınıf",
+	["Turkish needs WoWTR"] = "Türkçe için WoWTR gerekir",
 	["No class quests found for your class."] = "Sınıfın için sınıf görevi bulunamadı.",
 	["%d quests · %d open · %d to do now"] = "%d görev · %d açık · %d şimdi yapılabilir",
 }

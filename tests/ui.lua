@@ -539,6 +539,23 @@ Eq(mb.shown, false, "the setting hides it")
 QL.Set("minimapButton", true)
 Eq(mb.shown, true, "and shows it again")
 
+-- Language switch in the window's header -------------------------------------------------------
+QTR_QuestData = QTR_QuestData or { ["3"] = { Title = "Toplanma" } }
+QL.Open(3)
+f.langTR.scripts.OnClick(f.langTR)
+Eq(QL.DB().lang, "tr", "TR from the header")
+Eq(f.langTR.active, true, "TR lit")
+Eq(f.zoneTab.label.text, "Zincirler", "the window turns Turkish at once")
+f.langEN.scripts.OnClick(f.langEN)
+Eq(QL.DB().lang, "en", "EN from the header")
+Eq(f.langEN.active, true, "EN lit")
+Eq(f.zoneTab.label.text, "Chains", "and back to English")
+local saved = QTR_QuestData
+QTR_QuestData = nil
+f.langTR.scripts.OnClick(f.langTR)
+Eq(QL.DB().lang, "en", "without WoWTR, TR is refused")
+QTR_QuestData = saved
+
 -- Slash commands do not error
 QL.Command("status")
 QL.Command("lang en")
