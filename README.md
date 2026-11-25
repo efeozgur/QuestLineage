@@ -22,7 +22,7 @@ closes for good. Each card shows the quest's state for your character.
 | Route | Tick quests in the **Quests** list and press **Build route**: they are ordered nearest first from where you stand, and the arrow leads you stop by stop. When a quest moves on (taken, objectives done, handed in) the rest is planned again from where you are, so nearby pick-ups, kills and hand-ins mix. |
 | World map | The route (or the arrow's quest) on the world map: a glowing path from you through every stop with lights flowing along it, numbered stop badges (hover for the quest, click to open it) and a caption. |
 | "Where?" bar | A slim icon bar you can put anywhere (drag it): repair, innkeeper, flight master, your class trainer, your profession trainers, food, mailbox, and a "more" panel with every trainer, vendor and service. Click: the arrow turns to the nearest; click again: the next nearest; hover: the three nearest with distances. Shift-click the minimap button to show or hide it. |
-| Current quest | A small window with the quest you are doing: its stage, objectives with counters and bars (they flash when they go up), XP and distance. |
+| Current quest | A small window with the quest you are doing: its stage, objectives with counters and bars (they flash when they go up), XP and distance; under it every other quest in your log (ready ones first). A setting hides the game's own quest tracker so this window can replace it. |
 | Nameplates | A quest badge and counter ("3/8") beside the nameplate of every creature an unfinished objective needs, including those that drop an item you collect. |
 | Quest log | A **Chain** button on the selected quest. |
 | NPC tooltips | For each chained quest the NPC gives: `Chain 2/5 · next: <quest>`. |

@@ -9,7 +9,14 @@
 --   └───────────────────────────────────────────┘
 --
 -- Which quest: the arrow's (or the quest an arrow place belongs to), else the last quest that
--- made progress or was taken. Objective rows flash when their counter goes up. Click the title:
+-- made progress or was taken. Under it, "Quests": every other quest in your log, one line each
+-- with its first open objective and a thin bar; ready ones first, in green. Click a line: it
+-- becomes the current quest (the arrow turns to it); right-click: open it in QuestLineage. The
+-- header folds the list (currentLogCollapsed).
+--
+-- The game's own quest tracker can be hidden (setting hideGameTracker), so this window replaces
+-- it: whichever of ObjectiveTrackerFrame / QuestWatchFrame / WatchFrame exists, hidden again when
+-- the game shows it, never touched in combat (applied when combat ends). Objective rows flash when their counter goes up. Click the title:
 -- open it in QuestLineage; right-click: fold the objectives. Drag to move (currentPoint).
 -- Setting currentQuest.
 --
@@ -169,6 +176,26 @@ local function build()
 	frame.sep:SetHeight(1)
 	T.Color(frame.sep, C.lineSoft)
 	frame.rows = {}
+	frame.logRows = {}
+	local head = CreateFrame("Button", nil, frame)
+	head:SetHeight(24)
+	local line = head:CreateTexture(nil, "BORDER")
+	line:SetTexture(T.WHITE)
+	line:SetPoint("TOPLEFT", 14, 0); line:SetPoint("TOPRIGHT", -14, 0)
+	line:SetHeight(1)
+	T.Color(line, C.lineSoft)
+	head.text = T.Text(head, 10, C.accent, nil, true)
+	head.text:SetPoint("LEFT", 14, -2)
+	head.fold = T.Text(head, 13, C.muted, nil, true)
+	head.fold:SetPoint("RIGHT", -14, -2)
+	head:SetScript("OnClick", function() QL.Set("currentLogCollapsed", not QL.DB().currentLogCollapsed) end)
+	head:RegisterForDrag("LeftButton")
+	head:SetScript("OnDragStart", function() frame:StartMoving() end)
+	head:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
+	head:Hide()
+	frame.logHead = head
+	frame.logMore = T.Text(frame, 10, C.dim)
+	frame.logMore:Hide()
 	frame:SetScript("OnEnter", function(self)
 		if not self.questId then return end
 		local tip = QL.Tip()
@@ -194,6 +221,137 @@ local function build()
 	frame:Hide()
 end
 
+-- The log list -----------------------------------------------------------------------------------------
+
+local LOG_ROW_H, LOG_MAX = 36, 15
+
+-- The other quests in the log, ready ones first, then by level.
+function QL.LogQuests(ctx, exceptId)
+	local out = {}
+	for id in pairs(ctx.log) do
+		if id ~= exceptId and QL.QuestExists(id) then out[#out + 1] = id end
+	end
+	table.sort(out, function(a, b)
+		local ra, rb = ctx.complete[a] and 1 or 0, ctx.complete[b] and 1 or 0
+		if ra ~= rb then return ra > rb end
+		local la, lb = QL.QuestLevel(a) or 0, QL.QuestLevel(b) or 0
+		if la ~= lb then return la < lb end
+		return a < b
+	end)
+	return out
+end
+
+-- A quest's first open objective and its overall progress (0..1, nil without counters).
+local function summary(id, ctx)
+	local rows = QL.ObjectiveRows(id, ctx)
+	local have, need, first = 0, 0, nil
+	for _, o in ipairs(rows) do
+		if o.need and o.need > 0 then have = have + math.min(o.have or 0, o.need); need = need + o.need end
+		if not first and not o.done then first = o end
+	end
+	return first, need > 0 and (have / need) or nil
+end
+
+local function logRow(i)
+	local T, C = QL.Theme, QL.Theme.C
+	local r = frame.logRows[i]
+	if r then return r end
+	r = CreateFrame("Button", nil, frame)
+	r:SetHeight(LOG_ROW_H)
+	r.bg = T.Fill(r, { 0, 0, 0, 0 })
+	r.title = T.Text(r, 12, C.text)
+	r.title:SetPoint("TOPLEFT", 14, -4)
+	r.title:SetPoint("RIGHT", r, "RIGHT", -64, 0)
+	r.right = T.Text(r, 11, C.muted, nil, true)
+	r.right:SetPoint("TOPRIGHT", -14, -5)
+	r.right:SetJustifyH("RIGHT")
+	r.sub = T.Text(r, 10, C.muted)
+	r.sub:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
+	r.sub:SetPoint("RIGHT", r, "RIGHT", -14, 0)
+	r.bar = T.Bar(r, 2)
+	r.bar:SetPoint("BOTTOMLEFT", 14, 3)
+	r.bar:SetPoint("BOTTOMRIGHT", -14, 3)
+	r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	r:SetScript("OnClick", function(self, button)
+		if button == "RightButton" then QL.Open(self.questId); return end
+		if QL.RouteActive and QL.RouteActive() then QL.Open(self.questId); return end
+		if QL.SetArrowTarget then pcall(QL.SetArrowTarget, self.questId) end
+	end)
+	r:SetScript("OnEnter", function(self)
+		T.Color(self.bg, C.rowHover)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_LEFT")
+		QL.FillQuestTooltip(tip, self.questId)
+		tip:AddLine(L("Click: make it current · Right-click: open"), 0.5, 0.5, 0.5)
+		tip:Show()
+	end)
+	r:SetScript("OnLeave", function(self) T.Color(self.bg, { 0, 0, 0, 0 }); QL.Tip():Hide() end)
+	-- dragging a row moves the window
+	r:RegisterForDrag("LeftButton")
+	r:SetScript("OnDragStart", function() frame:StartMoving() end)
+	r:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
+	frame.logRows[i] = r
+	return r
+end
+
+local function drawLog(y, ctx, currentId)
+	local T, C = QL.Theme, QL.Theme.C
+	local ids = QL.LogQuests(ctx, currentId)
+	local head = frame.logHead
+	for _, r in ipairs(frame.logRows) do r:Hide() end
+	frame.logMore:Hide()
+	if #ids == 0 then head:Hide(); return y end
+	head:ClearAllPoints()
+	head:SetPoint("TOPLEFT", 0, y)
+	head:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+	local folded = QL.DB().currentLogCollapsed
+	head.text:SetText(L("QUESTS") .. "  " .. T.Hex(C.muted) .. #ids .. "|r")
+	head.fold:SetText(folded and "+" or "–")
+	head:Show()
+	y = y - 26
+	if folded then return y end
+	local ready = T.STATUS.done
+	for i, id in ipairs(ids) do
+		if i > LOG_MAX then
+			frame.logMore:ClearAllPoints()
+			frame.logMore:SetPoint("TOPLEFT", 14, y - 2)
+			frame.logMore:SetText(L("+%d more"):format(#ids - LOG_MAX))
+			frame.logMore:Show()
+			y = y - 18
+			break
+		end
+		local r = logRow(i)
+		r.questId = id
+		r:ClearAllPoints()
+		r:SetPoint("TOPLEFT", 0, y)
+		r:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+		r.title:SetText(QL.QuestTitle(id))
+		local isReady = ctx.complete[id]
+		r.title:SetTextColor(unpack(isReady and { ready[1], ready[2], ready[3] } or (QL.TitleColor(id, ctx) or C.text)))
+		local first, frac = summary(id, ctx)
+		if isReady then
+			r.right:SetText(L("Ready"))
+			r.right:SetTextColor(ready[1], ready[2], ready[3], 1)
+			local who = QL.QuestFinisher(id)
+			r.sub:SetText(who and (L("Turn in: ") .. who.name) or "")
+		else
+			local level = QL.QuestLevel(id)
+			r.right:SetText(level and QL.LevelMarkup(id, ctx) or "")
+			r.right:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
+			r.sub:SetText(first and (first.text or "") or "")
+		end
+		if frac and not isReady then
+			r.bar:Show()
+			r.bar:SetValue(frac)
+		else
+			r.bar:Hide()
+		end
+		r:Show()
+		y = y - LOG_ROW_H
+	end
+	return y
+end
+
 local STAGE = {
 	available = "Pick up",
 	toolow = "Pick up",
@@ -207,8 +365,21 @@ function QL.RefreshCurrent(flashes)
 	if QL.DB().currentQuest == false then frame:Hide(); return end
 	local ctx = QL.Context()
 	local id = QL.CurrentQuest(ctx)
-	if not id then frame:Hide(); return end
 	local T, C = QL.Theme, QL.Theme.C
+	local currentParts = { frame.label, frame.meta, frame.title, frame.stateDot, frame.state }
+	if not id then
+		-- no current quest: the window shows the log alone (or nothing when the log is empty)
+		frame.questId = nil
+		for _, p in ipairs(currentParts) do p:Hide() end
+		frame.sep:Hide()
+		for _, r in ipairs(frame.rows) do r:Hide() end
+		local y = drawLog(-10, ctx, nil)
+		if y == -10 then frame:Hide(); return end
+		frame:SetHeight(-y + 6)
+		frame:Show()
+		return
+	end
+	for _, p in ipairs(currentParts) do p:Show() end
 	frame.questId = id
 	frame.label:SetText(L("CURRENT QUEST"))
 	local xp = QL.QuestXPAt(id, ctx.level)
@@ -271,11 +442,53 @@ function QL.RefreshCurrent(flashes)
 		if f[1] == id and frame.rows[f[2]] then frame.rows[f[2]].flashT = 1.2 end
 	end
 	frame.sep:SetShown(#rows > 0)
-	frame:SetHeight(-y + (#rows > 0 and 8 or -6))
+	y = y + (#rows > 0 and -4 or 10)
+	y = drawLog(y, ctx, id)
+	frame:SetHeight(-y + 8)
 	frame:Show()
 end
 
+-- The game's own quest tracker ----------------------------------------------------------------------
+
+local GAME_TRACKERS = { "ObjectiveTrackerFrame", "QuestWatchFrame", "WatchFrame" }
+local hookedTrackers = {}
+local pendingTracker = false
+
+local function inCombat() return InCombatLockdown and InCombatLockdown() end
+
+function QL.ApplyGameTracker()
+	if inCombat() then pendingTracker = true; return end
+	pendingTracker = false
+	local hide = QL.DB().hideGameTracker == true
+	for _, name in ipairs(GAME_TRACKERS) do
+		local f = _G[name]
+		if type(f) == "table" and f.Hide then
+			if not hookedTrackers[name] and f.HookScript then
+				hookedTrackers[name] = true
+				-- the game shows it again on quest changes: hide it again (outside combat)
+				pcall(f.HookScript, f, "OnShow", function(self)
+					if QL.DB().hideGameTracker == true then
+						if inCombat() then pendingTracker = true else self:Hide() end
+					end
+				end)
+			end
+			if hide then
+				pcall(f.Hide, f)
+			elseif f.wasHiddenByQL then
+				pcall(f.Show, f)
+				if name == "ObjectiveTrackerFrame" and ObjectiveTracker_Update then pcall(ObjectiveTracker_Update) end
+				if name == "QuestWatchFrame" and QuestWatch_Update then pcall(QuestWatch_Update) end
+			end
+			f.wasHiddenByQL = hide
+		end
+	end
+end
+
+QL.Event("PLAYER_REGEN_ENABLED", function() if pendingTracker then pcall(QL.ApplyGameTracker) end end)
+QL.On("SETTING_CHANGED", function(key) if key == "hideGameTracker" then pcall(QL.ApplyGameTracker) end end)
+
 QL.Event("PLAYER_LOGIN", function()
+	pcall(QL.ApplyGameTracker)
 	local ok, err = pcall(build)
 	if not ok then QL.Debug("current quest: " .. tostring(err)); return end
 	pcall(watchProgress)

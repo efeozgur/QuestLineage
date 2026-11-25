@@ -790,6 +790,25 @@ ribs = 3
 QL.ResetContext()
 Eq(cur.rows[2].count.text, "3/5", "counter updated")
 Check(cur.rows[2].flashT > 0, "the row flashes")
+-- the log list under it: the other logged quest (Second Steps)
+Eq(cur.logHead.shown, true, "Quests header shown")
+Check(cur.logHead.text.text:find("QUESTS", 1, true), "header text: " .. cur.logHead.text.text)
+Eq(cur.logRows[1].questId, 2, "the other quest in the log")
+Eq(cur.logRows[1].title.text, "Second Steps", "its title")
+-- clicking it makes it current
+cur.logRows[1].scripts.OnClick(cur.logRows[1], "LeftButton")
+Eq(QL.ArrowQuest(), 2, "the arrow turns to it")
+QL.RefreshCurrent()
+Eq(cur.title.text, "Second Steps", "it is the current quest now")
+Eq(cur.logRows[1].questId, 3, "and The Gathering moved to the list")
+Check(cur.logRows[1].sub.text:find("Bob questioned", 1, true), "its first open objective: " .. cur.logRows[1].sub.text)
+-- folding the list
+cur.logHead.scripts.OnClick(cur.logHead)
+Eq(cur.logRows[1].shown, false, "the list folds")
+cur.logHead.scripts.OnClick(cur.logHead)
+Eq(cur.logRows[1].shown, true, "and opens")
+QL.SetArrowTarget(3)
+QL.RefreshCurrent()
 -- folding
 cur.scripts.OnClick(cur, "RightButton")
 Eq(cur.rows[1].shown, false, "right-click folds the objectives")
@@ -860,6 +879,20 @@ Eq(#QL.errors, 0, "current quest and plates without errors: " .. table.concat(QL
 C_QuestLog = savedLog
 QL.ResetContext()
 QL.ClearArrow()
+
+-- The game's own quest tracker can be hidden ------------------------------------------------------
+ObjectiveTrackerFrame = mock("Frame", "ObjectiveTrackerFrame")
+QL.Set("hideGameTracker", true)
+Eq(ObjectiveTrackerFrame.shown, false, "hidden by the setting")
+ObjectiveTrackerFrame:Show()
+Eq(ObjectiveTrackerFrame.shown, false, "the game shows it again: hidden again")
+function InCombatLockdown() return true end
+QL.Set("hideGameTracker", false)
+Eq(ObjectiveTrackerFrame.shown, false, "never touched in combat")
+function InCombatLockdown() return false end
+for _, fn in ipairs(QL.events.PLAYER_REGEN_ENABLED) do fn("PLAYER_REGEN_ENABLED") end
+Eq(ObjectiveTrackerFrame.shown, true, "shown again once combat ends")
+InCombatLockdown = nil
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton
