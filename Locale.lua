@@ -187,6 +187,7 @@ local TR = {
 	-- dungeons and difficulty
 	["Dungeon"] = "Zindan",
 	["Click: point the arrow here"] = "Tık: oku buraya çevir",
+	["Messages in a notification window (off: in the chat)"] = "Mesajlar bildirim penceresinde (kapalıysa sohbette)",
 	-- the "Where?" bar
 	["\"Where?\" bar under the arrow (trainers, vendors, services)"] = "Okun altında \"Nerede?\" çubuğu (eğitmenler, satıcılar, hizmetler)",
 	["Shift-click: the \"Where?\" bar"] = "Shift+tık: \"Nerede?\" çubuğu",

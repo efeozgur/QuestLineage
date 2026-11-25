@@ -110,9 +110,9 @@ local function newRow(list, height)
 		if self.arrowOnClick and not (QL.RouteActive and QL.RouteActive()) then
 			if QL.SetArrowTarget then
 				local ok, err = pcall(QL.SetArrowTarget, self.openId)
-				if not ok then QL.Debug("arrow: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors")) end
+				if not ok then QL.Debug("arrow: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors"), "error") end
 			else
-				QL.Print(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart)."))
+				QL.Print(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart)."), "error")
 			end
 		end
 		QL.Open(self.openId)
@@ -670,7 +670,7 @@ local function createWindow()
 		b:SetFrameLevel(header:GetFrameLevel() + 5)
 		b:SetScript("OnClick", function()
 			if code == "tr" and not QL.HasWoWTR() then
-				QL.Print(L("Turkish needs WoWTR; showing English until it is loaded."))
+				QL.Print(L("Turkish needs WoWTR; showing English until it is loaded."), "warn")
 				return
 			end
 			QL.Set("lang", code)

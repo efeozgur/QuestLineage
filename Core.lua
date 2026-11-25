@@ -32,6 +32,7 @@ QL.defaults = {
 	arrowGlow = true,     -- the soft glow behind it
 	mapRoute = true,      -- the route (or the arrow's quest) drawn on the world map
 	quickBar = true,      -- the "Where?" quick bar under the arrow
+	toasts = true,        -- results and errors as notification cards (off: in the chat)
 }
 
 -- SavedVariables can be missing on a cold start: always go through DB().
@@ -97,12 +98,23 @@ end
 
 local PREFIX = "|cff7fd3ffQuestLineage|r: "
 
-function QL.Print(msg)
+-- Chat: always the chat frame (answers to slash commands, the player typed them there).
+function QL.Chat(msg)
 	if DEFAULT_CHAT_FRAME then
 		DEFAULT_CHAT_FRAME:AddMessage(PREFIX .. tostring(msg))
 	else
 		print("QuestLineage: " .. tostring(msg))
 	end
+end
+
+-- Print: results and errors. A notification card (Toast.lua) while the setting toasts is on,
+-- else the chat. kind: "info" (default) | "success" | "warn" | "error".
+function QL.Print(msg, kind)
+	if QL.DB().toasts ~= false and QL.Toast then
+		local ok = pcall(QL.Toast, tostring(msg), kind)
+		if ok then return end
+	end
+	QL.Chat(msg)
 end
 
 QL.errors = {}
@@ -129,29 +141,29 @@ function QL.Command(msg)
 	elseif cmd == "lang" then
 		local lang = rest:lower()
 		if lang ~= "en" and lang ~= "tr" then
-			QL.Print(L("Usage: /ql lang en|tr"))
+			QL.Chat(L("Usage: /ql lang en|tr"))
 		else
 			QL.Set("lang", lang)
 			if lang == "tr" and not QL.HasWoWTR() then
-				QL.Print(L("Turkish needs WoWTR; showing English until it is loaded."))
+				QL.Chat(L("Turkish needs WoWTR; showing English until it is loaded."))
 			end
 		end
 	elseif cmd == "errors" then
-		if #QL.errors == 0 then QL.Print(L("No errors.")) end
-		for _, e in ipairs(QL.errors) do QL.Print(e) end
+		if #QL.errors == 0 then QL.Chat(L("No errors.")) end
+		for _, e in ipairs(QL.errors) do QL.Chat(e) end
 	elseif cmd == "arrow" then
 		if QL.ArrowDebug then
 			QL.ArrowDebug(rest)
 		else
-			QL.Print(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart)."))
+			QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart)."))
 		end
 	elseif cmd == "help" then
-		QL.Print("/ql  " .. L("open or close the chain window"))
-		QL.Print("/ql <id|name>  " .. L("show the chain of a quest"))
-		QL.Print("/ql status  " .. L("database and language status"))
-		QL.Print("/ql arrow [id]  " .. L("arrow status, or point it at a quest"))
-		QL.Print("/ql lang en|tr  " .. L("interface language"))
-		QL.Print("/ql options  " .. L("settings"))
+		QL.Chat("/ql  " .. L("open or close the chain window"))
+		QL.Chat("/ql <id|name>  " .. L("show the chain of a quest"))
+		QL.Chat("/ql status  " .. L("database and language status"))
+		QL.Chat("/ql arrow [id]  " .. L("arrow status, or point it at a quest"))
+		QL.Chat("/ql lang en|tr  " .. L("interface language"))
+		QL.Chat("/ql options  " .. L("settings"))
 	else
 		if QL.Open then QL.Open(msg) end
 	end
@@ -160,10 +172,10 @@ end
 function QL.PrintStatus()
 	local L = QL.L
 	local state, reason = QL.DataStatus()
-	QL.Print(L("QuestieDB: ") .. state .. (reason and (" (" .. tostring(reason) .. ")") or ""))
-	QL.Print(L("Chain index: ") .. (QL.IndexReady() and L("ready") or L("building")))
-	QL.Print(L("WoWTR: ") .. (QL.HasWoWTR() and L("loaded") or L("not loaded")) .. " · " .. L("language: ") .. (QL.UseTurkish() and "tr" or "en"))
-	QL.Print(L("Version: ") .. QL.version .. (#QL.errors > 0 and (" · " .. #QL.errors .. L(" errors (/ql errors)")) or ""))
+	QL.Chat(L("QuestieDB: ") .. state .. (reason and (" (" .. tostring(reason) .. ")") or ""))
+	QL.Chat(L("Chain index: ") .. (QL.IndexReady() and L("ready") or L("building")))
+	QL.Chat(L("WoWTR: ") .. (QL.HasWoWTR() and L("loaded") or L("not loaded")) .. " · " .. L("language: ") .. (QL.UseTurkish() and "tr" or "en"))
+	QL.Chat(L("Version: ") .. QL.version .. (#QL.errors > 0 and (" · " .. #QL.errors .. L(" errors (/ql errors)")) or ""))
 end
 
 if SlashCmdList then

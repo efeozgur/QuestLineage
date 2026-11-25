@@ -226,7 +226,7 @@ local function refreshTarget()
 	if not questId then return end
 	local ctx = QL.Context()
 	if QL.NodeStatus(questId, ctx) == "done" then
-		QL.Print(L("Quest handed in: ") .. QL.QuestTitle(questId))
+		QL.Print(L("Quest handed in: ") .. QL.QuestTitle(questId), "success")
 		QL.ClearArrow()
 		QL.Fire("ARROW_QUEST_DONE")
 		return
@@ -241,14 +241,14 @@ function QL.SetArrowTarget(id, quiet)
 	if not id then return end
 	if not frame and CreateFrame then
 		local ok, err = pcall(build)
-		if not ok then QL.Debug("arrow build: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors")); return end
+		if not ok then QL.Debug("arrow build: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors"), "error"); return end
 	end
 	local changed = questId ~= id
 	questId = id
 	target = nil
 	refreshTarget()
 	if not target then
-		if not quiet then QL.Print(L("Nothing to point at for: ") .. QL.QuestTitle(id)) end
+		if not quiet then QL.Print(L("Nothing to point at for: ") .. QL.QuestTitle(id), "warn") end
 		return
 	end
 	saved()[charKey()] = id
@@ -266,23 +266,23 @@ end
 function QL.ArrowDebug(arg)
 	local id = tonumber(arg)
 	if id then QL.SetArrowTarget(id) end
-	QL.Print(L("Arrow quest: ") .. tostring(questId) .. (questId and (" (" .. QL.QuestTitle(questId) .. ")") or ""))
-	if not frame then QL.Print(L("Arrow frame: not built yet (pick a quest in the Quests list)")); return end
+	QL.Chat(L("Arrow quest: ") .. tostring(questId) .. (questId and (" (" .. QL.QuestTitle(questId) .. ")") or ""))
+	if not frame then QL.Chat(L("Arrow frame: not built yet (pick a quest in the Quests list)")); return end
 	local point, _, relPoint, x, y = frame:GetPoint(1)
-	QL.Print(("frame: shown=%s visible=%s strata=%s alpha=%.2f scale=%.2f point=%s %s %.0f,%.0f"):format(
+	QL.Chat(("frame: shown=%s visible=%s strata=%s alpha=%.2f scale=%.2f point=%s %s %.0f,%.0f"):format(
 		tostring(frame:IsShown()), tostring(frame:IsVisible()), tostring(frame:GetFrameStrata()),
 		frame:GetAlpha() or -1, frame:GetEffectiveScale() or -1, tostring(point), tostring(relPoint), x or 0, y or 0))
-	QL.Print("texture: " .. tostring(frame.arrow:GetTexture()))
-	if not target then QL.Print(L("No target.")); return end
-	QL.Print(("target: %s · %d points · %s"):format(target.kind, #target.points, tostring(target.label)))
+	QL.Chat("texture: " .. tostring(frame.arrow:GetTexture()))
+	if not target then QL.Chat(L("No target.")); return end
+	QL.Chat(("target: %s · %d points · %s"):format(target.kind, #target.points, tostring(target.label)))
 	local p1 = target.points[1]
-	if p1 then QL.Print(("first point: map %s at %.3f, %.3f"):format(tostring(p1.map), p1.x, p1.y)) end
+	if p1 then QL.Chat(("first point: map %s at %.3f, %.3f"):format(tostring(p1.map), p1.x, p1.y)) end
 	local map, px, py = QL.PlayerPosition()
-	QL.Print(("player: map %s at %s, %s · facing %s"):format(tostring(map), tostring(px), tostring(py), tostring(GetPlayerFacing and GetPlayerFacing())))
+	QL.Chat(("player: map %s at %s, %s · facing %s"):format(tostring(map), tostring(px), tostring(py), tostring(GetPlayerFacing and GetPlayerFacing())))
 	local loc = QL.Locate(target)
-	if not loc then QL.Print("locate: nil")
-	elseif loc.otherMap then QL.Print("locate: other map " .. tostring(loc.otherMap.map))
-	else QL.Print(("locate: %.0f yd (dx %.0f, dy %.0f)"):format(loc.dist, loc.dx, loc.dy)) end
+	if not loc then QL.Chat("locate: nil")
+	elseif loc.otherMap then QL.Chat("locate: other map " .. tostring(loc.otherMap.map))
+	else QL.Chat(("locate: %.0f yd (dx %.0f, dy %.0f)"):format(loc.dist, loc.dx, loc.dy)) end
 end
 
 function QL.SetArrowPlace(kind, id, opts)
@@ -302,7 +302,7 @@ function QL.SetArrowPlace(kind, id, opts)
 		pcall(QL.UpdateArrow)
 	end
 	QL.Print(L("Arrow: ") .. (opts.title or "?") .. (opts.label and ("  ·  " .. opts.label) or ""))
-	if #target.points == 0 then QL.Print(L("No location data")) end
+	if #target.points == 0 then QL.Print(L("No location data"), "warn") end
 	QL.Fire("ARROW_CHANGED", "place")
 end
 
@@ -367,7 +367,7 @@ end)
 -- could read as "available" for a moment and the arrow would turn back to its giver.
 QL.Event("QUEST_TURNED_IN", function(_, id)
 	if id and id == questId then
-		QL.Print(L("Quest handed in: ") .. QL.QuestTitle(questId))
+		QL.Print(L("Quest handed in: ") .. QL.QuestTitle(questId), "success")
 		QL.ClearArrow()
 		QL.Fire("ARROW_QUEST_DONE", id)
 	end

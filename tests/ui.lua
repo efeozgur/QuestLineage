@@ -32,6 +32,7 @@ local function mock(kind, name)
 	function mt.SetGradient(self, dir, c1, c2) self.gradient = { dir, c1, c2 } end
 	function mt.SetRotation(self, r) self.rotation = r end
 	function mt.SetScale(self, v) self.scale = v end
+	function mt.SetPoint(self, ...) self.point = { ... } end
 	function mt.SetFrameStrata(self, v) self.strata = v end
 	function mt.GetFrameStrata(self) return self.strata end
 	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
@@ -135,7 +136,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -642,6 +643,7 @@ qb.buttons[1].scripts.OnLeave(qb.buttons[1])
 qb.more.scripts.OnClick(qb.more)
 local qpnl = QuestLineageQuickPanel
 Check(qpnl and qpnl.shown, "more panel open")
+Eq(qpnl.point[1], "TOP", "the more panel opens downward, under the bar")
 local tiles = 0
 for _, part in ipairs(qpnl.parts) do if part.key then tiles = tiles + 1 end end
 Check(tiles >= 18, "every category has a tile: " .. tiles)
@@ -654,6 +656,32 @@ QL.ToggleQuickBar()
 Eq(qb.shown, true, "Shift-click on the minimap button brings it back")
 QL.ClearArrow()
 Eq(#QL.errors, 0, "quick bar without errors: " .. table.concat(QL.errors, " | "))
+
+-- Notifications instead of chat lines -------------------------------------------------------------
+local chat = {}
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) chat[#chat + 1] = m end }
+QL.Print("Route complete.", "success")
+local stack = QuestLineageToasts
+Check(stack, "notification stack built")
+local card
+for _, fr in ipairs(frames) do if fr.parent == stack and fr.text and fr.shown then card = fr end end
+Check(card, "a card is shown")
+Eq(card.text.text, "Route complete.", "its text")
+Eq(card.bar.vertex[1], QL.Theme.STATUS.done[1], "success is green")
+Eq(#chat, 0, "nothing in the chat")
+-- it fades away by itself
+for _ = 1, 400 do if card.shown and card.scripts.OnUpdate then card.scripts.OnUpdate(card, 0.05) end end
+Eq(card.shown, false, "gone after a few seconds")
+-- answers to slash commands stay in the chat
+QL.Command("status")
+Check(#chat >= 3, "status in the chat")
+-- the setting sends messages to the chat
+QL.Set("toasts", false)
+local before = #chat
+QL.Print("Arrow: somewhere")
+Eq(#chat, before + 1, "toasts off: the chat")
+QL.Set("toasts", true)
+DEFAULT_CHAT_FRAME = nil
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton

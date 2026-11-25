@@ -41,7 +41,7 @@ end
 function QL.GoToService(key)
 	local list = QL.NearestServices(key, 10)
 	if #list == 0 then
-		QL.Print(L("None found near you: ") .. labelOf(key))
+		QL.Print(L("None found near you: ") .. labelOf(key), "warn")
 		return nil
 	end
 	local t = now()
@@ -140,7 +140,7 @@ local function fillPanel()
 	end
 	panel:SetSize(16 + COLS * TILE_W, -y + 4)
 	panel:ClearAllPoints()
-	panel:SetPoint("BOTTOM", bar, "TOP", 0, 6)
+	panel:SetPoint("TOP", bar, "BOTTOM", 0, -6)
 end
 
 function QL.ToggleQuickPanel()

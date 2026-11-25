@@ -194,7 +194,7 @@ local function replan(quiet)
 	end
 	route.ids = keep
 	if #keep == 0 then
-		QL.Print(L("Route complete."))
+		QL.Print(L("Route complete."), "success")
 		route = nil
 		store()
 		if QL.ClearArrow then QL.ClearArrow() end
@@ -286,7 +286,7 @@ end)
 -- Picking another quest by hand ends the route (the arrow follows the player's choice).
 QL.On("ARROW_CHANGED", function(id)
 	if route and not route.steering and id and id ~= (route.plan and route.plan[1]) then
-		QL.Print(L("Route stopped: you pointed the arrow elsewhere."))
+		QL.Print(L("Route stopped: you pointed the arrow elsewhere."), "warn")
 		route = nil
 		store()
 		QL.Fire("ROUTE_CHANGED")
