@@ -5,6 +5,7 @@ Needs Pillow. White on transparent, 64x64; the game tints them (muted, or the ac
   nav_chains.tga   two linked chain rings
   nav_class.tga    a shield
   nav_search.tga   a magnifying glass
+  corpse.tga       a tombstone (the corpse marker on the maps)
 """
 import os
 from PIL import Image, ImageDraw
@@ -212,6 +213,18 @@ def quest_mark():
     save(img, "quest_mark.tga")
 
 
+def corpse():
+    """The corpse marker: a tombstone with a cross cut out (tinted in game)."""
+    img, d = canvas()
+    d.rounded_rectangle((s(14), s(6), s(50), s(56)), radius=s(17), fill=W)
+    d.rectangle((s(14), s(30), s(50), s(56)), fill=W)
+    d.rounded_rectangle((s(8), s(52), s(56), s(60)), radius=s(3), fill=W)  # the ground
+    clear = (0, 0, 0, 0)
+    d.rectangle((s(29), s(16), s(35), s(44)), fill=clear)
+    d.rectangle((s(22), s(23), s(42), s(29)), fill=clear)
+    save(img, "corpse.tga")
+
+
 def logo():
     """The addon's own icon (the AddOns list, ## IconTexture): in colour, not tinted by the game.
     A dark rounded tile with a family tree in the accent gradient: one quest above, two below."""
@@ -246,6 +259,7 @@ if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     logo()
     quest_mark()
+    corpse()
     quests()
     chains()
     shield()

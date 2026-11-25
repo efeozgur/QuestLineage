@@ -31,6 +31,7 @@ Toast.lua
 Current.lua
 Plates.lua
 QuestAreas.lua
+Corpse.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua

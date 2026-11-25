@@ -304,6 +304,26 @@ function QL.SetArrowPlace(kind, id, opts)
 	QL.Fire("ARROW_CHANGED", "place")
 end
 
+-- A single spot (the corpse): opts = { title, label, corpse }.
+function QL.SetArrowPoint(map, x, y, opts)
+	opts = opts or {}
+	if not frame and CreateFrame then
+		local ok, err = pcall(build)
+		if not ok then QL.Debug("arrow build: " .. tostring(err)); return end
+	end
+	questId = nil
+	target = {
+		kind = "place", fixed = true, points = { { map = map, x = x, y = y } },
+		title = opts.title, label = opts.label, corpse = opts.corpse,
+	}
+	saved()[charKey()] = nil
+	if frame then
+		frame:Show()
+		pcall(QL.UpdateArrow)
+	end
+	QL.Fire("ARROW_CHANGED", "place")
+end
+
 function QL.ClearArrow()
 	questId, target = nil, nil
 	saved()[charKey()] = nil

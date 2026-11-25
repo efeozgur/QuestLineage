@@ -39,6 +39,7 @@ QL.defaults = {
 	hideGameTracker = false, -- hide the game's own quest tracker (QuestLineage's window replaces it)
 	questAreas = true,    -- the current quest's objective areas on the minimap and world map
 	hideGameAreas = false, -- hide the game's own (blue) quest area on the minimap
+	corpseRoute = true,   -- while dead: a path to the corpse on the minimap and world map, and the arrow
 	nameplates = true,    -- quest badges and counters on objective creatures' nameplates
 	plateSide = "left",   -- where the badge sits: "left" | "right" | "top"
 	plateColorMode = "accent", -- "accent" | "difficulty" | "custom"

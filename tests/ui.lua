@@ -142,7 +142,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -951,6 +951,52 @@ function InCombatLockdown() return false end
 for _, fn in ipairs(QL.events.PLAYER_REGEN_ENABLED) do fn("PLAYER_REGEN_ENABLED") end
 Eq(ObjectiveTrackerFrame.shown, true, "shown again once combat ends")
 InCombatLockdown = nil
+
+-- The way back to the corpse ---------------------------------------------------------------------
+Eq(QL.corpseActive, false, "alive: no corpse path")
+QL.SetArrowTarget(3)
+local dead = true
+UnitIsDeadOrGhost = function() return dead end
+for _, fn in ipairs(QL.events.PLAYER_DEAD) do fn("PLAYER_DEAD") end
+local cm, cx, cy = QL.CorpsePosition()
+Eq(cm, 1411, "the death spot is remembered")
+Eq(cx, 0.5, "where you died")
+Eq(QL.corpseActive, true, "dead: the path shows")
+Eq(QL.ArrowTarget().corpse, true, "the arrow points at the corpse")
+Eq(QL.ArrowTarget().title, "Your corpse", "named")
+-- released: the client knows the corpse; you stand at the graveyard
+C_DeathInfo = { GetCorpseMapPosition = function() return CreateVector2D(0.6, 0.4) end }
+QL.RefreshCorpse()
+cm, cx = QL.CorpsePosition()
+Eq(cx, 0.6, "the client's corpse position wins")
+Eq(QL.ArrowTarget().points[1].x, 0.6, "the arrow follows it")
+Check(QL.corpseOnMinimap and QL.corpseOnMinimap.x > 0, "the corpse lies east on the minimap")
+Eq(QL.corpseOnMinimap.inside, true, "100 yd away fits in the minimap (233 yd radius)")
+Minimap.GetZoom = function() return 5 end
+QL.RefreshCorpse()
+Eq(QL.corpseOnMinimap.inside, false, "zoomed in: the tombstone waits on the rim")
+Minimap.GetZoom = nil
+-- the clip helper
+local x1, y1, x2, y2 = QL.ClipToCircle(0, 0, 200, 0, 50)
+Eq(x2, 50, "a path is clipped at the rim")
+Eq(QL.ClipToCircle(100, 100, 200, 100, 50), nil, "outside entirely: nothing")
+-- alive again: the arrow goes back to its quest
+dead = false
+for _, fn in ipairs(QL.events.PLAYER_ALIVE) do fn("PLAYER_ALIVE") end
+Eq(QL.corpseActive, false, "alive: the path is gone")
+Eq(QL.ArrowQuest(), 3, "the arrow back on its quest")
+Eq(QL.DB().deathSpots[next(QL.DB().deathSpots) or "none"], nil, "the death spot forgotten")
+-- the setting
+dead = true
+for _, fn in ipairs(QL.events.PLAYER_DEAD) do fn("PLAYER_DEAD") end
+QL.Set("corpseRoute", false)
+Eq(QL.corpseActive, false, "off in the settings")
+Eq(QL.ArrowQuest(), 3, "and the arrow is left alone")
+QL.Set("corpseRoute", true)
+dead = false
+QL.RefreshCorpse()
+UnitIsDeadOrGhost, C_DeathInfo = nil, nil
+Eq(#QL.errors, 0, "corpse path without errors: " .. table.concat(QL.errors, " | "))
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton
