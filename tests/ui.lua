@@ -1129,6 +1129,29 @@ cur.logHead.scripts.OnClick(cur.logHead)
 Eq(cur.logRows[1].shown, false, "the list folds")
 cur.logHead.scripts.OnClick(cur.logHead)
 Eq(cur.logRows[1].shown, true, "and opens")
+-- how many the list shows, from the settings page's slider
+local logSlider
+for i = 1, 60 do
+	local f = _G["QuestLineageOption" .. i]
+	if f and f.scripts and f.scripts.OnValueChanged then logSlider = f end
+end
+Check(logSlider, "a slider row on the settings page")
+local realLog = QL.LogQuests
+QL.LogQuests = function() return { 3, 4, 5, 6 } end
+logSlider.scripts.OnValueChanged(logSlider, 2.4)
+Eq(QL.DB().currentLogMax, 2, "whole quests")
+Eq(logSlider.label.text, "Quests in the list: 2", "its label")
+QL.RefreshCurrent()
+local shownRows = 0
+for _, r in ipairs(cur.logRows) do if r.shown then shownRows = shownRows + 1 end end
+Eq(shownRows, 2, "two quests listed")
+Eq(cur.logMore.shown, true, "the rest as a line")
+Eq(cur.logMore.text, "+2 more", "+2 more")
+logSlider.scripts.OnValueChanged(logSlider, 99)
+Eq(QL.DB().currentLogMax, 30, "capped at 30")
+QL.LogQuests = realLog
+QL.Set("currentLogMax", 15)
+QL.RefreshCurrent()
 QL.SetArrowTarget(3)
 QL.RefreshCurrent()
 -- quest areas: Bob's spot becomes an area (the ribs' boars have no spawns in the fixture)

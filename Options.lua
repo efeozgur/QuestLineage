@@ -68,6 +68,8 @@ local ROWS = {
 		label = "Read the quest aloud as soon as the card opens", note = "Off: nothing plays until you click the speaker on the card. Needs WoWTR Voices." },
 	{ key = "acceptedCurrent", page = "tracking", group = "Current quest window",
 		label = "A quest I accept becomes the current quest", note = "The arrow turns to it (not while a route runs)." },
+	{ key = "currentLogMax", page = "tracking", group = "Current quest window", parent = "currentQuest",
+		slider = { min = 1, max = 30, text = "Quests in the list: %d" }, note = "How many of your other quests show under the current one; the rest as \"+N more\"." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 }
@@ -306,6 +308,15 @@ local function refresh()
 	for _, b in ipairs(navButtons) do b.label:SetText(L(b.title)) end
 	for i, row in ipairs(ROWS) do
 		local c = checks[i]
+		if row.slider then
+			local v = math.floor(tonumber(db[row.key]) or QL.defaults[row.key] or row.slider.min)
+			setSlider(c, v)
+			c.label:SetText(L(row.slider.text):format(v))
+			local on = enabled(row, db)
+			c:SetEnabled(on)
+			c.label:SetTextColor(unpack(on and C.text or C.dim))
+			c.note:SetTextColor(unpack(on and C.muted or C.dim))
+		else
 		local fs = setLabel(c, L(row.label))
 		if row.lang then
 			c:SetChecked(db.lang == "tr")
@@ -318,6 +329,7 @@ local function refresh()
 			c:SetEnabled(on)
 			if fs then fs:SetTextColor(unpack(on and C.text or C.dim)) end
 			if c.note then c.note:SetTextColor(unpack(on and C.muted or C.dim)) end
+		end
 		end
 	end
 
@@ -398,6 +410,19 @@ local function buildRows(pageId, y)
 				y = groupHeading(y, group)
 			end
 			local x = (row.parent or row.parentOff) and 40 or 16
+			if row.slider then
+				local sl = row.slider
+				local lbl = label(y)
+				lbl:SetPoint("TOPLEFT", x + 4, y)
+				local s = slider("QuestLineageOption" .. i, row.key, sl.min, sl.max, y - 22, lbl,
+					{ step = 1, text = function(v) return L(sl.text):format(math.floor(v + 0.5)) end, ends = function(v) return tostring(v) end })
+				s:ClearAllPoints()
+				s:SetPoint("TOPLEFT", x + 10, y - 22)
+				s.label = lbl
+				s.note = text(y - 56, row.note, 11, QL.Theme.C.muted, x + 4)
+				checks[i] = s
+				y = y - 84
+			else
 			local c = check("QuestLineageOption" .. i, x, y, function(self)
 				if row.lang then
 					QL.Set("lang", self:GetChecked() and "tr" or "en")
@@ -409,6 +434,7 @@ local function buildRows(pageId, y)
 			c.note = text(y - 24, row.note, 11, QL.Theme.C.muted, x + 30)
 			checks[i] = c
 			y = y - 52
+			end
 		end
 	end
 	return y

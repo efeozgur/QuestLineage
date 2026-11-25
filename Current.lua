@@ -223,7 +223,9 @@ end
 
 -- The log list -----------------------------------------------------------------------------------------
 
-local LOG_ROW_H, LOG_MAX = 36, 15
+local LOG_ROW_H = 36
+-- how many quests the list shows (setting currentLogMax, 1-30); the rest is "+N more"
+local function logMax() return math.max(1, math.min(30, math.floor(tonumber(QL.DB().currentLogMax) or 15))) end
 
 -- The other quests in the log, ready ones first, then by level.
 function QL.LogQuests(ctx, exceptId)
@@ -312,10 +314,10 @@ local function drawLog(y, ctx, currentId)
 	if folded then return y end
 	local ready = T.STATUS.done
 	for i, id in ipairs(ids) do
-		if i > LOG_MAX then
+		if i > logMax() then
 			frame.logMore:ClearAllPoints()
 			frame.logMore:SetPoint("TOPLEFT", 14, y - 2)
-			frame.logMore:SetText(L("+%d more"):format(#ids - LOG_MAX))
+			frame.logMore:SetText(L("+%d more"):format(#ids - logMax()))
 			frame.logMore:Show()
 			y = y - 18
 			break
