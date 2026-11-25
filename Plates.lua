@@ -89,6 +89,8 @@ local function npcIdOf(unit)
 	return tonumber(id)
 end
 
+QL.NpcIdOf = npcIdOf
+
 local function plateFor(unit)
 	if not (C_NamePlate and C_NamePlate.GetNamePlateForUnit) then return nil end
 	local ok, plate = pcall(C_NamePlate.GetNamePlateForUnit, unit)

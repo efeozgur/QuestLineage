@@ -8,13 +8,14 @@
 -- side bar and the dot says the kind: info (accent), success (green), warn (orange), error (red).
 -- Drag any card to move the stack (toastPoint). Setting toasts: off sends messages to the chat.
 --
---   QL.Toast(text, kind)
+--   QL.Toast(text, kind, opts)   opts = { head = "header text", onClick = function, life = seconds }
+--   kind "quest" (violet) is for the other-quest hints (Nearby.lua): a click runs onClick.
 
 local _, QL = ...
 
 local W = 300
 local MAX = 4
-local LIFE = { info = 5, success = 5, warn = 6, error = 9 }
+local LIFE = { info = 5, success = 5, warn = 6, error = 9, quest = 8 }
 local FADE, SLIDE = 0.35, 0.22
 
 local anchor
@@ -25,6 +26,7 @@ local function kindColor(kind)
 	if kind == "success" then return T.STATUS.done end
 	if kind == "warn" then return QL.DIFFICULTY and QL.DIFFICULTY.hard or { 0.98, 0.57, 0.24 } end
 	if kind == "error" then return C.danger end
+	if kind == "quest" then return C.accent2 end
 	return C.accent
 end
 
@@ -92,7 +94,11 @@ local function newCard()
 	card.text:SetWidth(W - 28)
 	if card.text.SetWordWrap then card.text:SetWordWrap(true) end
 	card:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-	card:SetScript("OnClick", function(self) remove(self) end)
+	card:SetScript("OnClick", function(self, button)
+		local fn = self.onClick
+		remove(self)
+		if fn and button ~= "RightButton" then pcall(fn) end -- right-click only closes
+	end)
 	card:SetScript("OnEnter", function(self) self.hold = true; self.close:SetTextColor(C.text[1], C.text[2], C.text[3], 1) end)
 	card:SetScript("OnLeave", function(self) self.hold = false; self.close:SetTextColor(C.dim[1], C.dim[2], C.dim[3], 1) end)
 	-- dragging a card moves the whole stack
@@ -102,17 +108,20 @@ local function newCard()
 	return card
 end
 
-function QL.Toast(text, kind)
+function QL.Toast(text, kind, opts)
 	if not CreateFrame then error("no frames") end
 	kind = LIFE[kind] and kind or "info"
+	opts = opts or {}
 	if not anchor then buildAnchor() end
 	local card = newCard()
+	card.onClick = opts.onClick
+	card.head:SetText(opts.head or "QuestLineage")
 	local c = kindColor(kind)
 	card.bar:SetVertexColor(c[1], c[2], c[3], 1)
 	card.dot:SetVertexColor(c[1], c[2], c[3], 1)
 	card.text:SetText(text)
 	card:SetHeight(math.max(48, (card.text:GetStringHeight() or 14) + 40))
-	card.life, card.age, card.hold = LIFE[kind], 0, false
+	card.life, card.age, card.hold = opts.life or LIFE[kind], 0, false
 	table.insert(cards, 1, card)
 	while #cards > MAX do remove(cards[#cards]) end
 	layout()

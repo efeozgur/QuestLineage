@@ -72,6 +72,12 @@ local ROWS = {
 		slider = { min = 1, max = 30, text = "Quests in the list: %d" }, note = "How many of your other quests show under the current one; the rest as \"+N more\"." },
 	{ key = "questsHideChains", page = "general", group = "Quest lists",
 		label = "Leave chain quests out of the Quests tab", note = "The Quests tab lists standalone quests; chains have their own tab." },
+	{ key = "nearbyTarget", page = "tracking", group = "Other quests nearby",
+		label = "When I target a creature of another quest", note = "A card names the quest; a click on it makes that quest current." },
+	{ key = "nearbyPlates", page = "tracking", group = "Other quests nearby",
+		label = "When such a creature comes into view", note = "From its nameplate; at most one card per quest every three minutes." },
+	{ key = "nearbyAreas", page = "tracking", group = "Other quests nearby",
+		label = "When I walk into another quest's area", note = "The areas the map rings show, for every quest in your log." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 }

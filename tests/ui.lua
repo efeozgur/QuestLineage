@@ -143,7 +143,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -1360,6 +1360,65 @@ end
 Eq(badgeOf("nameplate1").text.text, "3/5", "the boar's plate counts the ribs")
 Eq(badgeOf("nameplate2").text.text, "0/1", "Bob's plate counts the questioning")
 Eq(badgeOf("nameplate3"), nil, "no badge on a creature no quest needs")
+-- other quests nearby: cards for another logged quest's creatures and areas
+QL.ResetNearby()
+QL.ClearToasts()
+QL.lastNearbyHint = nil
+for _, fn in ipairs(QL.events.NAME_PLATE_UNIT_ADDED) do fn("NAME_PLATE_UNIT_ADDED", "nameplate2") end
+Eq(QL.lastNearbyHint, nil, "nothing for the current quest's own creatures")
+QL.SetArrowTarget(2) -- Second Steps becomes current; Bob now belongs to another quest
+guids.target = guids.nameplate2
+for _, fn in ipairs(QL.events.PLAYER_TARGET_CHANGED) do fn("PLAYER_TARGET_CHANGED") end
+Check(QL.lastNearbyHint and QL.lastNearbyHint.questId == 3, "targeting Bob: a card for The Gathering")
+Eq(QL.lastNearbyHint.reason, "target", "because of the target")
+local hintCard
+for _, fr in ipairs(frames) do if fr.head and fr.head.text == "ANOTHER QUEST HERE" and fr.shown then hintCard = fr end end
+Check(hintCard, "the card is up")
+Check(hintCard.text.text:find("The Gathering", 1, true), "it names the quest: " .. hintCard.text.text)
+Check(hintCard.text.text:find("Bob questioned", 1, true), "and the objective")
+-- once per quest for a while
+QL.lastNearbyHint = nil
+for _, fn in ipairs(QL.events.NAME_PLATE_UNIT_ADDED) do fn("NAME_PLATE_UNIT_ADDED", "nameplate2") end
+Eq(QL.lastNearbyHint, nil, "not again right away")
+-- a click makes it current
+hintCard.scripts.OnClick(hintCard, "LeftButton")
+Eq(QL.ArrowQuest(), 3, "the card's quest becomes current")
+-- in combat it waits for the fight to end
+QL.SetArrowTarget(2)
+QL.ResetNearby()
+QL.lastNearbyHint = nil
+InCombatLockdown = function() return true end
+for _, fn in ipairs(QL.events.PLAYER_TARGET_CHANGED) do fn("PLAYER_TARGET_CHANGED") end
+Eq(QL.lastNearbyHint, nil, "nothing during the fight")
+InCombatLockdown = nil
+for _, fn in ipairs(QL.events.PLAYER_REGEN_ENABLED) do fn("PLAYER_REGEN_ENABLED") end
+Check(QL.lastNearbyHint and QL.lastNearbyHint.questId == 3, "the card after the fight")
+-- the setting
+QL.ResetNearby()
+QL.lastNearbyHint = nil
+QL.Set("nearbyTarget", false)
+for _, fn in ipairs(QL.events.PLAYER_TARGET_CHANGED) do fn("PLAYER_TARGET_CHANGED") end
+Eq(QL.lastNearbyHint, nil, "off in the settings")
+QL.Set("nearbyTarget", true)
+-- walking into The Gathering's area (Bob's spot)
+QL.ResetNearby()
+QL.lastNearbyHint = nil
+local bobArea = QL.QuestAreas(3, QL.Context())[1]
+local realPos = C_Map.GetPlayerMapPosition
+C_Map.GetPlayerMapPosition = function() return CreateVector2D(bobArea.x, bobArea.y) end
+QL.CheckNearbyAreas(true)
+Check(QL.lastNearbyHint and QL.lastNearbyHint.reason == "area", "in the area: a card")
+QL.lastNearbyHint = nil
+QL.ResetNearby()
+QL.CheckNearbyAreas(true)
+QL.lastNearbyHint = nil
+QL.CheckNearbyAreas(true)
+Eq(QL.lastNearbyHint, nil, "once per entry, not while standing in it")
+C_Map.GetPlayerMapPosition = realPos
+guids.target = nil
+QL.SetArrowTarget(3)
+QL.ClearToasts()
+Eq(#QL.errors, 0, "nearby hints without errors: " .. table.concat(QL.errors, " | "))
 ribs = 5
 C_QuestLog.GetQuestObjectives = function(id)
 	if id ~= 3 then return {} end
