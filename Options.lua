@@ -112,6 +112,7 @@ local function refresh()
 	setLabel(a.glow, L("Glow behind the arrow"))
 	a.glow:SetChecked(db.arrowGlow ~= false)
 	a.reset:SetText(L("Reset position"))
+	if a.reset.GetFontString and a.reset:GetFontString() then QL.SetFont(a.reset:GetFontString(), 12) end
 	QL.SetFont(a.hint, 11)
 	a.hint:SetText(L("The arrow turns here as a preview while this page is open. Drag it to move it."))
 end

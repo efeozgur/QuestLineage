@@ -22,8 +22,29 @@ QL.Theme = T
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 T.WHITE = WHITE
--- Arial Narrow ships with every client, reads cleanly at small sizes and has the Turkish letters.
-T.FONT = "Fonts\\ARIALN.TTF"
+-- Inter (SIL Open Font License 1.1, Media/Fonts/Inter-OFL.txt) ships with the addon: it has every
+-- Turkish letter (ş ğ ı İ), which the client's own Arial Narrow does not on every build (it showed
+-- broken letters in game). WoWTR's font and the game's Arial are fallbacks if Inter cannot load.
+T.FONT = "Interface\\AddOns\\QuestLineage\\Media\\Fonts\\Inter-Regular.ttf"
+T.FONT_BOLD = "Interface\\AddOns\\QuestLineage\\Media\\Fonts\\Inter-SemiBold.ttf"
+T.FONT_FALLBACKS = {
+	"Interface\\AddOns\\WoWTR\\Assets\\Fonts\\Inter.ttf",
+	"Fonts\\ARIALN.TTF",
+}
+
+-- Set a font, falling back down the list when the client refuses one (SetFont returns false,
+-- or errors, for a file it cannot load). Inter runs wide, so sizes come out a touch smaller.
+function T.SetFont(fs, size, bold, flags)
+	if type(fs) ~= "table" or not fs.SetFont then return end
+	size = math.max(8, math.floor((size or 12) * 0.92 + 0.5))
+	flags = flags or ""
+	local list = { bold and T.FONT_BOLD or T.FONT }
+	for _, f in ipairs(T.FONT_FALLBACKS) do list[#list + 1] = f end
+	for _, path in ipairs(list) do
+		local ok, set = pcall(fs.SetFont, fs, path, size, flags)
+		if ok and set ~= false then return path end
+	end
+end
 
 T.C = {
 	bg        = { 0.051, 0.059, 0.078, 0.97 },
@@ -155,9 +176,9 @@ function T.Glow(frame, c)
 	end
 end
 
-function T.Text(parent, size, c, layer)
+function T.Text(parent, size, c, layer, bold)
 	local fs = parent:CreateFontString(nil, layer or "OVERLAY")
-	fs:SetFont(T.FONT, size or 12, "")
+	T.SetFont(fs, size or 12, bold)
 	fs:SetShadowOffset(0, 0)
 	if c then fs:SetTextColor(c[1], c[2], c[3], c[4] or 1) end
 	fs:SetJustifyH("LEFT")
@@ -291,7 +312,7 @@ function T.Input(parent, w, h)
 	local box = CreateFrame("EditBox", nil, parent)
 	box:SetSize(w or 200, h or 30)
 	box:SetAutoFocus(false)
-	box:SetFont(T.FONT, 13, "")
+	T.SetFont(box, 13)
 	box:SetTextColor(unpack(C.text))
 	box:SetTextInsets(12, 10, 0, 0)
 	box.bg = T.Fill(box, C.canvas)

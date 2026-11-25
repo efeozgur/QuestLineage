@@ -70,6 +70,7 @@ local function showLogButton(parent, questId)
 	logButton:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -6, -6)
 	logButton:SetFrameLevel((parent:GetFrameLevel() or 1) + 10)
 	logButton:SetText(L("Chain"))
+	if logButton.GetFontString and logButton:GetFontString() then QL.SetFont(logButton:GetFontString(), 12) end
 	logButton.questId = questId
 	logButton:SetShown(hasChain(questId))
 end
@@ -210,6 +211,7 @@ local function showOffer()
 	QL.SetFont(strip.text, 11)
 	strip.text:SetText(table.concat(lines, "\n"))
 	strip.button:SetText(L("Chain"))
+	if strip.button.GetFontString and strip.button:GetFontString() then QL.SetFont(strip.button:GetFontString(), 12) end
 	strip.button.questId = questId
 	strip.button:SetShown(hasChain(questId))
 	strip:SetHeight(math.max(38, (strip.text:GetStringHeight() or 12) + 20))

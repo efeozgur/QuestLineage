@@ -223,16 +223,14 @@ function QL.QuestObjectives(questId)
 	return nil
 end
 
--- One font everywhere: the game's Arial Narrow reads cleanly and has the Turkish letters
--- (ş ğ ı İ), so English and Turkish look the same.
-local DEFAULT_FONT = "Fonts\\ARIALN.TTF"
-
+-- One font everywhere, the theme's (Inter, shipped with the addon, has every Turkish letter);
+-- QL.SetFont is for font strings not made by the theme (Blizzard templates, the offer strip).
 function QL.FontPath()
-	return DEFAULT_FONT
+	return QL.Theme and QL.Theme.FONT or "Fonts\\ARIALN.TTF"
 end
 
-function QL.SetFont(fontString, size, flags)
-	if not fontString or not fontString.SetFont then return end
-	local ok = pcall(fontString.SetFont, fontString, QL.FontPath(), size or 12, flags or "")
-	if not ok then pcall(fontString.SetFont, fontString, DEFAULT_FONT, size or 12, flags or "") end
+function QL.SetFont(fontString, size, flags, bold)
+	if type(fontString) ~= "table" or not fontString.SetFont then return end
+	if QL.Theme and QL.Theme.SetFont then return QL.Theme.SetFont(fontString, size, bold, flags) end
+	pcall(fontString.SetFont, fontString, "Fonts\\ARIALN.TTF", size or 12, flags or "")
 end
