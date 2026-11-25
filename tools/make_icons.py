@@ -202,8 +202,39 @@ SERVICES = {
 }
 
 
+def logo():
+    """The addon's own icon (the AddOns list, ## IconTexture): in colour, not tinted by the game.
+    A dark rounded tile with a family tree in the accent gradient: one quest above, two below."""
+    big = SIZE * SS
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((s(2), s(2), s(62), s(62)), radius=s(14), fill=(16, 19, 26, 255), outline=(52, 60, 74, 255), width=s(2))
+    # the tree in white on a mask, painted with a teal -> violet gradient
+    mask = Image.new("L", (big, big), 0)
+    m = ImageDraw.Draw(mask)
+    w = s(4)
+    m.line((s(32), s(24), s(32), s(32)), fill=255, width=w)        # stem
+    m.line((s(18), s(32), s(46), s(32)), fill=255, width=w)        # bar
+    m.line((s(18), s(32), s(18), s(40)), fill=255, width=w)        # drops
+    m.line((s(46), s(32), s(46), s(40)), fill=255, width=w)
+    m.rounded_rectangle((s(22), s(10), s(42), s(24)), radius=s(4), fill=255)   # the quest
+    m.rounded_rectangle((s(8), s(40), s(28), s(54)), radius=s(4), fill=255)    # its follow-ups
+    m.rounded_rectangle((s(36), s(40), s(56), s(54)), radius=s(4), fill=255)
+    grad = Image.new("RGBA", (big, big))
+    gp = grad.load()
+    teal, violet = (61, 214, 198), (139, 124, 246)
+    for y in range(big):
+        for x in range(big):
+            t = (x + y) / (2 * big)
+            gp[x, y] = tuple(int(teal[i] + (violet[i] - teal[i]) * t) for i in range(3)) + (255,)
+    img.paste(grad, (0, 0), mask)
+    img.resize((SIZE, SIZE), Image.LANCZOS).save(os.path.join(OUT, "icon.tga"))
+    print("wrote icon.tga")
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
+    logo()
     quests()
     chains()
     shield()
