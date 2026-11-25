@@ -9,6 +9,20 @@ Kaldığımız yerden devam etmek için kısa özet. Modüllerin teknik ayrınt�
 - Testler: `C:\Users\ahmet\AppData\Local\Programs\Python\Python311\python.exe tests/run.py` (8 dosya, hepsi geçiyor).
 - Oyunda hata ayıklama: `/ql hedef [id]` (hedeflerin kaynağı), `/ql kart` (görev kartı), `/ql arrow`, `/ql errors`.
 
+## Başka bilgisayarda devam etmek
+
+1. Depoyu indir:
+   `git clone https://github.com/efeozgur/QuestLineage.git`
+2. Oyuna bağla. Klasörü kopyalamak yerine bağlantı kur ki değişiklikler doğrudan oyuna yansısın. Yolları o bilgisayara göre düzelt; komut istemi yönetici olarak açılmalı:
+   `mklink /J "C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\QuestLineage" "C:\...\QuestLineage"`
+3. Oyunda gerekenler:
+   - **QuestieDB** eklentisi gerekli; QuestLineage görev verisini onun `LibQuestieDB` arayüzünden okur.
+   - **WoWTR** isteğe bağlı (Türkçe).
+   - **WoWTR_Voices** isteğe bağlı (görev kartındaki hoparlör).
+4. Testler için Python 3 ve `pip install lupa`. Sonra depo klasöründe:
+   `python tests/run.py`
+5. Claude Code'u depo klasöründe aç ve ilk mesajda "oturumozeti.md'yi oku, kaldığımız yerden devam edelim" de. Diğer bilgisayardaki hafıza notları oraya taşınmaz; bu dosya ve `CLAUDE.md` yeterli.
+
 ## Bu oturumda eklenenler
 
 - **İsim plakaları:** rozet ayarları (aç/kapa, konum, renk, boyut, yatay kaydırma, sayaç, düşürenler).
