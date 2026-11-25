@@ -1,39 +1,54 @@
--- The quest card: when an NPC offers a quest (QUEST_DETAIL), QuestLineage's own page for it opens
--- beside the game's quest window, or in its place:
---   hero      the NPC you are talking to in 3D over the indigo gradient, "NEW QUEST", the title in
---             its difficulty colour, level / dungeon tags, XP and its share of a level
---   sections  the objective (the game's live text, Turkish via WoWTR), what to do (database tasks
---             with distances), the story (folded), rewards (item tiles with quality borders, money),
---             the chain ("link 2 of 5 · 3,400 XP"), warnings (quests this closes, breadcrumbs)
---   chain     for a chain quest, a violet box right under the hero: the links as dots (done in
---             green, this one lit and ringed, later ones dim), "link 2 of 5 · 6 quests · XP left",
---             the next quest; the hero's kicker says "CHAIN 2/5" too
---   footer    "Show the quest in the quest list" (the main window opens on it, with its chain
---             tree), Decline (DeclineQuest), Accept (AcceptQuest)
+-- The quest card: QuestLineage's own window for talking to quest NPCs, beside the game's window or
+-- in its place. Four modes, one frame:
+--   list      the NPC has several quests (GOSSIP_SHOW with quests, QUEST_GREETING): available
+--             quests (difficulty colour, level, XP, a violet CHAIN n/m tag), quests in progress
+--             (ready ones in green) and the NPC's other options (vendor, inn, ...); a click picks
+--   detail    a quest offered (QUEST_DETAIL): warnings, the chain box, objective, what to do,
+--             rewards, the story (folded); Decline / Accept
+--   progress  a quest brought back (QUEST_PROGRESS): the chain box, the live objectives with their
+--             counters, what to hand in (item tiles, money), what the NPC says; Close / Continue
+--             (CompleteQuest, only when the quest can be completed)
+--   complete  the reward screen (QUEST_COMPLETE): rewards (a click picks one of the choices, which
+--             light up), XP and money, what the NPC says; Close / Complete quest (GetQuestReward)
+-- The hero shows the NPC in 3D, a kicker for the mode (+ "CHAIN n/m"), the title in its
+-- difficulty colour, tags and XP. The footer has "Show the quest in the quest list" (the main
+-- window on that quest, with its chain tree) in the quest modes.
+--
+-- The chain box: one dot per link of the chain (done green, this one lit and ringed, later dim),
+-- "link 2 of 5 · 6 quests · XP left", done count and the next quest.
 --
 -- Turkish voice-over (the WoWTR_Voices addon, through its global WoWTR_Voices; none of its files
--- change): a speaker in the hero's corner plays or stops the quest's recording (dim when the quest
--- has none, lit and pulsing while it plays, hidden without the addon). Setting voiceAutoplay
--- (off): WoWTR_Voices starts the offer's recording by itself; while the card shows that quest
--- and the setting is off, that automatic start is held back (a check put in front of its
--- PlayRecord, for this one recording only); on, the card starts it if nothing else did.
+-- change): a speaker in the hero plays or stops the recording of the page shown (description,
+-- progress or completion): dim when there is none, pulsing while it plays, hidden without the
+-- addon. Setting voiceAutoplay (off): while off, WoWTR_Voices' automatic start of the recording the
+-- card shows is held back (a check put in front of its PlayRecord); on, the card starts it if
+-- nothing else did.
 --
--- Settings: questCard (on), hideGameQuestFrame (the game's window moved off screen and made
--- invisible while the card shows: Hide() would end the NPC conversation through its OnHide),
--- openOnAccept (the main window opens on the quest you accept), questCardPoint (where the card
--- sits when the game's window is hidden). Turn-in screens are left to the game.
+-- Settings: questCard (on), hideGameQuestFrame (the game's window, QuestFrame or GossipFrame, moved
+-- off screen and made invisible while the card shows: Hide() would end the conversation through
+-- its OnHide), openOnAccept (the main window opens on the quest you accept), questCardPoint (where
+-- the card sits when the game's window is hidden), questCardStory (the story open).
 --
---   QL.ShowQuestCard(id)  QL.HideQuestCard()  QL.OfferWarnings(id, ctx)  QL.questCard (the frame)
+--   QL.ShowQuestCard(id)  QL.ShowQuestCardMode(mode, id)  QL.ShowNpcQuestList(host)
+--   QL.HideQuestCard()  QL.NpcQuestEntries(host)  QL.OfferWarnings(id, ctx)  QL.questCard
 
 local _, QL = ...
 local L = QL.L
 
 local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
-local W, HERO_H, MAX_H, FOOT_H = 360, 128, 640, 96
+local W, HERO_H, MAX_H = 360, 128, 640
+local FOOT_H, FOOT_SHORT = 96, 56
+local ROW_H, HEAD_H = 44, 26
 local MAX_DOTS = 9
 local QUALITY = {
 	[0] = { 0.62, 0.62, 0.62 }, [1] = { 1, 1, 1 }, [2] = { 0.12, 1, 0 }, [3] = { 0, 0.44, 0.87 },
 	[4] = { 0.64, 0.21, 0.93 }, [5] = { 1, 0.5, 0 },
+}
+local MODES = {
+	list = { kicker = "QUESTS" },
+	detail = { kicker = "NEW QUEST", voice = "description" },
+	progress = { kicker = "QUEST IN PROGRESS", voice = "progress" },
+	complete = { kicker = "QUEST COMPLETE", voice = "completion" },
 }
 
 local card
@@ -66,41 +81,56 @@ function QL.OfferWarnings(id, ctx)
 	return out
 end
 
--- The game's quest window ------------------------------------------------------------------------
+-- The game's windows ----------------------------------------------------------------------------------
 
-local hiddenGame -- the game's window's saved state while we keep it out of sight
+-- the game's window the card stands in for: QuestFrame, or GossipFrame for an NPC's quest list
+local function hostFrame()
+	if card and card.host == "gossip" then return rawget(_G, "GossipFrame") end
+	return rawget(_G, "QuestFrame")
+end
+
+local hidden -- { frame, alpha, mouse, points } while a game window is kept out of sight
+
+local function restoreGameFrame()
+	if not hidden then return end
+	local s, f = hidden, hidden.frame
+	hidden = nil
+	f:SetAlpha(s.alpha or 1)
+	if f.EnableMouse then f:EnableMouse(s.mouse ~= false) end
+	f:ClearAllPoints()
+	if #s.points > 0 then
+		for _, p in ipairs(s.points) do f:SetPoint(unpack(p)) end
+	else
+		f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
+	end
+	QL.gameQuestFrameHidden = false
+end
 
 local function hideGameFrame()
-	if not QuestFrame then return end
-	if not hiddenGame then
+	local f = hostFrame()
+	if not f then return end
+	if hidden and hidden.frame ~= f then restoreGameFrame() end
+	if not hidden then
 		local points = {}
-		for i = 1, (QuestFrame.GetNumPoints and QuestFrame:GetNumPoints() or 0) do
-			points[i] = { QuestFrame:GetPoint(i) }
-		end
-		hiddenGame = { alpha = QuestFrame:GetAlpha() or 1, mouse = QuestFrame.IsMouseEnabled and QuestFrame:IsMouseEnabled(), points = points }
+		for i = 1, (f.GetNumPoints and f:GetNumPoints() or 0) do points[i] = { f:GetPoint(i) } end
+		hidden = { frame = f, alpha = f:GetAlpha() or 1, mouse = f.IsMouseEnabled and f:IsMouseEnabled(), points = points }
 	end
 	-- applied again each time: the game's panel layout may have put it back
-	QuestFrame:SetAlpha(0)
-	if QuestFrame.EnableMouse then QuestFrame:EnableMouse(false) end
+	f:SetAlpha(0)
+	if f.EnableMouse then f:EnableMouse(false) end
 	-- off screen as well, so its buttons cannot be clicked while invisible
-	QuestFrame:ClearAllPoints()
-	QuestFrame:SetPoint("TOPRIGHT", UIParent, "TOPLEFT", -4000, 0)
+	f:ClearAllPoints()
+	f:SetPoint("TOPRIGHT", UIParent, "TOPLEFT", -4000, 0)
 	QL.gameQuestFrameHidden = true
 end
 
-local function restoreGameFrame()
-	if not hiddenGame or not QuestFrame then return end
-	local s = hiddenGame
-	hiddenGame = nil
-	QuestFrame:SetAlpha(s.alpha or 1)
-	if QuestFrame.EnableMouse then QuestFrame:EnableMouse(s.mouse ~= false) end
-	QuestFrame:ClearAllPoints()
-	if #s.points > 0 then
-		for _, p in ipairs(s.points) do QuestFrame:SetPoint(unpack(p)) end
+-- ends the conversation the card stands in for
+local function closeConversation()
+	if card and card.host == "gossip" then
+		if C_GossipInfo and C_GossipInfo.CloseGossip then call(C_GossipInfo.CloseGossip) else call(rawget(_G, "CloseGossip")) end
 	else
-		QuestFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
+		call(rawget(_G, "CloseQuest"))
 	end
-	QL.gameQuestFrameHidden = false
 end
 
 -- Building --------------------------------------------------------------------------------------------
@@ -125,17 +155,47 @@ local function section(parent, title)
 	return s
 end
 
+local function paintChoices()
+	local C = QL.Theme.C
+	for _, t in ipairs(card.tiles) do
+		if t:IsShown() then
+			local q = QUALITY[t.quality or 1] or QUALITY[1]
+			if t.kind == "choice" and card.mode == "complete" and card.choice == t.index then
+				QL.Theme.Border(t, C.accent, 2)
+				t.glow:Show()
+			else
+				QL.Theme.Border(t, { q[1], q[2], q[3], 0.9 }, 1)
+				t.glow:Hide()
+			end
+		end
+	end
+end
+
 local function rewardTile(i)
 	local T, C = QL.Theme, QL.Theme.C
 	local t = card.tiles[i]
 	if t then return t end
 	t = CreateFrame("Button", nil, card.rewards)
 	t:SetSize(36, 36)
+	t.glow = t:CreateTexture(nil, "BACKGROUND")
+	t.glow:SetTexture(MEDIA .. "arrow_glow")
+	t.glow:SetPoint("CENTER")
+	t.glow:SetSize(64, 64)
+	t.glow:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
+	t.glow:Hide()
 	t.icon = t:CreateTexture(nil, "ARTWORK")
 	t.icon:SetPoint("TOPLEFT", 2, -2); t.icon:SetPoint("BOTTOMRIGHT", -2, 2)
 	t.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 	t.count = T.Text(t, 11, C.text, "OVERLAY", true)
 	t.count:SetPoint("BOTTOMRIGHT", -2, 2)
+	t:SetScript("OnClick", function(self)
+		-- on the reward screen a click picks one of the choices
+		if self.kind == "choice" and card.mode == "complete" then
+			card.choice = self.index
+			paintChoices()
+			QL.RefreshCardFooter()
+		end
+	end)
 	t:SetScript("OnEnter", function(self)
 		if GameTooltip and GameTooltip.SetQuestItem then
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -146,6 +206,49 @@ local function rewardTile(i)
 	t:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 	card.tiles[i] = t
 	return t
+end
+
+-- A row of the NPC's quest list (also used for its group headings).
+local function listRow(i)
+	local T, C = QL.Theme, QL.Theme.C
+	local r = card.rows[i]
+	if r then return r end
+	r = CreateFrame("Button", nil, card.scroll.child)
+	r:SetHeight(ROW_H)
+	r.bg = T.Fill(r, { 0, 0, 0, 0 })
+	r.icon = r:CreateTexture(nil, "ARTWORK")
+	r.icon:SetSize(20, 20)
+	r.icon:SetPoint("LEFT", 12, 0)
+	r.title = T.Text(r, 12, C.text, nil, true)
+	r.title:SetPoint("TOPLEFT", 42, -7)
+	r.title:SetPoint("RIGHT", r, "RIGHT", -84, 0)
+	r.sub = T.Text(r, 10, C.muted)
+	r.sub:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -4)
+	r.sub:SetPoint("RIGHT", r, "RIGHT", -12, 0)
+	r.tag = T.Text(r, 10, C.accent2, nil, true)
+	r.tag:SetPoint("TOPRIGHT", -12, -8)
+	r.tag:SetJustifyH("RIGHT")
+	r.head = T.Text(r, 10, C.accent, nil, true)
+	r.head:SetPoint("BOTTOMLEFT", 16, 6)
+	r.line = r:CreateTexture(nil, "BORDER")
+	r.line:SetTexture(T.WHITE)
+	r.line:SetHeight(1)
+	r.line:SetPoint("BOTTOMLEFT", 16, 0); r.line:SetPoint("BOTTOMRIGHT", -16, 0)
+	T.Color(r.line, C.lineSoft)
+	r:SetScript("OnClick", function(self) if self.pick then self.pick() end end)
+	r:SetScript("OnEnter", function(self)
+		if self.isHead then return end
+		T.Color(self.bg, C.rowHover)
+		if self.questId and QL.QuestExists(self.questId) then
+			local tip = QL.Tip()
+			tip:SetOwner(self, "ANCHOR_RIGHT")
+			QL.FillQuestTooltip(tip, self.questId)
+			tip:Show()
+		end
+	end)
+	r:SetScript("OnLeave", function(self) T.Color(self.bg, { 0, 0, 0, 0 }); QL.Tip():Hide() end)
+	card.rows[i] = r
+	return r
 end
 
 local function build()
@@ -260,15 +363,17 @@ local function build()
 	local body = sf.child
 	card.sections = {
 		warn = section(body, L("WARNING")),
+		chain = section(body, L("CHAIN QUEST")),
 		objective = section(body, L("OBJECTIVE")),
 		tasks = section(body, L("WHAT TO DO")),
 		rewards = section(body, L("REWARDS")),
-		chain = section(body, L("CHAIN QUEST")),
+		talk = section(body, ""),
 		story = section(body, L("STORY")),
 	}
 	card.sections.warn.head:SetTextColor(C.danger[1], C.danger[2], C.danger[3], 1)
 	card.sections.tasks.body:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
 	card.sections.story.body:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
+	card.sections.talk.body:SetTextColor(C.muted[1], C.muted[2], C.muted[3], 1)
 	card.rewards = CreateFrame("Frame", nil, card.sections.rewards)
 	local box = CreateFrame("Frame", nil, card.sections.chain)
 	box:SetPoint("TOPLEFT", card.sections.chain.head, "BOTTOMLEFT", 0, -6)
@@ -291,13 +396,14 @@ local function build()
 	card.chainBox = box
 	card.sections.chain.head:SetTextColor(C.accent2[1], C.accent2[2], C.accent2[3], 1)
 	card.tiles = {}
+	card.rows = {}
 	-- the story folds: its header toggles it
 	local fold = CreateFrame("Button", nil, card.sections.story)
 	fold:SetPoint("TOPLEFT", card.sections.story.head, "TOPLEFT", 0, 2)
 	fold:SetSize(W - 32, 16)
 	fold:SetScript("OnClick", function()
 		QL.Set("questCardStory", not QL.DB().questCardStory)
-		if card.questId then QL.ShowQuestCard(card.questId) end
+		if card.questId then QL.ShowQuestCardMode(card.mode, card.questId) end
 	end)
 
 	-- footer
@@ -310,34 +416,23 @@ local function build()
 	line:SetPoint("TOPLEFT"); line:SetPoint("TOPRIGHT")
 	line:SetHeight(1)
 	T.Color(line, C.line)
-	card.accept = T.Button(foot, 120, 32)
+	card.foot = foot
+	card.accept = T.Button(foot, 140, 32)
 	card.accept:SetPoint("BOTTOMRIGHT", -14, 12)
-	card.accept:SetLabel(L("Accept"))
-	card.accept:SetActive(true)
-	card.accept:SetScript("OnClick", function()
-		card.answered = true
-		call(AcceptQuest)
-		QL.HideQuestCard()
-	end)
+	card.accept:SetScript("OnClick", function() QL.CardPrimary() end)
 	card.decline = T.Button(foot, 96, 32)
-	card.decline:SetPoint("RIGHT", card.accept, "LEFT", -8, 0)
-	card.decline:SetLabel(L("Decline"))
-	card.decline:SetScript("OnClick", function()
-		card.answered = true
-		call(DeclineQuest)
-		QL.HideQuestCard()
-	end)
+	card.decline:SetPoint("BOTTOMRIGHT", -162, 12)
+	card.decline:SetScript("OnClick", function() QL.CardSecondary() end)
 	-- the main window on this quest: its place in the quest list and its chain tree
 	card.showList = T.Button(foot, W - 28, 30)
 	card.showList:SetPoint("TOPLEFT", 14, -10)
-	card.showList:SetLabel(L("Show the quest in the quest list"))
 	card.showList:SetScript("OnClick", function() if card.questId then QL.Open(card.questId) end end)
 	card.chainButton = card.showList -- older name
 
 	-- closing the card while the game's window is hidden ends the conversation (nothing else
 	-- would be left on screen to answer the NPC)
 	card:SetScript("OnHide", function()
-		if not card.answered and not card.closing and QL.gameQuestFrameHidden then call(CloseQuest) end
+		if not card.answered and not card.closing and QL.gameQuestFrameHidden then closeConversation() end
 		restoreGameFrame()
 	end)
 	if UISpecialFrames then table.insert(UISpecialFrames, "QuestLineageQuestCard") end
@@ -345,11 +440,83 @@ local function build()
 	QL.questCard = card
 end
 
--- Filling ----------------------------------------------------------------------------------------------
+-- Footer actions -----------------------------------------------------------------------------------
+
+local function completable()
+	local v = call(rawget(_G, "IsQuestCompletable"))
+	return v == nil or v == true or v == 1
+end
+
+local function choiceCount() return tonumber(call(rawget(_G, "GetNumQuestChoices"))) or 0 end
+
+-- The right-hand button: Accept / Continue / Complete quest.
+function QL.CardPrimary()
+	local mode = card.mode
+	if mode == "detail" then
+		card.answered = true
+		call(rawget(_G, "AcceptQuest"))
+		QL.HideQuestCard()
+	elseif mode == "progress" then
+		if not completable() then return end
+		card.answered = true
+		call(rawget(_G, "CompleteQuest")) -- the reward screen follows (QUEST_COMPLETE)
+	elseif mode == "complete" then
+		local n = choiceCount()
+		local pick = card.choice or (n == 1 and 1) or 0
+		if n > 1 and not card.choice then
+			QL.Print(L("Pick one of the rewards first."), "warn")
+			return
+		end
+		card.answered = true
+		call(rawget(_G, "GetQuestReward"), pick)
+		QL.HideQuestCard()
+	end
+end
+
+-- The left-hand button: Decline, or Close.
+function QL.CardSecondary()
+	card.answered = true
+	if card.mode == "detail" then
+		call(rawget(_G, "DeclineQuest"))
+		QL.HideQuestCard()
+	else
+		closeConversation()
+		QL.HideQuestCard()
+	end
+end
+
+function QL.RefreshCardFooter()
+	local T, C = QL.Theme, QL.Theme.C
+	local mode = card.mode
+	local quest = mode ~= "list"
+	card.showList:SetShown(quest)
+	card.accept:SetShown(quest)
+	card.foot:SetHeight(quest and FOOT_H or FOOT_SHORT)
+	card.scroll:ClearAllPoints()
+	card.scroll:SetPoint("TOPLEFT", 0, -HERO_H - 12)
+	card.scroll:SetPoint("BOTTOMRIGHT", 0, quest and FOOT_H or FOOT_SHORT)
+	local primary = mode == "detail" and L("Accept") or (mode == "progress" and L("Continue") or L("Complete quest"))
+	local ready = true
+	if mode == "progress" then ready = completable() end
+	if mode == "complete" then ready = choiceCount() <= 1 or card.choice ~= nil end
+	card.accept:SetLabel(primary)
+	card.accept:SetActive(ready)
+	card.accept.ready = ready
+	card.decline:SetLabel(mode == "detail" and L("Decline") or L("Close"))
+	card.showList:SetLabel(L("Show the quest in the quest list"))
+	for _, b in ipairs({ card.accept, card.decline, card.showList }) do
+		T.SetFont(b.label, 12, true)
+		b.label:SetTextColor(unpack(b == card.accept and (ready and C.text or C.dim) or C.muted))
+		b.label:Show()
+	end
+end
+
+-- Filling -------------------------------------------------------------------------------------------
 
 local function placeCard()
 	card:ClearAllPoints()
-	if QL.gameQuestFrameHidden or not (QuestFrame and QuestFrame:IsShown()) then
+	local host = hostFrame()
+	if QL.gameQuestFrameHidden or not (host and host:IsShown()) then
 		local p = QL.DB().questCardPoint
 		if type(p) == "table" and p[1] then
 			card:SetPoint(p[1], UIParent, p[2], p[3], p[4])
@@ -357,7 +524,7 @@ local function placeCard()
 			card:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 24, -116)
 		end
 	else
-		card:SetPoint("TOPLEFT", QuestFrame, "TOPRIGHT", 6, 0)
+		card:SetPoint("TOPLEFT", host, "TOPRIGHT", 6, 0)
 	end
 end
 
@@ -379,7 +546,12 @@ local function setModel()
 	end
 end
 
-local function rewards(sec)
+local function money(v)
+	return GetCoinTextureString and GetCoinTextureString(v) or (("%dg %ds %dc"):format(v / 10000, (v / 100) % 100, v % 100))
+end
+
+-- The item tiles of the page: rewards and choices, or (progress) what to hand in.
+local function itemTiles(sec, mode)
 	local T, C = QL.Theme, QL.Theme.C
 	local n = 0
 	local function add(kind, count)
@@ -388,28 +560,38 @@ local function rewards(sec)
 			if name or tex then
 				n = n + 1
 				local t = rewardTile(n)
-				t.kind, t.index = kind, i
+				t.kind, t.index, t.quality = kind, i, quality
 				t.icon:SetTexture(tex or "Interface\\Icons\\INV_Misc_QuestionMark")
 				t.count:SetText((num and num > 1) and num or "")
-				local q = QUALITY[quality or 1] or QUALITY[1]
-				T.Border(t, { q[1], q[2], q[3], 0.9 })
 				t:ClearAllPoints()
 				t:SetPoint("TOPLEFT", ((n - 1) % 7) * 42, -math.floor((n - 1) / 7) * 42)
 				t:Show()
 			end
 		end
 	end
-	add("reward", tonumber(call(GetNumQuestRewards)) or 0)
-	local choices = tonumber(call(GetNumQuestChoices)) or 0
-	local firstChoice = n + 1
-	add("choice", choices)
-	for i = n + 1, #card.tiles do card.tiles[i]:Hide() end
 	local lines = {}
-	local money = tonumber(call(GetRewardMoney)) or 0
-	if money > 0 then
-		lines[#lines + 1] = GetCoinTextureString and GetCoinTextureString(money) or (("%dg %ds %dc"):format(money / 10000, (money / 100) % 100, money % 100))
+	local choices, firstChoice = 0, 0
+	if mode == "progress" then
+		add("required", tonumber(call(rawget(_G, "GetNumQuestItems"))) or 0)
+		local need = tonumber(call(rawget(_G, "GetQuestMoneyToGet"))) or 0
+		if need > 0 then lines[#lines + 1] = L("Money: ") .. money(need) end
+	else
+		add("reward", tonumber(call(GetNumQuestRewards)) or 0)
+		choices = choiceCount()
+		firstChoice = n + 1
+		add("choice", choices)
+		local m = tonumber(call(GetRewardMoney)) or 0
+		if m > 0 then lines[#lines + 1] = money(m) end
+		if choices > 1 then
+			if mode == "complete" then
+				lines[#lines + 1] = hex(C.accent) .. L("Click the reward you want (%d to choose from)"):format(choices) .. "|r"
+			else
+				lines[#lines + 1] = hex(C.muted) .. L("Choose one of %d when you hand it in (from tile %d)"):format(choices, firstChoice) .. "|r"
+			end
+		end
 	end
-	if choices > 0 then lines[#lines + 1] = hex(C.muted) .. L("Choose one of %d when you hand it in (from tile %d)"):format(choices, firstChoice) .. "|r" end
+	for i = n + 1, #card.tiles do card.tiles[i]:Hide() end
+	paintChoices()
 	local rows = math.ceil(n / 7)
 	card.rewards:ClearAllPoints()
 	card.rewards:SetPoint("TOPLEFT", sec.head, "BOTTOMLEFT", 0, -6)
@@ -428,19 +610,20 @@ local function voices()
 	if type(V) == "table" and type(V.Play) == "function" and type(V.GetRecord) == "function" then return V end
 	return nil
 end
-local function voiceKey(id) return "quest:" .. tostring(id) .. ":description" end
+local function voiceSection() return card and MODES[card.mode or ""] and MODES[card.mode].voice or "description" end
+local function voiceKey(id, sectionName) return "quest:" .. tostring(id) .. ":" .. (sectionName or voiceSection()) end
 
--- nil without the addon; "playing", "ready" (a recording exists) or "none".
+-- nil without the addon (or on the list); "playing", "ready" (a recording exists) or "none".
 function QL.CardVoiceState(id)
 	local V = voices()
-	if not V or not id then return nil end
+	if not V or not id or (card and card.mode == "list") then return nil end
 	if V.playingKey == voiceKey(id) then return "playing" end
 	local npc
 	if type(V.ResolveSpeakerID) == "function" then
 		local ok, n = pcall(V.ResolveSpeakerID, V)
 		if ok then npc = n end
 	end
-	local ok, record = pcall(V.GetRecord, V, id, "description", npc)
+	local ok, record = pcall(V.GetRecord, V, id, voiceSection(), npc)
 	return (ok and record) and "ready" or "none"
 end
 
@@ -451,7 +634,7 @@ function QL.ToggleCardVoice(id)
 	if state == "playing" then
 		if type(V.Stop) == "function" then pcall(V.Stop, V) end
 	elseif state == "ready" then
-		pcall(V.Play, V, id, "description", false)
+		pcall(V.Play, V, id, voiceSection(), false)
 	end
 	pcall(QL.UpdateCardSpeaker)
 end
@@ -480,7 +663,7 @@ function QL.UpdateCardSpeaker(clock)
 	end
 end
 
--- WoWTR_Voices starts an offer's recording by itself; hold that back for the quest our card shows
+-- WoWTR_Voices starts a page's recording by itself; hold that back for the page our card shows
 -- unless voiceAutoplay is on. Only its automatic starts, only this one recording.
 local function guardAutoplay()
 	local V = voices()
@@ -488,8 +671,8 @@ local function guardAutoplay()
 	local original = V.PlayRecord
 	V.qlAutoplayGuard = true
 	V.PlayRecord = function(self, key, record, automatic, ...)
-		if automatic and card and card:IsShown() and card.questId and key == voiceKey(card.questId)
-			and not QL.DB().voiceAutoplay then
+		if automatic and card and card:IsShown() and card.questId and card.mode ~= "list"
+			and key == voiceKey(card.questId) and not QL.DB().voiceAutoplay then
 			return false
 		end
 		return original(self, key, record, automatic, ...)
@@ -497,9 +680,11 @@ local function guardAutoplay()
 end
 QL.GuardVoiceAutoplay = guardAutoplay
 
--- The chain box: one dot per link (layer) of the chain, joined by lines; done links green, this
--- quest's link lit with a ring, links still ahead dim. More than MAX_DOTS links: a window round
--- this one, with faded ends. Returns the box's height.
+-- The chain box ---------------------------------------------------------------------------------------
+
+-- One dot per link (layer) of the chain, joined by lines; done links green, this quest's link lit
+-- with a ring, links still ahead dim. More than MAX_DOTS links: a window round this one, with
+-- faded ends. Returns the box's height.
 function QL.DrawCardChain(id, ctx, summary)
 	local T, C = QL.Theme, QL.Theme.C
 	local box = card.chainBox
@@ -602,6 +787,8 @@ function QL.DrawCardChain(id, ctx, summary)
 	return h
 end
 
+-- What to do --------------------------------------------------------------------------------------
+
 -- The "what to do" lines: the database's tasks, else the client's objectives for the quest.
 function QL.CardTasks(id, known)
 	local C = QL.Theme.C
@@ -628,49 +815,225 @@ function QL.CardTasks(id, known)
 	return table.concat(out, "\n")
 end
 
+-- A logged quest's objectives with their counters (the progress page).
+local function liveTasks(id, ctx)
+	local C, done = QL.Theme.C, QL.Theme.STATUS.done
+	local out = {}
+	local rows = QL.ObjectiveRows and QL.ObjectiveRows(id, ctx) or {}
+	for _, o in ipairs(rows) do
+		local count = (o.need and o.need > 0) and ("  " .. ("%d/%d"):format(o.have or 0, o.need)) or ""
+		if o.done then
+			out[#out + 1] = hex(done) .. "✓  " .. (o.text or "") .. count .. "|r"
+		else
+			out[#out + 1] = hex(C.accent) .. "•|r  " .. hex(C.text) .. (o.text or "") .. "|r" .. hex(C.accent) .. count .. "|r"
+		end
+	end
+	return table.concat(out, "\n")
+end
+
+-- The NPC's quest list ---------------------------------------------------------------------------------
+
+-- What the NPC offers: { available = {...}, active = {...}, options = {...} }, each entry
+-- { id, title, level, complete, pick = function }. host: "gossip" (C_GossipInfo) or "quest" (the
+-- quest greeting).
+function QL.NpcQuestEntries(host)
+	local out = { available = {}, active = {}, options = {} }
+	local function idByTitle(title)
+		if not title or not QL.SearchQuests then return nil end
+		for _, qid in ipairs(QL.SearchQuests(title) or {}) do
+			if QL.QuestTitle(qid) == title or QL.Q(qid, "name") == title then return qid end
+		end
+		return nil
+	end
+	if host == "gossip" then
+		local G = C_GossipInfo or {}
+		for _, q in ipairs(call(G.GetAvailableQuests) or {}) do
+			local qid = q.questID
+			out.available[#out.available + 1] = { id = qid, title = q.title, level = q.questLevel, trivial = q.isTrivial,
+				pick = function() call(G.SelectAvailableQuest, qid) end }
+		end
+		for _, q in ipairs(call(G.GetActiveQuests) or {}) do
+			local qid = q.questID
+			out.active[#out.active + 1] = { id = qid, title = q.title, level = q.questLevel, complete = q.isComplete and true or false,
+				pick = function() call(G.SelectActiveQuest, qid) end }
+		end
+		for _, o in ipairs(call(G.GetOptions) or {}) do
+			local oid = o.gossipOptionID or o.optionID
+			out.options[#out.options + 1] = { title = o.name, icon = o.icon, pick = function() call(G.SelectOption, oid) end }
+		end
+	else
+		for i = 1, tonumber(call(rawget(_G, "GetNumAvailableQuests"))) or 0 do
+			local title = call(rawget(_G, "GetAvailableTitle"), i)
+			local _, _, _, _, qid = call(rawget(_G, "GetAvailableQuestInfo"), i)
+			if type(qid) ~= "number" or qid <= 0 then qid = idByTitle(title) end
+			out.available[#out.available + 1] = { id = qid, title = title, level = call(rawget(_G, "GetAvailableLevel"), i),
+				pick = function() call(rawget(_G, "SelectAvailableQuest"), i) end }
+		end
+		for i = 1, tonumber(call(rawget(_G, "GetNumActiveQuests"))) or 0 do
+			local title, complete = call(rawget(_G, "GetActiveTitle"), i)
+			local qid = call(rawget(_G, "GetActiveQuestID"), i)
+			if type(qid) ~= "number" or qid <= 0 then qid = idByTitle(title) end
+			out.active[#out.active + 1] = { id = qid, title = title, level = call(rawget(_G, "GetActiveLevel"), i), complete = complete and true or false,
+				pick = function() call(rawget(_G, "SelectActiveQuest"), i) end }
+		end
+	end
+	return out
+end
+
+local function drawList(entries, ctx)
+	local T, C = QL.Theme, QL.Theme.C
+	local done = T.STATUS.done
+	local y, n = 6, 0
+	local function row(isHead)
+		n = n + 1
+		local r = listRow(n)
+		r:ClearAllPoints()
+		r:SetPoint("TOPLEFT", 0, -y)
+		r:SetPoint("RIGHT", card.scroll.child, "RIGHT", 0, 0)
+		r.isHead = isHead
+		r.questId, r.pick = nil, nil
+		r:SetHeight(isHead and HEAD_H or ROW_H)
+		r:EnableMouse(not isHead)
+		r.head:SetShown(isHead)
+		r.line:SetShown(isHead)
+		for _, p in ipairs({ r.icon, r.title, r.sub, r.tag }) do p:SetShown(not isHead) end
+		T.Color(r.bg, { 0, 0, 0, 0 })
+		r:Show()
+		y = y + (isHead and HEAD_H or ROW_H)
+		return r
+	end
+	local function heading(text, count)
+		local r = row(true)
+		r.head:SetText(L(text) .. "  " .. hex(C.muted) .. count .. "|r")
+	end
+	local function quest(e, active)
+		local r = row(false)
+		r.questId, r.pick = e.id, e.pick
+		local known = e.id and QL.QuestExists(e.id)
+		r.title:SetText((known and QL.QuestTitle(e.id)) or e.title or "?")
+		local color = (known and QL.TitleColor(e.id, ctx)) or C.text
+		local sub = {}
+		local level = (known and QL.QuestLevel(e.id)) or e.level
+		if active then
+			if e.complete then
+				color = { done[1], done[2], done[3] }
+				sub[#sub + 1] = hex(done) .. L("Ready to hand in") .. "|r"
+			else
+				sub[#sub + 1] = L("In progress")
+			end
+			r.icon:SetTexture(MEDIA .. (e.complete and "quest_mark" or "ring"))
+			local ic = e.complete and done or C.muted
+			r.icon:SetVertexColor(ic[1], ic[2], ic[3], 1)
+		else
+			if level then sub[#sub + 1] = L("Level %d"):format(level) end
+			local xp = known and QL.QuestXPAt(e.id, ctx.level)
+			if xp then sub[#sub + 1] = hex(C.accent) .. QL.XPText(xp) .. "|r" end
+			local dungeon = known and QL.DungeonMarkup(e.id, true)
+			if dungeon then sub[#sub + 1] = dungeon end
+			r.icon:SetTexture(MEDIA .. "quest_mark")
+			local ic = e.trivial and C.dim or C.accent
+			r.icon:SetVertexColor(ic[1], ic[2], ic[3], 1)
+		end
+		r.title:SetTextColor(color[1], color[2], color[3], 1)
+		r.sub:SetText(table.concat(sub, "  ·  "))
+		local summary = known and QL.ChainSummary(e.id, ctx)
+		r.tag:SetText(summary and L("CHAIN %d/%d"):format(summary.index, summary.total) or "")
+	end
+	if #entries.available > 0 then
+		heading("AVAILABLE QUESTS", #entries.available)
+		for _, e in ipairs(entries.available) do quest(e, false) end
+	end
+	if #entries.active > 0 then
+		heading("QUESTS IN PROGRESS", #entries.active)
+		for _, e in ipairs(entries.active) do quest(e, true) end
+	end
+	if #entries.options > 0 then
+		heading("OTHER", #entries.options)
+		for _, o in ipairs(entries.options) do
+			local r = row(false)
+			r.pick = o.pick
+			r.title:SetText(o.title or "?")
+			r.title:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+			r.sub:SetText("")
+			r.tag:SetText("")
+			r.icon:SetTexture(o.icon or (MEDIA .. "disc"))
+			if o.icon then r.icon:SetVertexColor(1, 1, 1, 1) else r.icon:SetVertexColor(C.muted[1], C.muted[2], C.muted[3], 0.8) end
+		end
+	end
+	for i = n + 1, #card.rows do card.rows[i]:Hide() end
+	return y + 8
+end
+
 -- /ql kart: what the open card holds, to find why something does not show.
 function QL.CardDebug()
 	if not card or not card:IsShown() then QL.Chat(L("The quest card is not open: talk to an NPC offering a quest first.")); return end
 	local id = card.questId
-	QL.Chat(("card: quest %s · known %s · %dx%d · strata %s"):format(tostring(id), tostring(QL.QuestExists(id or 0)),
-		card:GetWidth() or 0, card:GetHeight() or 0, tostring(card:GetFrameStrata())))
+	QL.Chat(("card: %s · quest %s · known %s · host %s · %dx%d"):format(tostring(card.mode), tostring(id), tostring(QL.QuestExists(id or 0)),
+		tostring(card.host), card:GetWidth() or 0, card:GetHeight() or 0))
 	for _, k in ipairs({ "accept", "decline", "showList" }) do
 		local b = card[k]
 		local fs = b.label
-		QL.Chat(("%s: shown %s · text '%s' · width %.0f · font %s · alpha %.2f"):format(k, tostring(b:IsVisible()), tostring(fs:GetText()),
-			fs:GetStringWidth() or -1, tostring((fs:GetFont())), fs:GetAlpha() or -1))
+		QL.Chat(("%s: shown %s · text '%s' · width %.0f · font %s"):format(k, tostring(b:IsVisible()), tostring(fs:GetText()),
+			fs:GetStringWidth() or -1, tostring((fs:GetFont()))))
 	end
-	local tasks = QL.QuestTasks(id or 0)
-	QL.Chat(("tasks from the database: %d"):format(#tasks))
-	for i, t in ipairs(tasks) do
-		if i > 6 then break end
-		QL.Chat(("  %s %s: %s"):format(t.kind, tostring(t.id), tostring(t.name or t.text)))
+	if id then
+		local tasks = QL.QuestTasks(id)
+		QL.Chat(("tasks from the database: %d"):format(#tasks))
+		for i, t in ipairs(tasks) do
+			if i > 6 then break end
+			QL.Chat(("  %s %s: %s"):format(t.kind, tostring(t.id), tostring(t.name or t.text)))
+		end
 	end
-	local obj = QL.Q(id or 0, "objectives")
-	QL.Chat("objectives field: " .. type(obj) .. (type(obj) == "table" and (" · slots " .. tostring(obj[1] and #obj[1]) .. "/" .. tostring(obj[2] and #obj[2]) .. "/" .. tostring(obj[3] and #obj[3])) or ""))
 	for name, sec in pairs(card.sections) do
-		QL.Chat(("section %s: shown %s · height %.0f · text %d chars · text height %.0f"):format(name, tostring(sec:IsShown()),
-			sec:GetHeight() or 0, #(sec.body:GetText() or ""), sec.body:GetStringHeight() or 0))
+		QL.Chat(("section %s: shown %s · height %.0f · text %d chars"):format(name, tostring(sec:IsShown()),
+			sec:GetHeight() or 0, #(sec.body:GetText() or "")))
 	end
-	QL.Chat(("scroll: %.0fx%.0f · child %.0fx%.0f"):format(card.scroll:GetWidth() or 0, card.scroll:GetHeight() or 0,
-		card.scroll.child:GetWidth() or 0, card.scroll.child:GetHeight() or 0))
 end
 
-function QL.ShowQuestCard(id)
-	if not card then
-		local ok, err = pcall(build)
-		if not ok then QL.Debug("quest card: " .. tostring(err)); card = nil; return end
-	end
+-- Showing ------------------------------------------------------------------------------------------
+
+local function ensure()
+	if card then return true end
+	local ok, err = pcall(build)
+	if not ok then QL.Debug("quest card: " .. tostring(err)); card = nil; return false end
+	return true
+end
+
+local function finishShow(contentH)
+	card.scroll.child:SetWidth(W)
+	card.scroll:SetContentHeight(contentH)
+	local foot = card.mode == "list" and FOOT_SHORT or FOOT_H
+	card:SetHeight(math.min(MAX_H, HERO_H + 12 + contentH + foot))
+	if QL.DB().hideGameQuestFrame then hideGameFrame() else restoreGameFrame() end
+	placeCard()
+	card.closing = false
+	card:Show()
+	pcall(guardAutoplay)
+	pcall(QL.UpdateCardSpeaker)
+end
+
+-- A quest page: detail (offer), progress (brought back) or complete (rewards).
+function QL.ShowQuestCardMode(mode, id)
+	if not ensure() then return end
 	local T, C = QL.Theme, QL.Theme.C
 	local ctx = QL.Context()
 	local known = QL.QuestExists(id)
-	if card.questId ~= id or not card:IsShown() then card.voiceAsked = nil end
+	if card.questId ~= id or card.mode ~= mode or not card:IsShown() then
+		card.voiceAsked = nil
+		card.choice = nil
+	end
+	if card.host == "gossip" and card.mode == "list" then restoreGameFrame() end
+	card.host = "quest"
+	card.mode = mode
 	card.questId = id
 	card.answered = false
+	for _, r in ipairs(card.rows) do r:Hide() end
 
 	-- hero
 	local summary = known and QL.ChainSummary(id, ctx)
-	card.kicker:SetText(L("NEW QUEST") .. (summary and ("  " .. hex(C.accent2) .. "·  " .. L("CHAIN %d/%d"):format(summary.index, summary.total) .. "|r") or ""))
+	card.kicker:SetText(L(MODES[mode].kicker) .. (summary and ("  " .. hex(C.accent2) .. "·  " .. L("CHAIN %d/%d"):format(summary.index, summary.total) .. "|r") or ""))
+	local kc = mode == "complete" and T.STATUS.done or C.accent
+	card.kicker:SetTextColor(kc[1], kc[2], kc[3], 1)
 	local title = known and QL.QuestTitle(id) or (call(GetTitleText) or "?")
 	card.title:SetText(title)
 	card.title:SetTextColor(unpack(known and (QL.TitleColor(id, ctx) or C.text) or C.text))
@@ -680,10 +1043,11 @@ function QL.ShowQuestCard(id)
 		local dungeon = QL.DungeonMarkup(id, true)
 		if dungeon then meta[#meta + 1] = dungeon end
 	end
-	local giver = UnitName and call(UnitName, "npc")
-	if giver then meta[#meta + 1] = hex(C.muted) .. giver .. "|r" end
+	local npc = UnitName and call(UnitName, "npc")
+	if npc then meta[#meta + 1] = hex(C.muted) .. npc .. "|r" end
 	card.meta:SetText(table.concat(meta, "  ·  "))
-	local xp = known and QL.QuestXPAt(id, ctx.level)
+	local xp = (mode == "complete" and tonumber(call(rawget(_G, "GetRewardXP")))) or (known and QL.QuestXPAt(id, ctx.level))
+	if xp and xp <= 0 then xp = nil end
 	card.xp:SetText(xp and (QL.XPText(xp) .. "  " .. hex(C.muted) .. QL.GainText(QL.LevelGain(xp)) .. "|r") or "")
 	setModel()
 
@@ -691,6 +1055,7 @@ function QL.ShowQuestCard(id)
 	local y = 0
 	local width = W - 32
 	local s = card.sections
+	for _, sec in pairs(s) do sec:Hide() end
 	local function place(sec, text, extra)
 		if not text or text == "" then sec:Hide(); return end
 		sec:ClearAllPoints()
@@ -703,62 +1068,95 @@ function QL.ShowQuestCard(id)
 		sec:Show()
 		y = y + h + 14
 	end
-	local warns = {}
-	for _, w in ipairs(QL.OfferWarnings(id, ctx)) do
-		warns[#warns + 1] = (w.danger and hex(C.danger) or hex(C.text)) .. w.text .. "|r"
+	local function items(head)
+		s.rewards.head:SetText(L(head))
+		local any, extra = itemTiles(s.rewards, mode)
+		if any then
+			s.rewards.body:SetWidth(width)
+			place(s.rewards, true, extra)
+		end
 	end
-	place(s.warn, table.concat(warns, "\n"))
-	if summary then
-		s.chain.head:SetText(L("CHAIN QUEST"))
-		place(s.chain, true, QL.DrawCardChain(id, ctx, summary) + 6)
-	else
-		s.chain:Hide()
-	end
-	local objective = (known and QL.UseTurkish() and QL.QuestObjectives(id)) or call(GetObjectiveText) or (known and QL.QuestObjectives(id))
-	place(s.objective, objective)
-	local tasks = QL.CardTasks(id, known)
-	place(s.tasks, tasks)
-	local any, extra = rewards(s.rewards)
-	if any then
-		s.rewards.body:SetWidth(width)
-		place(s.rewards, true, extra)
-	else
-		s.rewards:Hide()
-	end
-	local story = (known and QL.QuestDescription(id)) or call(GetQuestText)
-	if story and story ~= "" then
-		local open = QL.DB().questCardStory
-		s.story.head:SetText(L("STORY") .. "  " .. hex(C.muted) .. (open and "–" or "+") .. "|r")
-		s.story.body:SetText(open and story or "")
-		place(s.story, true)
-	else
-		s.story:Hide()
+	local function talk(text)
+		s.talk.head:SetText(npc and L("%s SAYS"):format(npc:upper()) or L("THE NPC SAYS"))
+		place(s.talk, text)
 	end
 
-	card.accept:SetLabel(L("Accept"))
-	card.decline:SetLabel(L("Decline"))
-	card.showList:SetLabel(L("Show the quest in the quest list"))
-	for _, b in ipairs({ card.accept, card.decline, card.showList }) do
-		T.SetFont(b.label, 12, true)
-		b.label:SetTextColor(unpack(b == card.accept and C.text or C.muted))
-		b.label:Show()
+	if mode == "detail" then
+		local warns = {}
+		for _, w in ipairs(QL.OfferWarnings(id, ctx)) do
+			warns[#warns + 1] = (w.danger and hex(C.danger) or hex(C.text)) .. w.text .. "|r"
+		end
+		place(s.warn, table.concat(warns, "\n"))
 	end
-	card.scroll.child:SetWidth(W)
-	card.scroll:SetContentHeight(y)
-	card:SetHeight(math.min(MAX_H, HERO_H + 12 + y + FOOT_H))
-	if QL.DB().hideGameQuestFrame then hideGameFrame() else restoreGameFrame() end
-	placeCard()
-	card.closing = false
-	card:Show()
-	pcall(guardAutoplay)
-	pcall(QL.UpdateCardSpeaker)
+	if summary then place(s.chain, true, QL.DrawCardChain(id, ctx, summary) + 6) end
+	if mode == "detail" then
+		place(s.objective, (known and QL.UseTurkish() and QL.QuestObjectives(id)) or call(GetObjectiveText) or (known and QL.QuestObjectives(id)))
+		s.tasks.head:SetText(L("WHAT TO DO"))
+		place(s.tasks, QL.CardTasks(id, known))
+		items("REWARDS")
+		local story = (known and QL.QuestDescription(id)) or call(GetQuestText)
+		if story and story ~= "" then
+			local open = QL.DB().questCardStory
+			s.story.head:SetText(L("STORY") .. "  " .. hex(C.muted) .. (open and "–" or "+") .. "|r")
+			s.story.body:SetText(open and story or "")
+			place(s.story, true)
+		end
+	elseif mode == "progress" then
+		s.tasks.head:SetText(L("OBJECTIVES"))
+		place(s.tasks, liveTasks(id, ctx))
+		items("TO HAND IN")
+		talk(call(rawget(_G, "GetProgressText")))
+	else
+		items("REWARDS")
+		talk(call(rawget(_G, "GetRewardText")))
+	end
+
+	QL.RefreshCardFooter()
+	finishShow(y)
 	-- reading aloud by itself only when asked to (and only if WoWTR_Voices did not already)
 	if QL.DB().voiceAutoplay and not card.voiceAsked and C_Timer and C_Timer.After then
 		card.voiceAsked = id
 		C_Timer.After(1.2, function()
-			if card:IsShown() and card.questId == id and QL.CardVoiceState(id) == "ready" then QL.ToggleCardVoice(id) end
+			if card:IsShown() and card.questId == id and card.mode == mode and QL.CardVoiceState(id) == "ready" then QL.ToggleCardVoice(id) end
 		end)
 	end
+end
+
+function QL.ShowQuestCard(id) return QL.ShowQuestCardMode("detail", id) end
+
+-- The NPC's quest list. false when it has no quests (then the game's window is left alone).
+function QL.ShowNpcQuestList(host)
+	local entries = QL.NpcQuestEntries(host)
+	if #entries.available + #entries.active == 0 then return false end
+	if not ensure() then return false end
+	local T, C = QL.Theme, QL.Theme.C
+	local ctx = QL.Context()
+	if card.host ~= host then restoreGameFrame() end
+	card.host = host
+	card.mode = "list"
+	card.questId = nil
+	card.answered = false
+	for _, sec in pairs(card.sections) do sec:Hide() end
+	local npc = UnitName and call(UnitName, "npc")
+	card.kicker:SetText(L("QUESTS"))
+	card.kicker:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+	card.title:SetText(npc or L("Quests"))
+	card.title:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+	local meta = {}
+	if #entries.available > 0 then meta[#meta + 1] = L("%d to take"):format(#entries.available) end
+	if #entries.active > 0 then meta[#meta + 1] = L("%d in progress"):format(#entries.active) end
+	card.meta:SetText(table.concat(meta, "  ·  "))
+	local total = 0
+	for _, e in ipairs(entries.available) do
+		local xp = e.id and QL.QuestExists(e.id) and QL.QuestXPAt(e.id, ctx.level)
+		if xp then total = total + xp end
+	end
+	card.xp:SetText(total > 0 and (L("Together: ") .. QL.XPText(total)) or "")
+	setModel()
+	local h = drawList(entries, ctx)
+	QL.RefreshCardFooter()
+	finishShow(h)
+	return true
 end
 
 function QL.HideQuestCard()
@@ -767,32 +1165,58 @@ function QL.HideQuestCard()
 	card:Hide()
 	card.closing = false
 	card.questId = nil
+	card.mode = nil
 	restoreGameFrame()
 end
 
 -- Events ---------------------------------------------------------------------------------------------
 
-QL.Event("QUEST_DETAIL", function()
-	if QL.DB().questCard == false then return end
-	local id = call(GetQuestID)
-	if type(id) ~= "number" or id <= 0 then return end
-	local ok, err = pcall(QL.ShowQuestCard, id)
-	if not ok then QL.Debug("quest card: " .. tostring(err)); restoreGameFrame(); return end
-	-- the game shows and lays out its own window on the same event, perhaps after us: once more
-	-- on the next frame
+-- the game shows and lays out its own window on the same event, perhaps after us: once more on
+-- the next frame (measured again now that the card is laid out)
+local function again(check, fn)
 	if C_Timer and C_Timer.After then
-		C_Timer.After(0, function()
-			if card and card:IsShown() and card.questId == id then
-				pcall(QL.ShowQuestCard, id) -- measured again now that the card is laid out
-			end
-		end)
+		C_Timer.After(0, function() if card and card:IsShown() and check() then pcall(fn) end end)
 	end
-end)
-
--- the conversation ended, or moved on to another screen (progress / reward): the game's again
-for _, e in ipairs({ "QUEST_FINISHED", "QUEST_PROGRESS", "QUEST_COMPLETE", "GOSSIP_SHOW", "QUEST_GREETING" }) do
-	QL.Event(e, function() pcall(QL.HideQuestCard) end)
 end
+
+local function questPage(mode)
+	return function()
+		if QL.DB().questCard == false then return end
+		local id = call(GetQuestID)
+		if type(id) ~= "number" or id <= 0 then return end
+		local ok, err = pcall(QL.ShowQuestCardMode, mode, id)
+		if not ok then QL.Debug("quest card: " .. tostring(err)); restoreGameFrame(); return end
+		again(function() return card.questId == id and card.mode == mode end, function() QL.ShowQuestCardMode(mode, id) end)
+	end
+end
+QL.Event("QUEST_DETAIL", questPage("detail"))
+QL.Event("QUEST_PROGRESS", questPage("progress"))
+QL.Event("QUEST_COMPLETE", questPage("complete"))
+
+local function listPage(host)
+	return function()
+		if QL.DB().questCard == false then return end
+		local ok, shown = pcall(QL.ShowNpcQuestList, host)
+		if not ok then QL.Debug("quest card: " .. tostring(shown)); restoreGameFrame(); return end
+		if not shown then
+			if card and card.mode == "list" then QL.HideQuestCard() end
+			return
+		end
+		again(function() return card.mode == "list" and card.host == host end, function() QL.ShowNpcQuestList(host) end)
+	end
+end
+QL.Event("GOSSIP_SHOW", listPage("gossip"))
+QL.Event("QUEST_GREETING", listPage("quest"))
+
+-- the conversation ended: the quest window's pages end with QUEST_FINISHED, the gossip list with
+-- GOSSIP_CLOSED (which also comes when a quest is picked from it: the quest page stays)
+QL.Event("QUEST_FINISHED", function()
+	if card and card:IsShown() and card.host == "gossip" and card.mode == "list" then return end
+	pcall(QL.HideQuestCard)
+end)
+QL.Event("GOSSIP_CLOSED", function()
+	if card and card:IsShown() and card.host == "gossip" and card.mode == "list" then pcall(QL.HideQuestCard) end
+end)
 
 QL.Event("QUEST_ACCEPTED", function(_, a, b)
 	if not QL.DB().openOnAccept then return end

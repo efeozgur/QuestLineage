@@ -593,6 +593,135 @@ for _, fn in ipairs(QL.events.QUEST_ACCEPTED) do fn("QUEST_ACCEPTED", 6) end
 Eq(openedId, 6, "opens on the accepted quest when set")
 QL.Set("openOnAccept", false)
 QL.Open = realOpen
+-- An NPC with several quests: the list -----------------------------------------------------------
+GossipFrame = mock("Frame", "GossipFrame")
+GossipFrame.shown = true
+local picked = {}
+C_GossipInfo = {
+	GetAvailableQuests = function() return { { title = "The Gathering", questLevel = 5, questID = 3 }, { title = "Rumours", questLevel = 6, questID = 5, isTrivial = true } } end,
+	GetActiveQuests = function() return { { title = "Second Steps", questLevel = 4, questID = 2, isComplete = true } } end,
+	GetOptions = function() return { { name = "Let me browse your goods.", gossipOptionID = 77 } } end,
+	SelectAvailableQuest = function(qid) picked[#picked + 1] = "available " .. qid end,
+	SelectActiveQuest = function(qid) picked[#picked + 1] = "active " .. qid end,
+	SelectOption = function(oid) picked[#picked + 1] = "option " .. oid end,
+	CloseGossip = function() picked[#picked + 1] = "close gossip" end,
+}
+for _, fn in ipairs(QL.events.GOSSIP_SHOW) do fn("GOSSIP_SHOW") end
+Eq(qc.shown, true, "the card shows the NPC's quests")
+Eq(qc.mode, "list", "as a list")
+Eq(qc.kicker.text, "QUESTS", "kicker")
+Eq(qc.title.text, "Grunt Kor", "the NPC's name")
+Check(qc.meta.text:find("2 to take", 1, true) and qc.meta.text:find("1 in progress", 1, true), "counts: " .. qc.meta.text)
+local function rowTexts()
+	local out = {}
+	for _, r in ipairs(qc.rows) do if r.shown then out[#out + 1] = r.isHead and ("#" .. r.head.text) or r.title.text end end
+	return table.concat(out, " | ")
+end
+local listed = rowTexts()
+Check(listed:find("#AVAILABLE QUESTS", 1, true) and listed:find("The Gathering", 1, true) and listed:find("Rumours", 1, true), "available quests: " .. listed)
+Check(listed:find("#QUESTS IN PROGRESS", 1, true) and listed:find("Second Steps", 1, true), "quests in progress")
+Check(listed:find("#OTHER", 1, true) and listed:find("Let me browse your goods.", 1, true), "the NPC's other options")
+Eq(qc.rows[2].tag.text, "CHAIN 3/4", "a chain quest is tagged (The Gathering, link 3 of 4)")
+Eq(qc.rows[5].sub.text:find("Ready to hand in", 1, true) ~= nil, true, "a ready quest says so")
+Eq(qc.accept.shown, false, "no Accept on the list")
+Eq(qc.showList.shown, false, "nor the list button")
+-- with the game's window hidden, it is the gossip window that is kept out of sight
+QL.Set("hideGameQuestFrame", true)
+Eq(GossipFrame.alpha, 0, "the gossip window invisible")
+Eq(QuestFrame.alpha ~= 0, true, "the quest window untouched")
+-- picking a quest
+qc.rows[2].scripts.OnClick(qc.rows[2])
+Eq(picked[#picked], "available 3", "a click picks the quest")
+qc.rows[7].scripts.OnClick(qc.rows[7])
+Eq(picked[#picked], "option 77", "and the options work")
+-- the quest page follows; the gossip closing then leaves it alone
+function GetQuestID() return 6 end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+for _, fn in ipairs(QL.events.GOSSIP_CLOSED) do fn("GOSSIP_CLOSED") end
+Eq(qc.shown, true, "the quest page stays")
+Eq(qc.mode, "detail", "as the offer")
+Eq(GossipFrame.alpha, 1, "the gossip window put back")
+Eq(QuestFrame.alpha, 0, "the quest window hidden instead")
+for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
+-- closing the list (x) while the gossip window is hidden ends the conversation
+for _, fn in ipairs(QL.events.GOSSIP_SHOW) do fn("GOSSIP_SHOW") end
+qc:Hide()
+Eq(picked[#picked], "close gossip", "closing the list closes the gossip")
+QL.Set("hideGameQuestFrame", false)
+-- an NPC with no quests: the game's gossip window as usual
+C_GossipInfo.GetAvailableQuests = function() return {} end
+C_GossipInfo.GetActiveQuests = function() return {} end
+for _, fn in ipairs(QL.events.GOSSIP_SHOW) do fn("GOSSIP_SHOW") end
+Eq(qc.shown, false, "no card for an NPC without quests")
+-- the quest greeting (the quest window's own list)
+GetNumAvailableQuests = function() return 1 end
+GetAvailableTitle = function() return "Rumours" end
+GetAvailableQuestInfo = function() return false, 0, false, false, 5 end
+GetNumActiveQuests = function() return 0 end
+local greetPick
+SelectAvailableQuest = function(i) greetPick = i end
+for _, fn in ipairs(QL.events.QUEST_GREETING) do fn("QUEST_GREETING") end
+Eq(qc.mode, "list", "the greeting as a list too")
+Eq(qc.rows[2].questId, 5, "quest id from the greeting")
+qc.rows[2].scripts.OnClick(qc.rows[2])
+Eq(greetPick, 1, "picks by index")
+for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
+GetNumAvailableQuests, GetAvailableTitle, GetAvailableQuestInfo, GetNumActiveQuests, SelectAvailableQuest = nil, nil, nil, nil, nil
+C_GossipInfo = nil
+
+-- Handing in: progress ---------------------------------------------------------------------------
+local handed = {}
+GetNumQuestItems = function() return 1 end
+local realInfo = GetQuestItemInfo
+GetQuestItemInfo = function(kind, i) if kind == "required" then return "Boar Rib", 134400, 5, 1 end return realInfo(kind, i) end
+GetProgressText = function() return "Did you bring the ribs?" end
+local canComplete = false
+IsQuestCompletable = function() return canComplete end
+CompleteQuest = function() handed[#handed + 1] = "complete" end
+function GetQuestID() return 3 end
+for _, fn in ipairs(QL.events.QUEST_PROGRESS) do fn("QUEST_PROGRESS") end
+Eq(qc.mode, "progress", "the progress page")
+Check(qc.kicker.text:find("QUEST IN PROGRESS", 1, true), "kicker: " .. qc.kicker.text)
+Eq(qc.sections.tasks.head.text, "OBJECTIVES", "live objectives")
+Check(qc.sections.tasks.body.text:find("Bob questioned", 1, true), "the quest's objectives: " .. qc.sections.tasks.body.text)
+Eq(qc.sections.rewards.head.text, "TO HAND IN", "what to hand in")
+Eq(qc.tiles[1].kind, "required", "the item to hand in")
+Check(qc.sections.talk.body.text:find("Did you bring the ribs?", 1, true), "what the NPC says")
+Eq(qc.accept.label.text, "Continue", "Continue")
+Eq(qc.accept.ready, false, "not while it cannot be completed")
+qc.accept.scripts.OnClick(qc.accept)
+Eq(#handed, 0, "nothing handed in")
+canComplete = true
+for _, fn in ipairs(QL.events.QUEST_PROGRESS) do fn("QUEST_PROGRESS") end
+qc.accept.scripts.OnClick(qc.accept)
+Eq(handed[1], "complete", "Continue calls CompleteQuest")
+
+-- Handing in: the reward screen -------------------------------------------------------------------
+GetRewardText = function() return "Well done." end
+GetRewardXP = function() return 420 end
+local rewardPick
+GetQuestReward = function(i) rewardPick = i end
+for _, fn in ipairs(QL.events.QUEST_COMPLETE) do fn("QUEST_COMPLETE") end
+Eq(qc.mode, "complete", "the reward page")
+Check(qc.xp.text:find("420", 1, true), "the XP the game gives: " .. qc.xp.text)
+Check(qc.sections.rewards.body.text:find("Click the reward you want (2 to choose from)", 1, true), "asks to pick: " .. qc.sections.rewards.body.text)
+Eq(qc.accept.label.text, "Complete quest", "Complete quest")
+Eq(qc.accept.ready, false, "not before a reward is picked")
+qc.accept.scripts.OnClick(qc.accept)
+Eq(rewardPick, nil, "nothing handed in without a choice")
+local choiceTile
+for _, t in ipairs(qc.tiles) do if t.shown and t.kind == "choice" and t.index == 2 then choiceTile = t end end
+choiceTile.scripts.OnClick(choiceTile)
+Eq(qc.choice, 2, "the second choice picked")
+Eq(choiceTile.glow.shown, true, "and lit")
+Eq(qc.accept.ready, true, "now it can be handed in")
+qc.accept.scripts.OnClick(qc.accept)
+Eq(rewardPick, 2, "GetQuestReward with the choice")
+Eq(qc.shown, false, "the card closes")
+GetNumQuestItems, GetProgressText, IsQuestCompletable, CompleteQuest, GetRewardText, GetRewardXP, GetQuestReward = nil, nil, nil, nil, nil, nil, nil
+GetQuestItemInfo = realInfo
+function GetQuestID() return 6 end
+
 -- off in the settings
 QL.Set("questCard", false)
 function GetQuestID() return 6 end
@@ -731,7 +860,7 @@ Eq(QL.DB().optionsPage, "tracking", "Quest tracking page chosen")
 Eq(QuestLineageOption7:GetParent().shown, true, "its page shows (the quest card setting)")
 Eq(QuestLineageOption1:GetParent().shown, false, "the General page is hidden")
 Eq(QuestLineageOptionsPage2.active, true, "its menu entry is lit")
-Eq(QuestLineageOption7.note.text, "QuestLineage's own page: XP, objectives, rewards, the chain, Accept and Decline.", "every setting says what it does")
+Eq(QuestLineageOption7.note.text, "QuestLineage's own window for quests: the NPC's quest list, offers with Accept and Decline, hand-ins with rewards.", "every setting says what it does")
 -- a setting that depends on another is dimmed while that one is off
 QL.Set("questCard", false)
 Eq(QuestLineageOption8.enabled, false, "hiding the game's window needs the card")
@@ -746,7 +875,7 @@ QL.Set("nameplates", true)
 -- Turkish labels
 QL.Set("lang", "tr")
 Eq(QuestLineageOptionsPage2.label.text, "Görev takibi", "menu in Turkish")
-Eq(QuestLineageOption7.note.text, "QuestLineage'ın kendi sayfası: XP, hedefler, ödüller, zincir, Kabul et ve Reddet.", "descriptions in Turkish")
+Eq(QuestLineageOption7.note.text, "QuestLineage'ın görev penceresi: NPC'nin görev listesi, Kabul et / Reddet ile görev alma, ödüllerle görev teslimi.", "descriptions in Turkish")
 QL.Set("lang", "en")
 QuestLineageOptionsPage1.scripts.OnClick(QuestLineageOptionsPage1)
 -- leaving the page hides the preview when no quest is set
@@ -909,6 +1038,7 @@ Eq(#QL.errors, 0, "quick bar without errors: " .. table.concat(QL.errors, " | ")
 -- Notifications instead of chat lines -------------------------------------------------------------
 local chat = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, m) chat[#chat + 1] = m end }
+QL.ClearToasts() -- earlier tests may have left cards
 QL.Print("Route complete.", "success")
 local stack = QuestLineageToasts
 Check(stack, "notification stack built")
