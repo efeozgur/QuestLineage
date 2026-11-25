@@ -4,7 +4,7 @@
 ## Notes-trTR: World of Warcraft: Forever için görev zinciri ağaçları (QuestieDB verisiyle).
 ## Author: Özgür
 ## Version: 0.1.0
-## IconTexture: InterfaceAddOnsQuestLineageMediaicon
+## IconTexture: Interface\AddOns\QuestLineage\Media\icon
 ## X-License: MIT
 ## Dependencies: QuestieDB
 ## OptionalDeps: WoWTR
