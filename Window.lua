@@ -64,7 +64,7 @@ local function newRow(list, height)
 	r.chip = T.Text(r, 11, C.muted)
 	r.chip:SetPoint("TOPRIGHT", -16, -12)
 	r.chip:SetJustifyH("RIGHT")
-	r.dist = T.Text(r, 11, C.muted)
+	r.dist = T.Text(r, 13, C.text)
 	r.dist:SetPoint("TOPRIGHT", r.chip, "BOTTOMRIGHT", 0, -5)
 	r.dist:SetJustifyH("RIGHT")
 	r:SetScript("OnEnter", function(self)
@@ -167,11 +167,13 @@ local function renderZone()
 	for i, row in ipairs(rows) do
 		local r = listRow(list, i, ZONE_ROW_H)
 		r.arrowOnClick = true -- a chain row points the arrow at the quest it opens
-		r.dist:SetText("")
-		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
+		r.sub:SetPoint("RIGHT", r, "RIGHT", -86, 0)
 		local e, p = row.entry, row.progress
 		r.questId = e.head
 		r.openId = p.focus
+		-- the distance to the quest the row opens, unless the chain is done or nothing is open
+		r.distId = (p.state ~= "done" and QL.HasPlace and QL.HasPlace(QL.NodeStatus(p.focus, ctx))) and p.focus or nil
+		r.dist:SetText(r.distId and QL.DistanceMarkup(r.distId, ctx) or "")
 		r.title:SetText(QL.QuestTitle(e.head))
 		local levels = ""
 		if e.minLevel then
@@ -247,7 +249,8 @@ local function renderQuests()
 		r.questId, r.openId = q.id, q.id
 		r.arrowOnClick = true
 		r.sub:SetPoint("RIGHT", r, "RIGHT", -86, 0)
-		r.dist:SetText(QL.DistanceText and QL.DistanceText(q.id, ctx) or "")
+		r.distId = q.id
+		r.dist:SetText(QL.DistanceMarkup and QL.DistanceMarkup(q.id, ctx) or "")
 		r.title:SetText(QL.QuestTitle(q.id))
 		r.title:SetTextColor(unpack(C.text))
 		local s = T.STATUS[q.status] or T.STATUS.available
@@ -302,6 +305,7 @@ local function renderSearch()
 	for i, id in ipairs(ids) do
 		local r = listRow(list, i, SEARCH_ROW_H)
 		r.arrowOnClick = true
+		r.distId = nil
 		r.dist:SetText("")
 		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
 		r.questId, r.openId = id, id
@@ -734,15 +738,18 @@ end
 function QL.RefreshDistances()
 	if not win or not win:IsShown() or not QL.DistanceText then return end
 	local ctx = QL.Context()
-	if (QL.DB().page or "quests") == "quests" then
-		for _, r in ipairs(win.questsPage.list.rows) do
-			if r:IsShown() and r.arrowOnClick and r.questId then
-				r.dist:SetText(QL.DistanceText(r.questId, ctx) or "")
+	for _, page in ipairs({ win.questsPage, win.zonePage }) do
+		if page:IsShown() then
+			for _, r in ipairs(page.list.rows) do
+				if r:IsShown() and r.distId then
+					r.dist:SetText(QL.DistanceMarkup(r.distId, ctx) or "")
+				end
 			end
 		end
 	end
+	if win.tree and win.tree.RefreshDistances then win.tree:RefreshDistances(ctx) end
 	if focusId and win.inspector and win.inspector.hero.dist then
-		win.inspector.hero.dist:SetText(QL.DistanceText(focusId, ctx) or "")
+		win.inspector.hero.dist:SetText(QL.DistanceMarkup(focusId, ctx, 13) or "")
 	end
 end
 

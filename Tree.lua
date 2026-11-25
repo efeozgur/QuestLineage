@@ -11,7 +11,7 @@
 
 local _, QL = ...
 
-local CARD_W, CARD_H = 188, 56
+local CARD_W, CARD_H = 188, 66
 local GAP_X, GAP_Y, PAD = 20, 50, 28
 local UNFOLD_STEP, UNFOLD_TIME = 0.09, 0.24
 
@@ -214,12 +214,14 @@ function Tree:Card()
 	n.dot = n:CreateTexture(nil, "ARTWORK")
 	n.dot:SetTexture(T.WHITE)
 	n.dot:SetSize(6, 6)
-	n.dot:SetPoint("BOTTOMLEFT", 14, 13)
+	n.dot:SetPoint("TOPLEFT", 14, -31)
 	n.status = T.Text(n, 11, C.muted)
 	n.status:SetPoint("LEFT", n.dot, "RIGHT", 6, 0)
 	n.level = T.Text(n, 11, C.dim)
-	n.level:SetPoint("BOTTOMRIGHT", -10, 10)
+	n.level:SetPoint("BOTTOMRIGHT", -10, 9)
 	n.level:SetJustifyH("RIGHT")
+	n.dist = T.Text(n, 12, C.text)
+	n.dist:SetPoint("BOTTOMLEFT", 14, 9)
 	n.warn = CreateFrame("Frame", nil, n)
 	n.warn:SetSize(16, 16)
 	n.warn:SetPoint("TOPRIGHT", -6, -6)
@@ -250,6 +252,15 @@ function Tree:Card()
 	end)
 	self.cards[self.usedCards] = n
 	return n
+end
+
+-- Re-measure the cards' distances (the window calls this every second).
+function Tree:RefreshDistances(ctx)
+	if not QL.DistanceMarkup then return end
+	for i = 1, self.usedCards do
+		local card = self.cards[i]
+		if card.distId then card.dist:SetText(QL.DistanceMarkup(card.distId, ctx) or "") end
+	end
 end
 
 -- Unfolding: every card and line of generation g fades in UNFOLD_STEP * (g - 1) after the first.
@@ -307,6 +318,9 @@ function Tree:Draw(chain, focusId, animate, minW, minH)
 		elseif xp then lv = QL.XPText(xp) .. "  " .. lv end
 		card.level:SetText(lv)
 		card.warn:SetShown(#node.closes > 0)
+		-- how far: only for quests with somewhere to go now
+		card.distId = QL.HasPlace and QL.HasPlace(node.status) and id or nil
+		card.dist:SetText(card.distId and QL.DistanceMarkup and QL.DistanceMarkup(id, ctx) or "")
 		if card.focused then fx, fy = x, -y end
 	end
 	if animate then self:Unfold() end

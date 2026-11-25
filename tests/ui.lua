@@ -377,7 +377,22 @@ Eq(QL.ArrowQuest(), 5, "the arrow follows the clicked quest")
 -- distances: Rumours has no place in the fixture; The Gathering's giver is 191 yards away
 Eq(qrow.dist.text, "", "no distance without a place")
 QL.SetArrowTarget(3); QL.Open(3)
-Eq(f.inspector.hero.dist.text, "191 yd", "distance in the detail panel")
+Check(f.inspector.hero.dist.text:find("191 yd", 1, true), "distance in the detail panel: " .. f.inspector.hero.dist.text)
+Check(f.inspector.hero.dist.text:find("|T", 1, true), "with the arrow mark")
+-- the chain's cards: The Gathering is locked (no place), Rumours has none in the fixture
+for i = 1, f.tree.usedCards do
+	local card = f.tree.cards[i]
+	if card.questId == 3 then Eq(card.dist.text, "", "a locked quest has no distance") end
+end
+-- the Chains list: the open chain's row measures the quest it opens (2, in the log)
+QL.ShowPage("zone")
+local chainRow
+for _, r in ipairs(f.zonePage.list.rows) do if r.shown and r.openId == 2 then chainRow = r end end
+Check(chainRow, "open chain row")
+Eq(chainRow.distId, 2, "the chain row measures the quest it opens")
+QL.RefreshDistances()
+Eq(#QL.errors, 0, "distances refresh: " .. table.concat(QL.errors, " | "))
+QL.ShowPage("quests")
 QL.SetArrowTarget(5)
 local arrow = QuestLineageArrow
 Check(arrow and arrow.shown, "arrow shown")

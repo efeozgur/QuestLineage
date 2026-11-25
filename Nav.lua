@@ -238,6 +238,26 @@ function QL.DistanceText(id, ctx)
 	return other
 end
 
+-- Distance with a small arrow mark in front, coloured by how near it is: within 100 yards the
+-- accent, farther the text colour, on another map muted.
+--   QL.DistanceMarkup(id, ctx, iconSize) -> "|T...|t 191 yd" | nil
+local NEAR = 100
+function QL.DistanceMarkup(id, ctx, iconSize)
+	local text = QL.DistanceText(id, ctx)
+	if not text then return nil end
+	local T = QL.Theme
+	local d = QL.QuestDistance(id, ctx)
+	local c = (not d and T.C.muted) or (d < NEAR and T.C.accent) or T.C.text
+	local size = iconSize or 11
+	local icon = ("|TInterface\\AddOns\\QuestLineage\\Media\\arrow:%d:%d:0:0:128:128:0:128:0:128:%d:%d:%d|t"):format(
+		size, size, math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255))
+	return icon .. " " .. T.Hex(c) .. text .. "|r"
+end
+
+-- Statuses with somewhere to go: a quest you can take, are on, or can hand in.
+local GOES = { available = true, active = true, ready = true }
+function QL.HasPlace(status) return GOES[status] or false end
+
 function QL.MapName(map)
 	if not (C_Map and C_Map.GetMapInfo) then return nil end
 	local ok, info = pcall(C_Map.GetMapInfo, map)
