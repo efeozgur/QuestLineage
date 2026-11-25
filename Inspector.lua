@@ -378,7 +378,22 @@ local function placeText(kind, id)
 	return zone
 end
 
-local function personRow(self, who, fallbackTitle)
+-- Point the arrow at an NPC, object or item drop spots for this quest ("Start: Bob", ...).
+local function pointAt(kind, id, name, role, questId)
+	if QL.SetArrowPlace then
+		QL.SetArrowPlace(kind, id, { title = name, label = role .. ": " .. QL.QuestTitle(questId), questId = questId })
+	end
+end
+
+local function placeTip(name, sub)
+	return function(tip)
+		tip:AddLine(name or "?", 1, 1, 1)
+		if sub then tip:AddLine(sub, 0.7, 0.7, 0.7, true) end
+		tip:AddLine(L("Click: point the arrow here"), 0.24, 0.84, 0.78)
+	end
+end
+
+local function personRow(self, who, fallbackTitle, questId, role)
 	if not who then return end
 	local o = { name = who.name, sub = fallbackTitle }
 	if who.kind == "npc" then
@@ -391,6 +406,10 @@ local function personRow(self, who, fallbackTitle)
 	else
 		o.icon = QL.ItemIcon(who.id) or QUESTION
 		o.sub = L("Starts from an item")
+	end
+	if questId then
+		o.click = function() pointAt(who.kind, who.id, who.name, role, questId) end
+		o.tip = placeTip(who.name, o.sub)
 	end
 	self:Row(o)
 end
@@ -405,7 +424,11 @@ local function chainRows(self, ids, ctx)
 			dot = s,
 			right = level and L("Lv %d"):format(level) or nil,
 			rightColor = QL.Theme.C.muted,
-			click = function() QL.Open(id) end,
+			click = function()
+				-- a linked quest: open it and point the arrow at it (unless a route is running)
+				if QL.SetArrowTarget and not (QL.RouteActive and QL.RouteActive()) then pcall(QL.SetArrowTarget, id) end
+				QL.Open(id)
+			end,
 			tip = function(tip) QL.FillQuestTooltip(tip, id, ctx) end,
 		})
 	end
@@ -490,6 +513,11 @@ function Inspector:Show(id, chain)
 				if t then
 					row.npc = t.npc
 					row.icon = (t.kind == "item" and QL.ItemIcon(t.id)) or ICON[t.kind] or QUESTION
+					if not o.done and t.kind ~= "rep" then
+						local kind, tid = t.kind, t.id
+						row.click = function() pointAt(kind, tid, t.name or o.text, L("Tasks"), id) end
+						row.tip = placeTip(t.name or o.text, o.text)
+					end
 				end
 				self:Row(row)
 			end
@@ -501,9 +529,12 @@ function Inspector:Show(id, chain)
 				elseif t.kind == "item" then sub = L("Collect")
 				elseif t.kind == "object" then sub = L("Use")
 				elseif t.kind == "rep" then sub = L("Reputation") end
+				local kind, tid = t.kind, t.id
 				self:Row({
 					name = name, sub = sub, npc = t.npc,
 					icon = (t.kind == "item" and QL.ItemIcon(t.id)) or ICON[t.kind] or QUESTION,
+					click = kind ~= "rep" and function() pointAt(kind, tid, t.name or name, sub or L("Tasks"), id) end or nil,
+					tip = kind ~= "rep" and placeTip(t.name or name, sub) or nil,
 				})
 			end
 		end
@@ -513,11 +544,11 @@ function Inspector:Show(id, chain)
 	local finisher = QL.QuestFinisher(id)
 	if starter then
 		self:Heading(L("Start"))
-		personRow(self, starter)
+		personRow(self, starter, nil, id, L("Start"))
 	end
 	if finisher then
 		self:Heading(L("Turn in"))
-		personRow(self, finisher)
+		personRow(self, finisher, nil, id, L("Turn in"))
 	end
 
 	-- rewards

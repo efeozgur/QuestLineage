@@ -186,6 +186,7 @@ local TR = {
 	["Route"] = "Rota",
 	-- dungeons and difficulty
 	["Dungeon"] = "Zindan",
+	["Click: point the arrow here"] = "Tık: oku buraya çevir",
 	["Route on the world map"] = "Rota dünya haritasında",
 	["Click: open in QuestLineage"] = "Tık: QuestLineage'da aç",
 	["about %s in all"] = "toplam yaklaşık %s",

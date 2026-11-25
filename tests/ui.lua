@@ -565,6 +565,35 @@ QL.ClearArrow()
 QL.ClearRouteSelection()
 Eq(#QL.errors, 0, "route flow without errors: " .. table.concat(QL.errors, " | "))
 
+-- Detail panel: the giver and turn-in rows point the arrow at that NPC ----------------------------
+QL.Set("lang", "en")
+QL.Open(3)
+local function insRow(text)
+	for _, r in ipairs(f.inspector.pools.row) do if r.shown and r.name.text == text then return r end end
+end
+local bobRow = insRow("Bob")
+Check(bobRow and bobRow.click, "the giver's row is clickable")
+bobRow.scripts.OnClick(bobRow)
+Eq(QL.ArrowQuest(), nil, "pointing at a place, not a quest stage")
+Eq(QL.ArrowTarget().kind, "place", "a place target")
+Eq(#QL.ArrowTarget().points, 1, "Bob's spawn")
+QL.UpdateArrow()
+Eq(arrow.title.text, "Bob", "the arrow names the NPC")
+Check(arrow.label.text:find("Start: The Gathering", 1, true), "and why: " .. arrow.label.text)
+local aliceRow = insRow("Alice")
+aliceRow.scripts.OnClick(aliceRow)
+Eq(#QL.ArrowTarget().points, 2, "the turn-in NPC's spawns")
+-- the map draws a place target too
+QL.Open(3)
+local stopsNow = QL.MapRouteStops()
+Eq(stopsNow[1].title, "Alice", "the map shows the place")
+-- a linked quest row opens it and points the arrow at it
+local linked = insRow("Left Path")
+linked.scripts.OnClick(linked)
+Eq(QL.ArrowQuest(), 6, "a linked quest points the arrow")
+QL.ClearArrow()
+QL.Open(3)
+
 -- World map: the arrow's quest drawn on it -------------------------------------------------------
 QL.SetArrowTarget(3)
 WorldMapFrame.shown = true

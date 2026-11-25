@@ -51,6 +51,24 @@ local function addSpawns(points, kind, id)
 	end
 end
 
+-- Where an NPC or object stands, or (an item) where it drops: { {map, x, y}, ... }
+function QL.SpawnPoints(kind, id)
+	local points = {}
+	if kind == "npc" or kind == "object" then
+		addSpawns(points, kind, id)
+	elseif kind == "item" then
+		for n, npc in ipairs(QL.Ids(QL.I(id, "npcDrops"))) do
+			if n > 5 then break end
+			addSpawns(points, "npc", npc)
+		end
+		for n, obj in ipairs(QL.Ids(QL.I(id, "objectDrops"))) do
+			if n > 5 then break end
+			addSpawns(points, "object", obj)
+		end
+	end
+	return points
+end
+
 local function personPoints(field, id)
 	local by = QL.Q(id, field)
 	local points = {}

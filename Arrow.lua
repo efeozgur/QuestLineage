@@ -5,6 +5,8 @@
 --   QL.SetArrowTarget(questId)   point at a quest (kept per character across reloads)
 --   QL.ClearArrow()
 --   QL.ArrowQuest() -> questId | nil
+--   QL.SetArrowPlace(kind, id, { title, label, questId })   point at an NPC, object or an item's
+--       drop spots instead of a quest's current stage (a fixed target: it does not follow the quest)
 --
 -- Colour (setting arrowColorMode): by direction (the accent when you face it, amber to the side,
 -- red behind; the default), the theme's accent, or a colour of your own (arrowColor).
@@ -126,7 +128,12 @@ local function build()
 	f:SetScript("OnEnter", function(self)
 		local tip = QL.Tip()
 		tip:SetOwner(self, "ANCHOR_BOTTOM")
-		if questId then QL.FillQuestTooltip(tip, questId) end
+		if questId then
+			QL.FillQuestTooltip(tip, questId)
+		elseif target and target.title then
+			tip:AddLine(target.title, 1, 1, 1)
+			if target.label then tip:AddLine(target.label, 0.7, 0.7, 0.7, true) end
+		end
 		tip:AddLine(L("Drag: move · Right-click: stop"), 0.6, 0.6, 0.6)
 		tip:Show()
 	end)
@@ -169,7 +176,7 @@ function QL.UpdateArrow()
 		return
 	end
 	local loc = QL.Locate(target)
-	frame.title:SetText(QL.QuestTitle(questId))
+	frame.title:SetText(target.title or QL.QuestTitle(questId))
 	local ri = QL.RouteInfo and QL.RouteInfo()
 	if ri and ri.next == questId then
 		frame.label:SetText(QL.Theme.Hex(QL.Theme.C.accent) .. L("Route %d/%d"):format(ri.index, ri.total) .. "|r  ·  " .. (target.label or ""))
@@ -276,6 +283,27 @@ function QL.ArrowDebug(arg)
 	if not loc then QL.Print("locate: nil")
 	elseif loc.otherMap then QL.Print("locate: other map " .. tostring(loc.otherMap.map))
 	else QL.Print(("locate: %.0f yd (dx %.0f, dy %.0f)"):format(loc.dist, loc.dx, loc.dy)) end
+end
+
+function QL.SetArrowPlace(kind, id, opts)
+	opts = opts or {}
+	if not frame and CreateFrame then
+		local ok, err = pcall(build)
+		if not ok then QL.Debug("arrow build: " .. tostring(err)); return end
+	end
+	questId = nil
+	target = {
+		kind = "place", fixed = true, points = QL.SpawnPoints(kind, id),
+		title = opts.title, label = opts.label, questId = opts.questId,
+	}
+	saved()[charKey()] = nil
+	if frame then
+		frame:Show()
+		pcall(QL.UpdateArrow)
+	end
+	QL.Print(L("Arrow: ") .. (opts.title or "?") .. (opts.label and ("  ·  " .. opts.label) or ""))
+	if #target.points == 0 then QL.Print(L("No location data")) end
+	QL.Fire("ARROW_CHANGED", "place")
 end
 
 function QL.ClearArrow()

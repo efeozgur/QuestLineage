@@ -39,10 +39,10 @@ function QL.MapRouteStops()
 		return stops, info
 	end
 	local q = QL.ArrowQuest and QL.ArrowQuest()
-	local target = q and QL.ArrowTarget and QL.ArrowTarget()
+	local target = QL.ArrowTarget and QL.ArrowTarget()
 	if target then
 		local loc = QL.Locate(target)
-		if loc and loc.point then stops[1] = { id = q, spot = loc.point, n = 1 } end
+		if loc and loc.point then stops[1] = { id = q or target.questId, title = target.title, spot = loc.point, n = 1 } end
 	end
 	return stops, nil
 end
@@ -58,7 +58,7 @@ function QL.MapRoutePoints(mapID, w, h)
 	end
 	for _, s in ipairs(stops) do
 		local x, y = QL.ProjectToMap(s.spot.map, s.spot.x, s.spot.y, mapID)
-		if x then out.stops[#out.stops + 1] = { x * w, -y * h, id = s.id, n = s.n } end
+		if x then out.stops[#out.stops + 1] = { x * w, -y * h, id = s.id, n = s.n, title = s.title } end
 	end
 	return out
 end
@@ -148,7 +148,8 @@ local function badge()
 		b:SetScript("OnEnter", function(self)
 			local tip = QL.Tip()
 			tip:SetOwner(self, "ANCHOR_RIGHT")
-			QL.FillQuestTooltip(tip, self.questId)
+			if self.title then tip:AddLine(self.title, 1, 1, 1) end
+			if self.questId then QL.FillQuestTooltip(tip, self.questId) end
 			tip:AddLine(L("Click: open in QuestLineage"), 0.5, 0.5, 0.5)
 			tip:Show()
 		end)
@@ -208,6 +209,7 @@ function QL.RefreshMapRoute()
 		b:SetFrameLevel(overlay:GetFrameLevel() + 20 - math.min(k, 19))
 		place(b, s[1], s[2])
 		b.questId = s.id
+		b.title = s.title
 		b.num:SetText(tostring(s.n))
 		local c = k == 1 and C.accent or C.accent2
 		b.ring:SetVertexColor(c[1], c[2], c[3], 1)
@@ -239,9 +241,9 @@ function QL.RefreshMapRoute()
 		text = QL.Theme.Hex(C.accent) .. "QuestLineage|r  ·  " .. L("Route %d/%d"):format(info.index, info.total) .. "  ·  " .. QL.QuestTitle(info.next)
 		if info.length and info.length > 0 then text = text .. "  ·  " .. L("about %s in all"):format(QL.DistanceTextYards(info.length)) end
 	elseif first then
-		text = QL.Theme.Hex(C.accent) .. "QuestLineage|r  ·  " .. QL.QuestTitle(first.id)
+		text = QL.Theme.Hex(C.accent) .. "QuestLineage|r  ·  " .. (first.title or QL.QuestTitle(first.id))
 	end
-	local d = first and QL.DistanceText and QL.DistanceText(first.id)
+	local d = first and not first.title and QL.DistanceText and QL.DistanceText(first.id)
 	if d and text then text = text .. "  ·  " .. d end
 	if caption and text then
 		caption:SetText(text)
