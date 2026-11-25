@@ -170,7 +170,12 @@ function QL.UpdateArrow()
 	end
 	local loc = QL.Locate(target)
 	frame.title:SetText(QL.QuestTitle(questId))
-	frame.label:SetText(target.label or "")
+	local ri = QL.RouteInfo and QL.RouteInfo()
+	if ri and ri.next == questId then
+		frame.label:SetText(QL.Theme.Hex(QL.Theme.C.accent) .. L("Route %d/%d"):format(ri.index, ri.total) .. "|r  ·  " .. (target.label or ""))
+	else
+		frame.label:SetText(target.label or "")
+	end
 	if not loc then
 		setRotation(0)
 		frame.arrow:SetVertexColor(0.5, 0.5, 0.5, 0.5)

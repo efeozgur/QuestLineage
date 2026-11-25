@@ -182,6 +182,21 @@ local TR = {
 	-- class page
 	["Class"] = "Sınıf",
 	["Turkish needs WoWTR"] = "Türkçe için WoWTR gerekir",
+	-- route
+	["Route"] = "Rota",
+	["Route %d/%d"] = "Rota %d/%d",
+	["Add to the route"] = "Rotaya ekle",
+	["Build route"] = "Rota oluştur",
+	["Stop route"] = "Rotayı durdur",
+	["Clear"] = "Temizle",
+	["%d quests ticked"] = "%d görev seçildi",
+	["Tick quests on the left to visit them nearest first."] = "Rotaya katmak istediğin görevleri işaretle; en yakından başlayarak sıralanır.",
+	["Ordered by distance, nearest first, from where you stand."] = "Bulunduğun yerden başlayarak, en yakın önce sıralanır.",
+	["The arrow leads stop by stop; the order is planned again as quests move on."] = "Ok durak durak götürür; görevler ilerledikçe sıra yeniden planlanır.",
+	["Route complete."] = "Rota tamamlandı.",
+	["Route, next: "] = "Rota, sıradaki: ",
+	["Route: %d stops · about %s"] = "Rota: %d durak · yaklaşık %s",
+	["Route stopped: you pointed the arrow elsewhere."] = "Rota durdu: oku başka bir yere çevirdin.",
 	["No class quests found for your class."] = "Sınıfın için sınıf görevi bulunamadı.",
 	["%d quests · %d open · %d to do now"] = "%d görev · %d açık · %d şimdi yapılabilir",
 }

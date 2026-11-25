@@ -125,7 +125,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -512,6 +512,49 @@ Eq(arrow.shown, false, "preview gone with the page")
 -- back to the defaults
 QuestLineageArrowMode1.scripts.OnClick(QuestLineageArrowMode1)
 Eq(QL.DB().arrowColorMode, "direction", "by direction again")
+
+-- Route: tick quests, build, follow ------------------------------------------------------------
+QL.Set("lang", "en")
+QL.ClearArrow()
+QL.ShowPage("quests")
+local qp2 = f.questsPage
+local function rowFor(id)
+	for _, r in ipairs(qp2.list.rows) do if r.shown and r.questId == id then return r end end
+end
+Eq(rowFor(5).check.shown, true, "tick boxes on the Quests page")
+Eq(qp2.foot.go.label.text, "Build route", "footer button")
+rowFor(5).check.scripts.OnClick(rowFor(5).check)
+rowFor(2).check.scripts.OnClick(rowFor(2).check)
+QL.RenderWindow(false)
+Check(qp2.foot.text.text:find("2 quests ticked", 1, true), "footer counts the ticks: " .. qp2.foot.text.text)
+qp2.foot.go.scripts.OnClick(qp2.foot.go)
+Eq(QL.RouteActive(), true, "route running")
+Eq(QL.ArrowQuest(), 5, "the arrow at the first stop")
+Check(qp2.foot.text.text:find("Route 1/2", 1, true), "footer shows the stop: " .. qp2.foot.text.text)
+Eq(qp2.foot.go.label.text, "Stop route", "stop button")
+Eq(rowFor(5).check.num.text, "1", "stop numbers on the rows")
+Eq(rowFor(2).check.num.text, "2", "second stop")
+QL.UpdateArrow()
+Check(arrow.label.text:find("Route 1/2", 1, true), "the arrow says where in the route: " .. arrow.label.text)
+-- a list click while routing opens the quest but keeps the route's arrow
+rowFor(2).scripts.OnClick(rowFor(2))
+Eq(QL.ArrowQuest(), 5, "route keeps the arrow")
+Eq(QL.RouteActive(), true, "still routing")
+-- the first stop handed in: on to the next
+for _, fn in ipairs(QL.events.QUEST_TURNED_IN) do fn("QUEST_TURNED_IN", 5) end
+Eq(QL.ArrowQuest(), 2, "on to the next stop")
+Eq(QL.RouteInfo().index, 2, "stop 2 of 2")
+-- the last one: the route ends
+for _, fn in ipairs(QL.events.QUEST_TURNED_IN) do fn("QUEST_TURNED_IN", 2) end
+Eq(QL.RouteActive(), false, "route complete")
+Eq(QL.ArrowQuest(), nil, "arrow stopped")
+-- pointing the arrow by hand ends a route
+QL.StartRoute({ 5, 2 }, true)
+QL.SetArrowTarget(3)
+Eq(QL.RouteActive(), false, "a hand-picked arrow ends the route")
+QL.ClearArrow()
+QL.ClearRouteSelection()
+Eq(#QL.errors, 0, "route flow without errors: " .. table.concat(QL.errors, " | "))
 
 -- Minimap button -------------------------------------------------------------------------------
 local mb = QuestLineageMinimapButton

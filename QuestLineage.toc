@@ -22,6 +22,7 @@ Tree.lua
 Inspector.lua
 Window.lua
 Arrow.lua
+Route.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua

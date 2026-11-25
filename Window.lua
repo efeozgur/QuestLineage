@@ -69,6 +69,28 @@ local function newRow(list, height)
 	r.dist = T.Text(r, 13, C.text)
 	r.dist:SetPoint("TOPRIGHT", r.chip, "BOTTOMRIGHT", 0, -5)
 	r.dist:SetJustifyH("RIGHT")
+	-- route tick box: filled when picked; shows the stop number while a route runs
+	local ck = CreateFrame("Button", nil, r)
+	ck:SetSize(18, 18)
+	ck:SetPoint("TOPLEFT", 12, -10)
+	ck.fill = T.Fill(ck, C.canvas)
+	T.Border(ck, C.line)
+	ck.num = T.Text(ck, 10, C.bg, nil, true)
+	ck.num:SetPoint("CENTER", 0, 0)
+	ck.num:SetJustifyH("CENTER")
+	ck:SetScript("OnClick", function(self)
+		local id = r.questId
+		if id then QL.RouteSelect(id, not QL.RouteSelected(id)) end
+	end)
+	ck:SetScript("OnEnter", function(self)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_RIGHT")
+		tip:AddLine(L("Add to the route"), 1, 1, 1)
+		tip:Show()
+	end)
+	ck:SetScript("OnLeave", function() QL.Tip():Hide() end)
+	ck:Hide()
+	r.check = ck
 	r:SetScript("OnEnter", function(self)
 		if not self.selected then T.Color(self.bg, C.rowHover) end
 		if self.questId then
@@ -85,7 +107,7 @@ local function newRow(list, height)
 	r:SetScript("OnClick", function(self)
 		if not self.openId then return end
 		-- the Quests list also points the arrow at the quest
-		if self.arrowOnClick then
+		if self.arrowOnClick and not (QL.RouteActive and QL.RouteActive()) then
 			if QL.SetArrowTarget then
 				local ok, err = pcall(QL.SetArrowTarget, self.openId)
 				if not ok then QL.Debug("arrow: " .. tostring(err)); QL.Print(L("The arrow could not be built: /ql errors")) end
@@ -127,6 +149,10 @@ end
 -- rows = { { entry = QL.GroupChains entry, progress = QL.ChainProgress }, ... }
 local function fillChainRows(list, rows, ctx)
 	local T, C = QL.Theme, QL.Theme.C
+	for _, r in ipairs(list.rows) do
+		r.check:Hide()
+		r.title:SetPoint("TOPLEFT", 18, -11)
+	end
 	for i, row in ipairs(rows) do
 		local r = listRow(list, i, ZONE_ROW_H)
 		r.arrowOnClick = true -- a chain row points the arrow at the quest it opens
@@ -316,6 +342,13 @@ local function renderQuests()
 		local r = listRow(list, i, QUEST_ROW_H)
 		r.questId, r.openId = q.id, q.id
 		r.arrowOnClick = true
+		r.check:Show()
+		r.title:SetPoint("TOPLEFT", 40, -11)
+		local picked = QL.RouteSelected(q.id)
+		local stop = QL.RouteStop and QL.RouteStop(q.id)
+		T.Color(r.check.fill, (stop or picked) and C.accent or C.canvas)
+		T.Border(r.check, (stop or picked) and C.accent or C.line)
+		r.check.num:SetText(stop and tostring(stop) or "")
 		r.sub:SetPoint("RIGHT", r, "RIGHT", -86, 0)
 		r.distId = q.id
 		r.dist:SetText(QL.DistanceMarkup and QL.DistanceMarkup(q.id, ctx) or "")
@@ -341,6 +374,32 @@ local function renderQuests()
 	end
 	hideRows(list, #quests + 1)
 	list:SetContentHeight(#quests * QUEST_ROW_H + 8)
+
+	-- route footer
+	local foot = page.foot
+	local info = QL.RouteInfo and QL.RouteInfo()
+	if info then
+		foot.text:SetText(T.Hex(C.accent) .. L("Route %d/%d"):format(info.index, info.total) .. "|r  ·  " .. QL.QuestTitle(info.next))
+		local d = QL.DistanceText and QL.DistanceText(info.next, ctx)
+		foot.sub:SetText(L("The arrow leads stop by stop; the order is planned again as quests move on.") .. (d and ("  " .. d) or ""))
+		foot.go:SetLabel(L("Stop route"))
+		foot.go:SetActive(false)
+		foot.clear:Hide()
+	else
+		local n = #QL.RouteSelection()
+		if n == 0 then
+			foot.text:SetText(L("Route"))
+			foot.sub:SetText(L("Tick quests on the left to visit them nearest first."))
+		else
+			foot.text:SetText(L("%d quests ticked"):format(n))
+			foot.sub:SetText(L("Ordered by distance, nearest first, from where you stand."))
+		end
+		foot.go:SetLabel(L("Build route"))
+		foot.go:SetActive(n > 0)
+		foot.go:SetEnabled(n > 0)
+		foot.clear:SetLabel(L("Clear"))
+		foot.clear:SetShown(n > 0)
+	end
 end
 
 local function renderSearch()
@@ -373,6 +432,8 @@ local function renderSearch()
 	for i, id in ipairs(ids) do
 		local r = listRow(list, i, SEARCH_ROW_H)
 		r.arrowOnClick = true
+		r.check:Hide()
+		r.title:SetPoint("TOPLEFT", 18, -11)
 		r.distId = nil
 		r.dist:SetText("")
 		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
@@ -691,6 +752,31 @@ local function createWindow()
 		return zp
 	end
 	f.questsPage = zonePage()
+	do
+		local qp = f.questsPage
+		qp.list:SetPoint("BOTTOMRIGHT", 0, 96)
+		local foot = CreateFrame("Frame", nil, qp)
+		foot:SetPoint("BOTTOMLEFT"); foot:SetPoint("BOTTOMRIGHT")
+		foot:SetHeight(92)
+		T.Fill(foot, C.header)
+		T.Line(foot, C.line, "TOP")
+		foot.text = T.Text(foot, 12, C.text, nil, true)
+		foot.text:SetPoint("TOPLEFT", 16, -12)
+		foot.text:SetPoint("RIGHT", foot, "RIGHT", -16, 0)
+		foot.sub = T.Text(foot, 11, C.muted)
+		foot.sub:SetPoint("TOPLEFT", foot.text, "BOTTOMLEFT", 0, -4)
+		foot.sub:SetPoint("RIGHT", foot, "RIGHT", -16, 0)
+		foot.go = T.Button(foot, 150, 28)
+		foot.go:SetPoint("BOTTOMLEFT", 16, 12)
+		foot.clear = T.Button(foot, 100, 28)
+		foot.clear:SetPoint("LEFT", foot.go, "RIGHT", 8, 0)
+		foot.go:SetScript("OnClick", function()
+			if QL.RouteActive() then QL.StopRoute() else QL.StartRoute() end
+			QL.RenderWindow(false)
+		end)
+		foot.clear:SetScript("OnClick", function() QL.ClearRouteSelection() end)
+		qp.foot = foot
+	end
 	f.zonePage = zonePage()
 	-- the class page: the class's emblem beside its name
 	local cp = zonePage()
@@ -903,5 +989,6 @@ end
 QL.On("STATE_CHANGED", schedule)
 QL.On("SETTING_CHANGED", schedule)
 QL.On("ARROW_CHANGED", schedule)
+QL.On("ROUTE_CHANGED", schedule)
 QL.Event("ZONE_CHANGED_NEW_AREA", schedule)
 QL.Event("PLAYER_ENTERING_WORLD", schedule)

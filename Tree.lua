@@ -247,7 +247,7 @@ function Tree:Card()
 		if IsShiftKeyDown and IsShiftKeyDown() then QL.InsertQuestLink(card.questId)
 		else
 			-- a card points the arrow at its quest too
-			if QL.SetArrowTarget then pcall(QL.SetArrowTarget, card.questId) end
+			if QL.SetArrowTarget and not (QL.RouteActive and QL.RouteActive()) then pcall(QL.SetArrowTarget, card.questId) end
 			QL.Open(card.questId)
 		end
 	end)
