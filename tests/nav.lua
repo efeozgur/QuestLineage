@@ -59,6 +59,11 @@ Check(loc and not loc.otherMap, "located")
 Eq(loc.point.map, 1411, "the Durotar spawn is the nearest")
 Check(near(loc.dx, 0) and near(loc.dy, 80), "10% of 800 yards south: " .. loc.dx .. ", " .. loc.dy)
 Check(near(loc.dist, 80), "80 yards")
+local readyCtx = QL.TestContext({ log = { [3] = true }, complete = { [3] = true } })
+Eq(QL.DistanceText(3, readyCtx), "80 yd", "distance text")
+C_Map.GetMapWorldSize = function() return 30000, 24000 end
+Eq(QL.DistanceText(3, readyCtx), "2.4 k yd", "long distances in thousands")
+C_Map.GetMapWorldSize = function() return 1000, 800 end
 
 -- a target only on a map that cannot be projected: say where to go
 C_Map.GetWorldPosFromMapPos = function() return nil end

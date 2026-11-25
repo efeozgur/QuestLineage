@@ -166,6 +166,7 @@ local TR = {
 	["Arrow quest: "] = "Okun görevi: ",
 	["Arrow frame: not built yet (pick a quest in the Quests list)"] = "Ok henüz oluşmadı (Görevler listesinden bir görev seç)",
 	["No target."] = "Hedef yok.",
+	["%s k yd"] = "%s bin yd",
 }
 QL.TR = TR
 

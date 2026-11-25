@@ -364,6 +364,11 @@ for _, r in ipairs(f.questsPage.list.rows) do if r.shown and r.questId == 5 then
 Check(qrow, "Rumours row")
 qrow.scripts.OnClick(qrow)
 Eq(QL.ArrowQuest(), 5, "the arrow follows the clicked quest")
+-- distances: Rumours has no place in the fixture; The Gathering's giver is 191 yards away
+Eq(qrow.dist.text, "", "no distance without a place")
+QL.SetArrowTarget(3); QL.Open(3)
+Eq(f.inspector.hero.dist.text, "191 yd", "distance in the detail panel")
+QL.SetArrowTarget(5)
 local arrow = QuestLineageArrow
 Check(arrow and arrow.shown, "arrow shown")
 Eq(QL.ArrowTarget().kind, "pickup", "Rumours is not in the log: go to its giver")

@@ -142,6 +142,10 @@ function Inspector.New(parent)
 	hero.giver = T.Text(overlay, 11, C.dim)
 	hero.giver:SetPoint("TOPRIGHT", -PAD, -14)
 	hero.giver:SetJustifyH("RIGHT")
+	hero.dist = T.Text(overlay, 13, C.text)
+	hero.dist:SetPoint("TOPRIGHT", hero.giver, "BOTTOMRIGHT", 0, -5)
+	hero.dist:SetJustifyH("RIGHT")
+	hero.dist:SetShadowOffset(1, -1)
 	self.hero = hero
 
 	-- placeholder
@@ -449,6 +453,7 @@ function Inspector:Show(id, chain)
 	if heroXP then lv = lv .. "  ·  " .. T.Hex(C.accent) .. QL.XPText(heroXP) .. "|r" end
 	hero.level:SetText(lv)
 	hero.giver:SetText(starter and starter.name or "")
+	hero.dist:SetText(QL.DistanceText and QL.DistanceText(id, ctx) or "")
 
 	self.y = -HERO_H - 8
 

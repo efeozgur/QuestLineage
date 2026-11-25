@@ -64,6 +64,9 @@ local function newRow(list, height)
 	r.chip = T.Text(r, 11, C.muted)
 	r.chip:SetPoint("TOPRIGHT", -16, -12)
 	r.chip:SetJustifyH("RIGHT")
+	r.dist = T.Text(r, 11, C.muted)
+	r.dist:SetPoint("TOPRIGHT", r.chip, "BOTTOMRIGHT", 0, -5)
+	r.dist:SetJustifyH("RIGHT")
 	r:SetScript("OnEnter", function(self)
 		if not self.selected then T.Color(self.bg, C.rowHover) end
 		if self.questId then
@@ -164,6 +167,8 @@ local function renderZone()
 	for i, row in ipairs(rows) do
 		local r = listRow(list, i, ZONE_ROW_H)
 		r.arrowOnClick = nil
+		r.dist:SetText("")
+		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
 		local e, p = row.entry, row.progress
 		r.questId = e.head
 		r.openId = p.focus
@@ -241,6 +246,8 @@ local function renderQuests()
 		local r = listRow(list, i, QUEST_ROW_H)
 		r.questId, r.openId = q.id, q.id
 		r.arrowOnClick = true
+		r.sub:SetPoint("RIGHT", r, "RIGHT", -86, 0)
+		r.dist:SetText(QL.DistanceText and QL.DistanceText(q.id, ctx) or "")
 		r.title:SetText(QL.QuestTitle(q.id))
 		r.title:SetTextColor(unpack(C.text))
 		local s = T.STATUS[q.status] or T.STATUS.available
@@ -295,6 +302,8 @@ local function renderSearch()
 	for i, id in ipairs(ids) do
 		local r = listRow(list, i, SEARCH_ROW_H)
 		r.arrowOnClick = nil
+		r.dist:SetText("")
+		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
 		r.questId, r.openId = id, id
 		r.title:SetText(QL.QuestTitle(id))
 		r.title:SetTextColor(unpack(C.text))
@@ -681,6 +690,14 @@ local function createWindow()
 	f.emptySub:SetJustifyH("CENTER")
 
 	f:SetScript("OnShow", function() f.errorFlag:Hide(); QL.RenderWindow() end)
+	local since = 0
+	f:SetScript("OnUpdate", function(_, elapsed)
+		since = since + (elapsed or 0)
+		if since < 1 then return end
+		since = 0
+		local ok, err = pcall(QL.RefreshDistances)
+		if not ok then QL.Debug("distances: " .. tostring(err)) end
+	end)
 	f:SetScript("OnHide", function() f.shownFocus = nil end)
 	f:Hide()
 end
@@ -711,6 +728,22 @@ function QL.Open(arg)
 		if ids[1] then focusId = ids[1] end
 		QL.RenderWindow()
 	end)
+end
+
+-- The distances on the Quests list and in the detail panel, re-measured as you move.
+function QL.RefreshDistances()
+	if not win or not win:IsShown() or not QL.DistanceText then return end
+	local ctx = QL.Context()
+	if (QL.DB().page or "quests") == "quests" then
+		for _, r in ipairs(win.questsPage.list.rows) do
+			if r:IsShown() and r.arrowOnClick and r.questId then
+				r.dist:SetText(QL.DistanceText(r.questId, ctx) or "")
+			end
+		end
+	end
+	if focusId and win.inspector and win.inspector.hero.dist then
+		win.inspector.hero.dist:SetText(QL.DistanceText(focusId, ctx) or "")
+	end
 end
 
 function QL.ToggleWindow()

@@ -202,6 +202,42 @@ function QL.Locate(target)
 	return { dist = math.sqrt(bestD2), dx = bdx, dy = bdy, point = best.src, map = map, px = px, py = py }
 end
 
+-- Distances for lists: each quest's target is built once and kept until the quest log or the
+-- data changes (the projection cache above then makes a re-measure cheap), so the list can
+-- refresh distances every second while you move.
+--   QL.QuestDistance(id, ctx) -> yards | nil, mapName (when the spot is on another map)
+--   QL.DistanceText(id, ctx) -> "120 yd" | "Mulgore" | nil
+local targetCache = {}
+local function clearTargets() targetCache = {} end
+QL.On("STATE_CHANGED", clearTargets)
+QL.On("INDEX_READY", clearTargets)
+
+function QL.QuestDistance(id, ctx)
+	local t = targetCache[id]
+	if t == nil then
+		t = QL.QuestTarget(id, ctx) or false
+		targetCache[id] = t
+	end
+	if not t then return nil end
+	local loc = QL.Locate(t)
+	if not loc then return nil end
+	if loc.otherMap then return nil, QL.MapName(loc.otherMap.map) end
+	return loc.dist
+end
+
+function QL.DistanceText(id, ctx)
+	local d, other = QL.QuestDistance(id, ctx)
+	if d then
+		if d >= 1000 then
+			local s = ("%.1f"):format(d / 1000)
+			if QL.UseTurkish() then s = s:gsub("%.", ",") end
+			return QL.L("%s k yd"):format(s)
+		end
+		return QL.L("%d yd"):format(math.floor(d + 0.5))
+	end
+	return other
+end
+
 function QL.MapName(map)
 	if not (C_Map and C_Map.GetMapInfo) then return nil end
 	local ok, info = pcall(C_Map.GetMapInfo, map)
