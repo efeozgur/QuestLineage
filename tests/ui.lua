@@ -142,7 +142,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -429,7 +429,8 @@ Eq(#GameTooltip.lines, 1, "one chain line (quest 10 has no chain)")
 Check(GameTooltip.lines[1]:find("Chain 2/4", 1, true), "summary on the line: " .. tostring(GameTooltip.lines[1]))
 Check(GameTooltip.lines[1]:find("next: The Gathering", 1, true), "next quest named")
 
--- Quest offer strip: quest 6 closes 7 ---------------------------------------------------------
+-- Quest offer strip (with the quest card off): quest 6 closes 7 ------------------------------
+QL.Set("questCard", false)
 function GetQuestID() return 6 end
 for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
 local strip = QuestLineageOfferStrip
@@ -441,6 +442,90 @@ Eq(QuestLineageOfferButton.questId, 6, "chain button on the offered quest")
 function GetQuestID() return 5 end
 for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
 Check(strip.text.text:find("breadcrumb to: Side Road", 1, true), "breadcrumb note")
+QL.Set("questCard", true)
+
+-- The quest card ----------------------------------------------------------------------------------
+local answered = {}
+function AcceptQuest() answered[#answered + 1] = "accept" end
+function DeclineQuest() answered[#answered + 1] = "decline" end
+function CloseQuest() answered[#answered + 1] = "close" end
+function GetObjectiveText() return "Bring 5 boar ribs." end
+function GetQuestText() return "The boars grow bold." end
+function GetNumQuestRewards() return 1 end
+function GetNumQuestChoices() return 2 end
+function GetQuestItemInfo(kind, i) return "Item " .. kind .. i, 134400, 1, kind == "reward" and 2 or 3 end
+function GetRewardMoney() return 1250 end
+local realUnitName = UnitName
+function UnitName(u) if u == "npc" then return "Grunt Kor" end return realUnitName(u) end
+QuestFrame.shown = true
+function GetQuestID() return 6 end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+local qc = QuestLineageQuestCard
+Check(qc and qc.shown, "the card opens on a quest offer")
+Eq(strip.shown, false, "and replaces the offer strip")
+Eq(qc.questId, 6, "for the offered quest")
+Eq(qc.kicker.text, "NEW QUEST", "kicker")
+Check(qc.sections.warn.shown and qc.sections.warn.body.text:find("closes for good: Right Path", 1, true), "warning on the card")
+Eq(qc.sections.objective.body.text, "Bring 5 boar ribs.", "the game's objective text")
+local shownTiles = 0
+for _, t in ipairs(qc.tiles) do if t.shown then shownTiles = shownTiles + 1 end end
+Eq(shownTiles, 3, "one reward and two choices")
+Check(qc.sections.rewards.body.text:find("Choose one of 2", 1, true), "choices explained: " .. qc.sections.rewards.body.text)
+Eq(QuestFrame.alpha, nil, "the game's window untouched by default")
+-- accept
+qc.accept.scripts.OnClick(qc.accept)
+Eq(answered[#answered], "accept", "Accept calls AcceptQuest")
+Eq(qc.shown, false, "the card closes")
+-- decline, with the game's window hidden
+QL.Set("hideGameQuestFrame", true)
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+Eq(QuestFrame.alpha, 0, "the game's window invisible")
+Eq(QuestFrame.shown, true, "but never Hide()n (that would end the conversation)")
+Eq(QL.gameQuestFrameHidden, true, "kept out of sight")
+qc.decline.scripts.OnClick(qc.decline)
+Eq(answered[#answered], "decline", "Decline calls DeclineQuest")
+Eq(QuestFrame.alpha, 1, "the game's window back")
+-- closing the card (Escape / x) while the game's window is hidden ends the conversation
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+qc:Hide()
+Eq(answered[#answered], "close", "closing the card closes the quest dialog")
+Eq(QL.gameQuestFrameHidden, false, "and restores the game's window")
+-- QUEST_FINISHED closes it without answering twice
+local before = #answered
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
+Eq(qc.shown, false, "closed when the conversation ends")
+Eq(#answered, before, "no extra CloseQuest")
+QL.Set("hideGameQuestFrame", false)
+-- a quest the database does not know still gets a card from the game's texts
+function GetQuestID() return 99999 end
+function GetTitleText() return "Unknown Errand" end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+Eq(qc.title.text, "Unknown Errand", "title from the game")
+for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
+-- the main window on accept
+local openedId
+local realOpen = QL.Open
+QL.Open = function(id) openedId = id end
+for _, fn in ipairs(QL.events.QUEST_ACCEPTED) do fn("QUEST_ACCEPTED", 6) end
+Eq(openedId, nil, "not by default")
+QL.Set("openOnAccept", true)
+for _, fn in ipairs(QL.events.QUEST_ACCEPTED) do fn("QUEST_ACCEPTED", 6) end
+Eq(openedId, 6, "opens on the accepted quest when set")
+QL.Set("openOnAccept", false)
+QL.Open = realOpen
+-- off in the settings
+QL.Set("questCard", false)
+function GetQuestID() return 6 end
+for _, fn in ipairs(QL.events.QUEST_DETAIL) do fn("QUEST_DETAIL") end
+Eq(qc.shown, false, "no card when off")
+Eq(strip.shown, true, "the strip again")
+QL.Set("questCard", true)
+for _, fn in ipairs(QL.events.QUEST_FINISHED) do fn("QUEST_FINISHED") end
+Eq(#QL.errors, 0, "quest card without errors: " .. table.concat(QL.errors, " | "))
+AcceptQuest, DeclineQuest, CloseQuest, GetObjectiveText, GetQuestText = nil, nil, nil, nil, nil
+GetNumQuestRewards, GetNumQuestChoices, GetQuestItemInfo, GetRewardMoney, GetTitleText = nil, nil, nil, nil, nil
+UnitName = realUnitName
 
 -- Turkish with WoWTR --------------------------------------------------------------------------
 QTR_QuestData = { ["3"] = { Title = "Toplanma" } }

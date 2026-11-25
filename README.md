@@ -24,6 +24,7 @@ closes for good. Each card shows the quest's state for your character.
 | "Where?" bar | A slim icon bar you can put anywhere (drag it): repair, innkeeper, flight master, your class trainer, your profession trainers, food, mailbox, and a "more" panel with every trainer, vendor and service. Click: the arrow turns to the nearest; click again: the next nearest; hover: the three nearest with distances. Shift-click the minimap button to show or hide it. |
 | Current quest | A small window with the quest you are doing: its stage, objectives with counters and bars (they flash when they go up), XP and distance; under it every other quest in your log (ready ones first). A setting hides the game's own quest tracker so this window can replace it. |
 | Way to your corpse | When you die, a glowing path with a tombstone leads to your corpse on the minimap and world map, and the arrow points at it; it goes back to your quest once you are alive. |
+| Quest card | When an NPC offers a quest, QuestLineage's own card opens beside the game's window (or in its place, a setting): the NPC in 3D, XP, objective, what to do, rewards, chain, warnings, Accept / Decline. Another setting opens the main window on the quest you accept. |
 | Nameplates | A quest badge and counter ("3/8") beside the nameplate of every creature an unfinished objective needs, including those that drop an item you collect. |
 | Quest log | A **Chain** button on the selected quest. |
 | NPC tooltips | For each chained quest the NPC gives: `Chain 2/5 · next: <quest>`. |

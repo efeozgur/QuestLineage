@@ -211,6 +211,11 @@ local function showOffer()
 		if strip then strip:Hide() end
 		return
 	end
+	-- the quest card shows all of this (QuestCard.lua)
+	if QL.DB().questCard ~= false then
+		if strip then strip:Hide() end
+		return
+	end
 	local questId = GetQuestID()
 	if type(questId) ~= "number" or questId <= 0 or not QL.QuestExists(questId) then
 		if strip then strip:Hide() end
@@ -225,16 +230,8 @@ local function showOffer()
 	end
 	local summary = QL.SummaryText(questId, ctx)
 	if summary then lines[#lines + 1] = summary end
-	local closes = {}
-	for _, e in ipairs(QL.Ids(QL.Q(questId, "exclusiveTo"))) do
-		if not ctx.done[e] then closes[#closes + 1] = QL.QuestTitle(e) end
-	end
-	if #closes > 0 then
-		lines[#lines + 1] = hex(1, 0.4, 0.4) .. L("Taking this quest closes for good: ") .. table.concat(closes, ", ") .. "|r"
-	end
-	local target = QL.Ids(QL.Q(questId, "breadcrumbForQuestId"))
-	if #target > 0 then
-		lines[#lines + 1] = hex(0.75, 0.75, 0.75) .. L("This is a breadcrumb to: ") .. QL.QuestTitle(target[1]) .. "|r"
+	for _, w in ipairs(QL.OfferWarnings(questId, ctx)) do
+		lines[#lines + 1] = (w.danger and hex(1, 0.4, 0.4) or hex(0.75, 0.75, 0.75)) .. w.text .. "|r"
 	end
 	if #lines == 0 and not hasChain(questId) then
 		strip:Hide()

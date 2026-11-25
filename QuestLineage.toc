@@ -32,6 +32,7 @@ Current.lua
 Plates.lua
 QuestAreas.lua
 Corpse.lua
+QuestCard.lua
 MinimapButton.lua
 Hooks.lua
 Options.lua
