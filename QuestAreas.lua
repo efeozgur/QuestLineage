@@ -75,6 +75,47 @@ local function objectiveSpots(task)
 	return {}
 end
 
+-- A task's circles (map, centre, radius, size), biggest first, at most MAX_AREAS. Spawns never
+-- change, so the grouping (quadratic in the spots; an item's droppers can stand in hundreds of
+-- places) runs once per task and session instead of every 2 s.
+local geometry = {}
+local function taskAreas(task)
+	local key = tostring(task.kind) .. ":" .. tostring(task.id)
+	local cached = geometry[key]
+	if cached then return cached end
+	local byMap = {}
+	for _, p in ipairs(objectiveSpots(task)) do
+		local list = byMap[p.map]
+		if not list then list = {}; byMap[p.map] = list end
+		list[#list + 1] = p
+	end
+	local areas = {}
+	local sized = true
+	for map, points in pairs(byMap) do
+		local w, h = mapSize(map)
+		if w then
+			for _, g in ipairs(cluster(points, w, h)) do
+				local cx, cy = 0, 0
+				for _, p in ipairs(g) do cx, cy = cx + p.x, cy + p.y end
+				cx, cy = cx / #g, cy / #g
+				local r = 0
+				for _, p in ipairs(g) do
+					local dx, dy = (p.x - cx) * w, (p.y - cy) * h
+					r = math.max(r, math.sqrt(dx * dx + dy * dy))
+				end
+				areas[#areas + 1] = { map = map, x = cx, y = cy, r = math.max(MIN_R, r + PAD), size = #g }
+			end
+		else
+			sized = false -- the client did not size this map yet: try again next time
+		end
+	end
+	table.sort(areas, function(a, b) return a.size > b.size end)
+	while #areas > MAX_AREAS do table.remove(areas) end
+	if sized then geometry[key] = areas end
+	return areas
+end
+QL.ClearAreaGeometry = function() geometry = {} end
+
 function QL.QuestAreas(id, ctx)
 	local out = {}
 	if not id then return out end
@@ -83,37 +124,15 @@ function QL.QuestAreas(id, ctx)
 	local colors = palette()
 	for i, row in ipairs(QL.ObjectiveRows(id, ctx)) do
 		if not row.done and row.task then
-			local byMap = {}
-			for _, p in ipairs(objectiveSpots(row.task)) do
-				local list = byMap[p.map]
-				if not list then list = {}; byMap[p.map] = list end
-				list[#list + 1] = p
-			end
-			local areas = {}
-			for map, points in pairs(byMap) do
-				local w, h = mapSize(map)
-				if w then
-					for _, g in ipairs(cluster(points, w, h)) do
-						local cx, cy = 0, 0
-						for _, p in ipairs(g) do cx, cy = cx + p.x, cy + p.y end
-						cx, cy = cx / #g, cy / #g
-						local r = 0
-						for _, p in ipairs(g) do
-							local dx, dy = (p.x - cx) * w, (p.y - cy) * h
-							r = math.max(r, math.sqrt(dx * dx + dy * dy))
-						end
-						areas[#areas + 1] = { map = map, x = cx, y = cy, r = math.max(MIN_R, r + PAD), size = #g }
-					end
-				end
-			end
-			table.sort(areas, function(a, b) return a.size > b.size end)
 			local label = row.task.name or row.text
 			local count = (row.need and row.need > 0) and ("%d/%d"):format(row.have or 0, row.need) or nil
-			for k, a in ipairs(areas) do
-				if k > MAX_AREAS then break end
-				a.color = colors[(i - 1) % #colors + 1]
-				a.label, a.count, a.questId = label, count, id
-				out[#out + 1] = a
+			for _, g in ipairs(taskAreas(row.task)) do
+				-- a fresh table per quest: colour, label and counter are set on it, the shape is shared
+				out[#out + 1] = {
+					map = g.map, x = g.x, y = g.y, r = g.r, size = g.size,
+					color = colors[(i - 1) % #colors + 1],
+					label = label, count = count, questId = id,
+				}
 			end
 		end
 	end
@@ -169,6 +188,7 @@ end
 -- Look ------------------------------------------------------------------------------------------------
 
 local hot = { minimap = {}, world = {} } -- the areas under the cursor, per map
+local hover -- (which, owner, list): the area tooltip; defined under "Hover", also called by the world map's OnHide hook
 
 local function lit(a) return hot.minimap[a] or hot.world[a] end
 
@@ -257,21 +277,40 @@ local function rimPart(i)
 	return d
 end
 
-local function drawMinimap()
+-- What the minimap was last drawn from: redrawn (20 times a second) only when one of these moved,
+-- the areas were recomputed or the hovered ones changed (mmDirty); standing still costs nothing.
+local mmLast = {}
+local mmDirty = true
+
+local function clearMinimap()
 	for _, p in ipairs(mmParts) do p.disc:Hide(); p.ring:Hide() end
 	for _, d in ipairs(rimParts) do d:Hide() end
 	QL.minimapAreasDrawn, QL.minimapRimMarks = 0, 0 -- what was drawn last (tests read it)
 	QL.minimapAreaHits = {} -- { {x, y, r, area} } in minimap units from its centre
-	if #current == 0 or not Minimap:IsVisible() then return end
-	local map, px, py = QL.PlayerPosition()
-	if not map or not px then return end
-	local w, h = mapSize(map)
-	if not w then return end
+end
+
+local function drawMinimap()
+	local map, px, py
+	if #current > 0 and Minimap:IsVisible() then map, px, py = QL.PlayerPosition() end
+	local w, h
+	if map and px then w, h = mapSize(map) end
+	if not w then
+		if not mmLast.empty then clearMinimap(); mmLast = { empty = true } end
+		return
+	end
 	local radius = QL.MinimapYards()
 	local rotate = GetCVar and GetCVar("rotateMinimap") == "1"
 	local facing = GetPlayerFacing and GetPlayerFacing()
 	if facing ~= nil and issecretvalue and issecretvalue(facing) then facing = nil end
 	local half = (Minimap:GetWidth() or 140) / 2
+	local L = mmLast
+	if not mmDirty and L.cur == current and L.map == map and L.px == px and L.py == py and L.facing == facing
+		and L.radius == radius and L.rotate == rotate and L.half == half then
+		return
+	end
+	mmDirty = false
+	mmLast = { cur = current, map = map, px = px, py = py, facing = facing, radius = radius, rotate = rotate, half = half }
+	clearMinimap()
 	local edge = half * 0.96
 	local n, rims = 0, 0
 	for _, a in ipairs(current) do
@@ -394,7 +433,7 @@ local function ensureWorld()
 		if hoverT >= 0.05 then hoverT = 0; pcall(QL.HoverWorldAreas); breathe(wmParts, clock()) end
 	end)
 	if wm.SetScript and WorldMapFrame.HookScript then
-		WorldMapFrame:HookScript("OnHide", function() hover("world", wm, nil) end)
+		WorldMapFrame:HookScript("OnHide", function() pcall(hover, "world", wm, nil) end)
 	end
 	if hooksecurefunc and WorldMapFrame.SetMapID then
 		hooksecurefunc(WorldMapFrame, "SetMapID", function() pcall(drawWorldMap) end)
@@ -490,11 +529,12 @@ QL.AreaParts = function() return mmParts, wmParts end -- for tests
 local function setHot(which, list)
 	hot[which] = {}
 	for _, a in ipairs(list or {}) do hot[which][a] = true end
+	mmDirty = true
 	pcall(drawMinimap)
 	pcall(drawWorldMap)
 end
 
-local function hover(which, owner, list)
+function hover(which, owner, list)
 	local tip = QL.Tip()
 	if list and #list > 0 then
 		local key = keyOf(list)
@@ -587,9 +627,10 @@ QL.Event("PLAYER_LOGIN", function()
 	pcall(QL.ApplyGameAreas)
 	if C_Timer and C_Timer.After then C_Timer.After(3, function() pcall(QL.RefreshQuestAreas) end) end
 end)
-for _, m in ipairs({ "STATE_CHANGED", "ARROW_CHANGED", "INDEX_READY" }) do
+for _, m in ipairs({ "STATE_CHANGED", "ARROW_CHANGED" }) do
 	QL.On(m, function() pcall(QL.RefreshQuestAreas) end)
 end
+QL.On("INDEX_READY", function() QL.ClearAreaGeometry(); pcall(QL.RefreshQuestAreas) end)
 QL.On("SETTING_CHANGED", function(key)
 	if key == "questAreas" or key == "questAreasOthers" then othersAt = -999; pcall(QL.RefreshQuestAreas) end
 	if key == "hideGameAreas" then pcall(QL.ApplyGameAreas) end

@@ -12,12 +12,31 @@
 --   QL.PlateText(npcId) -> "3/8" | "" | nil (nil: no badge)
 
 local _, QL = ...
+local L = QL.L
 
 local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
-local MAX_DROPPERS = 10
+local MAX_DROPPERS = 40 -- per item (the database lists them in no particular order, so not too few)
 
 local index
 local badges = setmetatable({}, { __mode = "k" }) -- plate -> badge
+
+-- An item's droppers: the database's npcDrops (up to MAX_DROPPERS) and the creatures you looted
+-- it from yourself (QuestLineageDB.learnedDrops[item][npc], filled on LOOT_OPENED), which covers
+-- creatures the database does not list.
+function QL.ItemDroppers(itemId)
+	local out, seen = {}, {}
+	for n, npc in ipairs(QL.Ids(QL.I(itemId, "npcDrops"))) do
+		if n > MAX_DROPPERS then break end
+		if not seen[npc] then seen[npc] = true; out[#out + 1] = npc end
+	end
+	local learned = type(QuestLineageDB) == "table" and type(QuestLineageDB.learnedDrops) == "table" and QuestLineageDB.learnedDrops[itemId]
+	if type(learned) == "table" then
+		for npc in pairs(learned) do
+			if type(npc) == "number" and not seen[npc] then seen[npc] = true; out[#out + 1] = npc end
+		end
+	end
+	return out
+end
 
 local function rebuild()
 	index = {}
@@ -30,10 +49,7 @@ local function rebuild()
 					if row.task.kind == "npc" then
 						npcs[1] = row.task.id
 					elseif row.task.kind == "item" and QL.DB().plateDroppers ~= false then
-						for n, npc in ipairs(QL.Ids(QL.I(row.task.id, "npcDrops"))) do
-							if n > MAX_DROPPERS then break end
-							npcs[#npcs + 1] = npc
-						end
+						for _, npc in ipairs(QL.ItemDroppers(row.task.id)) do npcs[#npcs + 1] = npc end
 					end
 					for _, npc in ipairs(npcs) do
 						local list = index[npc]
@@ -60,10 +76,30 @@ function QL.PlateText(npcId)
 	return ""
 end
 
--- The badge's colour for an npc: the theme's accent, the difficulty of the quest it counts for,
--- or the player's own.
+-- Does the creature count for the current quest? nil when there is no current quest.
+local function forCurrent(npcId)
+	local list = QL.PlateIndex()[npcId]
+	if not list or not QL.CurrentQuest then return nil end
+	local ok, current = pcall(QL.CurrentQuest)
+	if not ok or not current then return nil end
+	for _, entry in ipairs(list) do
+		if entry[1] == current then return true end
+	end
+	return false
+end
+
+-- "status" mode: light green for the current quest's creatures, amber for other logged quests'.
+QL.PLATE_CURRENT = { 0.42, 0.95, 0.52 }
+QL.PLATE_OTHER = { 1.00, 0.74, 0.26 }
+
+-- The badge's colour for an npc: by status (current quest or another; the default), the theme's
+-- accent, the difficulty of the quest it counts for, or the player's own.
 function QL.PlateColor(npcId)
 	local db, C = QL.DB(), QL.Theme.C
+	if (db.plateColorMode or "status") == "status" then
+		local c = forCurrent(npcId) == false and QL.PLATE_OTHER or QL.PLATE_CURRENT
+		return c[1], c[2], c[3]
+	end
 	if db.plateColorMode == "custom" and type(db.plateColor) == "table" then
 		return db.plateColor[1] or 1, db.plateColor[2] or 1, db.plateColor[3] or 1
 	end
@@ -79,18 +115,12 @@ function QL.PlateColor(npcId)
 	return C.accent[1], C.accent[2], C.accent[3]
 end
 
--- Full strength when the creature counts for the current quest, faded when only another logged
--- quest needs it.
+-- Full strength when the creature counts for the current quest; when only another logged quest
+-- needs it, faded in the single-colour modes, while "status" mode tells them apart by colour.
 local FADED = 0.4
 function QL.PlateAlpha(npcId)
-	local list = QL.PlateIndex()[npcId]
-	if not list or not QL.CurrentQuest then return 1 end
-	local ok, current = pcall(QL.CurrentQuest)
-	if not ok or not current then return 1 end
-	for _, entry in ipairs(list) do
-		if entry[1] == current then return 1 end
-	end
-	return FADED
+	if (QL.DB().plateColorMode or "status") == "status" then return 1 end
+	return forCurrent(npcId) == false and FADED or 1
 end
 
 local function npcIdOf(unit)
@@ -191,11 +221,97 @@ QL.Event("NAME_PLATE_UNIT_REMOVED", function(_, unit)
 	if plate and badges[plate] then badges[plate]:Hide() end
 end)
 QL.On("STATE_CHANGED", function() index = nil; pcall(QL.RefreshPlates) end)
+
+-- Learning droppers from loot: an item an unfinished objective of a logged quest asks for, looted
+-- from a creature, makes that creature one of its droppers for good (and badges it at once).
+function QL.LearnDrop(itemId, npcId)
+	if type(itemId) ~= "number" or type(npcId) ~= "number" then return false end
+	local ctx = QL.Context()
+	local wanted = false
+	for id in pairs(ctx.log or {}) do
+		for _, row in ipairs(QL.ObjectiveRows(id, ctx)) do
+			if row.task and row.task.kind == "item" and row.task.id == itemId then wanted = true end
+		end
+	end
+	if not wanted then return false end
+	local db = QL.DB()
+	db.learnedDrops = type(db.learnedDrops) == "table" and db.learnedDrops or {}
+	local list = db.learnedDrops[itemId]
+	if type(list) ~= "table" then list = {}; db.learnedDrops[itemId] = list end
+	if list[npcId] then return false end
+	for _, npc in ipairs(QL.Ids(QL.I(itemId, "npcDrops"))) do
+		if npc == npcId then return false end -- the database knows it already
+	end
+	list[npcId] = true
+	index = nil
+	pcall(QL.RefreshPlates)
+	return true
+end
+
+local function itemIdOf(link)
+	if type(link) ~= "string" then return nil end
+	return tonumber(link:match("item:(%d+)"))
+end
+
+QL.Event("LOOT_OPENED", function()
+	if not (GetNumLootItems and GetLootSlotLink and GetLootSourceInfo) then return end
+	local ok, n = pcall(GetNumLootItems)
+	if not ok or type(n) ~= "number" then return end
+	for slot = 1, n do
+		local okL, link = pcall(GetLootSlotLink, slot)
+		local item = okL and itemIdOf(link)
+		if item then
+			local okS, guid = pcall(GetLootSourceInfo, slot)
+			if okS and type(guid) == "string" and not (issecretvalue and issecretvalue(guid)) then
+				local kind, _, _, _, _, npc = strsplit("-", guid)
+				if kind == "Creature" then pcall(QL.LearnDrop, item, tonumber(npc)) end
+			end
+		end
+	end
+end)
+
+-- /ql plate: why the target has (or has not) a badge: its npc id, what it counts for, and every
+-- item objective of the log with whether the target drops it.
+function QL.PlateDebug()
+	local npc = npcIdOf("target")
+	QL.Chat(L("Target npc id: ") .. tostring(npc))
+	local list = npc and QL.PlateIndex()[npc]
+	if list then
+		for _, e in ipairs(list) do QL.Chat("  + " .. QL.QuestTitle(e[1]) .. ": " .. tostring(e[2].text)) end
+	else
+		QL.Chat("  " .. L("No objective of your log counts this creature."))
+	end
+	local ctx = QL.Context()
+	for id in pairs(ctx.log or {}) do
+		for _, row in ipairs(QL.ObjectiveRows(id, ctx)) do
+			local t = row.task
+			local what = t and (t.kind .. " " .. tostring(t.id)) or L("no database task matched")
+			local drops = ""
+			if t and t.kind == "item" and npc then
+				drops = "  ·  " .. L("target drops it: ")
+				local yes = false
+				for _, d in ipairs(QL.ItemDroppers(t.id)) do if d == npc then yes = true end end
+				drops = drops .. (yes and L("yes") or L("no"))
+			end
+			QL.Chat(("  %s · %s%s · %s%s"):format(QL.QuestTitle(id), tostring(row.text), row.done and " (done)" or "", what, drops))
+		end
+	end
+end
 QL.On("INDEX_READY", function() index = nil; pcall(QL.RefreshPlates) end)
 QL.On("ARROW_CHANGED", function() pcall(QL.RefreshPlates) end) -- the current quest may have changed
 QL.On("SETTING_CHANGED", function(key)
 	if key == "nameplates" or (type(key) == "string" and key:sub(1, 5) == "plate") then
 		index = nil -- plateDroppers changes what is indexed
 		pcall(QL.RefreshPlates)
+	end
+end)
+
+-- "status" became the default colour mode; saves from before (where the old default "accent" was
+-- written in) switch over once.
+QL.Event("PLAYER_LOGIN", function()
+	local db = QL.DB()
+	if not db.plateStatusDefault then
+		db.plateStatusDefault = true
+		if db.plateColorMode == "accent" then db.plateColorMode = "status" end
 	end
 end)

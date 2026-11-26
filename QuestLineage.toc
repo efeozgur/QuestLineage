@@ -21,6 +21,7 @@ Nav.lua
 Theme.lua
 Tree.lua
 Inspector.lua
+ZoneMap.lua
 Window.lua
 Arrow.lua
 Route.lua

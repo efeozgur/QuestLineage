@@ -50,31 +50,55 @@ local function newModel(parent)
 		if model.FreezeAnimation then pcall(model.FreezeAnimation, model, 0, 0, 0) end
 		if model.SetPaused then pcall(model.SetPaused, model, true) end
 	end
+	-- the client drops a hidden model's mesh (also when a parent hides): forget the creature so
+	-- the next show sets it again instead of leaving the picture empty
+	if model.HookScript then pcall(model.HookScript, model, "OnHide", function() model.npcId = nil end) end
 	return model
 end
 
--- Show a creature in a model; false when the client cannot.
+-- Whether a model has a mesh loaded (true when the client cannot tell).
+local function loaded(model)
+	local get = model.GetModelFileID or model.GetModel
+	if type(get) ~= "function" then return true end
+	local ok, v = pcall(get, model)
+	return ok and v ~= nil and v ~= 0 and v ~= ""
+end
+
+local function applyCreature(model, npcId, zoom)
+	if model.ClearModel then pcall(model.ClearModel, model) end
+	if not pcall(model.SetCreature, model, npcId) then return false end
+	-- portrait zoom 1 aims the camera at the head (as unit frame portraits do); a partial zoom
+	-- aimed at the chest and cut heads off. The distance scale pulls back to show shoulders.
+	if model.SetPortraitZoom then pcall(model.SetPortraitZoom, model, 1) end
+	if model.SetCamDistanceScale then pcall(model.SetCamDistanceScale, model, zoom or 1) end
+	if model.SetPosition then pcall(model.SetPosition, model, 0, 0, 0) end
+	if model.facing and model.SetFacing then pcall(model.SetFacing, model, model.facing) end
+	if model.frozen then model.freeze() end
+	return true
+end
+
+-- Show a creature in a model; false when the client cannot. The model is shown before it is set
+-- (one set while hidden can stay empty), and set again when it was hidden or has no mesh. A
+-- creature the client has not cached yet comes up empty: it is tried again a few times shortly
+-- after, while the model still shows that creature.
 local function setCreature(model, npcId, zoom, frozen)
 	if not model or not npcId then return false end
-	if model.npcId ~= npcId then
-		model.npcId = npcId
-		if model.ClearModel then pcall(model.ClearModel, model) end
-		if not pcall(model.SetCreature, model, npcId) then model.npcId = nil; return false end
-		-- portrait zoom 1 aims the camera at the head (as unit frame portraits do); a partial zoom
-		-- aimed at the chest and cut heads off. The distance scale pulls back to show shoulders.
-		if model.SetPortraitZoom then pcall(model.SetPortraitZoom, model, 1) end
-		if model.SetCamDistanceScale then pcall(model.SetCamDistanceScale, model, zoom or 1) end
-		if model.SetPosition then pcall(model.SetPosition, model, 0, 0, 0) end
-		if frozen then
-			model.freeze()
-			if model.HookScript and not model.qlHooked then
-				model.qlHooked = true
-				pcall(model.HookScript, model, "OnModelLoaded", function() if model.frozen then model.freeze() end end)
-			end
-		end
-		model.frozen = frozen
-	end
+	local fresh = model.npcId ~= npcId or not model:IsShown() or not loaded(model)
 	model:Show()
+	if not fresh then return true end
+	model.npcId, model.frozen = npcId, frozen
+	if not applyCreature(model, npcId, zoom) then model.npcId = nil; model:Hide(); return false end
+	if frozen and model.HookScript and not model.qlHooked then
+		model.qlHooked = true
+		pcall(model.HookScript, model, "OnModelLoaded", function() if model.frozen then model.freeze() end end)
+	end
+	if C_Timer and C_Timer.After then
+		for _, delay in ipairs({ 0.2, 0.8, 2 }) do
+			C_Timer.After(delay, function()
+				if model.npcId == npcId and model:IsShown() and not loaded(model) then applyCreature(model, npcId, zoom) end
+			end)
+		end
+	end
 	return true
 end
 
@@ -404,6 +428,22 @@ local function placeTip(name, sub)
 	end
 end
 
+-- a task: the arrow to the nearest place, and every place on the map in the middle
+local function taskClick(kind, id, name, role, questId)
+	return function()
+		pointAt(kind, id, name, role, questId)
+		if QL.ShowTaskSources then QL.ShowTaskSources(kind, id, name, questId) end
+	end
+end
+
+local function taskTip(name, sub)
+	return function(tip)
+		tip:AddLine(name or "?", 1, 1, 1)
+		if sub then tip:AddLine(sub, 0.7, 0.7, 0.7, true) end
+		tip:AddLine(L("Click: show where on the map"), 0.24, 0.84, 0.78)
+	end
+end
+
 local function personRow(self, who, fallbackTitle, questId, role)
 	if not who then return end
 	local o = { name = who.name, sub = fallbackTitle }
@@ -446,6 +486,7 @@ local function chainRows(self, ids, ctx)
 end
 
 function Inspector:Clear(title, text)
+	self.shownId = nil
 	self:Reset()
 	self.hero:Hide()
 	self.hint:Show()
@@ -456,6 +497,7 @@ end
 
 function Inspector:Show(id, chain)
 	local T, C = QL.Theme, QL.Theme.C
+	self.shownId = id
 	self:Reset()
 	self.hint:Hide()
 	local ctx = QL.Context()
@@ -467,6 +509,7 @@ function Inspector:Show(id, chain)
 	local starter = QL.QuestStarter(id)
 	local modelShown = false
 	if starter and starter.kind == "npc" and hero.model then
+		hero.model.facing = -0.35
 		modelShown = setCreature(hero.model, starter.id, 1.7, false)
 		if modelShown and hero.model.SetFacing then pcall(hero.model.SetFacing, hero.model, -0.35) end
 	end
@@ -526,8 +569,8 @@ function Inspector:Show(id, chain)
 					row.icon = (t.kind == "item" and QL.ItemIcon(t.id)) or ICON[t.kind] or QUESTION
 					if not o.done and t.kind ~= "rep" then
 						local kind, tid = t.kind, t.id
-						row.click = function() pointAt(kind, tid, t.name or o.text, L("Tasks"), id) end
-						row.tip = placeTip(t.name or o.text, o.text)
+						row.click = taskClick(kind, tid, t.name or o.text, L("Tasks"), id)
+						row.tip = taskTip(t.name or o.text, o.text)
 					end
 				end
 				self:Row(row)
@@ -544,8 +587,8 @@ function Inspector:Show(id, chain)
 				self:Row({
 					name = name, sub = sub, npc = t.npc,
 					icon = (t.kind == "item" and QL.ItemIcon(t.id)) or ICON[t.kind] or QUESTION,
-					click = kind ~= "rep" and function() pointAt(kind, tid, t.name or name, sub or L("Tasks"), id) end or nil,
-					tip = kind ~= "rep" and placeTip(t.name or name, sub) or nil,
+					click = kind ~= "rep" and taskClick(kind, tid, t.name or name, sub or L("Tasks"), id) or nil,
+					tip = kind ~= "rep" and taskTip(t.name or name, sub) or nil,
 				})
 			end
 		end

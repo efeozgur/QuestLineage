@@ -4,10 +4,13 @@ Needs Pillow. White on transparent, 64x64; the game tints them (muted, or the ac
   nav_quests.tga   a list: three bullets and lines
   nav_chains.tga   two linked chain rings
   nav_class.tga    a shield
+  nav_zones.tga    a map pin over a folded map
   nav_search.tga   a magnifying glass
   corpse.tga       a tombstone (the corpse marker on the maps)
   speaker.tga      a speaker with sound waves (the quest card's voice button)
   area_*.tga       the map's objective areas: soft fill, thin ring, dotted ring
+  lock.tga         a closed padlock (the current quest window pinned in place)
+  lock_open.tga    an open padlock (the window can be dragged)
 """
 import os
 from PIL import Image, ImageDraw
@@ -55,6 +58,19 @@ def shield():
     inner = [(32, 14), (46, 19), (45, 34), (32, 49), (32, 14)]
     d.polygon([(s(x), s(y)) for x, y in inner], fill=(255, 255, 255, 110))
     save(img, "nav_class.tga")
+
+
+def zones():
+    img, d = canvas()
+    # a folded map (three panels) along the bottom, a pin standing on it
+    d.polygon([(s(x), s(y)) for x, y in [(6, 40), (22, 34), (22, 58), (6, 62)]], fill=(255, 255, 255, 150))
+    d.polygon([(s(x), s(y)) for x, y in [(22, 34), (42, 40), (42, 62), (22, 58)]], fill=(255, 255, 255, 210))
+    d.polygon([(s(x), s(y)) for x, y in [(42, 40), (58, 34), (58, 58), (42, 62)]], fill=(255, 255, 255, 150))
+    # the pin: a disc with a point below, a hole in the middle
+    d.ellipse((s(19), s(4), s(45), s(30)), fill=W)
+    d.polygon([(s(21), s(22)), (s(43), s(22)), (s(32), s(46))], fill=W)
+    d.ellipse((s(27), s(12), s(37), s(22)), fill=(255, 255, 255, 0))
+    save(img, "nav_zones.tga")
 
 
 def search():
@@ -312,6 +328,26 @@ def logo():
     print("wrote icon.tga")
 
 
+def lock(opened):
+    """The current quest window's lock: a padlock, closed or with its shackle swung open."""
+    img, d = canvas()
+    clear = (255, 255, 255, 0)
+    # the body: a rounded block with a keyhole
+    d.rounded_rectangle((s(14), s(28), s(50), s(58)), radius=s(6), fill=W)
+    d.ellipse((s(28), s(36), s(36), s(44)), fill=clear)
+    d.rectangle((s(30), s(42), s(34), s(50)), fill=clear)
+    # the shackle: an arch standing on the body, lifted and swung right when open
+    if opened:
+        d.arc((s(30), s(4), s(54), s(30)), start=180, end=360, fill=W, width=s(5))
+        d.rectangle((s(49), s(16), s(54), s(24)), fill=W)
+        d.rectangle((s(30), s(16), s(35), s(28)), fill=W)
+    else:
+        d.arc((s(20), s(8), s(44), s(34)), start=180, end=360, fill=W, width=s(5))
+        d.rectangle((s(20), s(20), s(25), s(28)), fill=W)
+        d.rectangle((s(39), s(20), s(44), s(28)), fill=W)
+    save(img, "lock_open.tga" if opened else "lock.tga")
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     logo()
@@ -319,9 +355,12 @@ if __name__ == "__main__":
     corpse()
     area_textures()
     speaker()
+    lock(False)
+    lock(True)
     quests()
     chains()
     shield()
+    zones()
     search()
     disc()
     ring()

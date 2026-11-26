@@ -253,6 +253,19 @@ function T.Tooltip()
 	top:SetHeight(2)
 	T.Gradient(top, "HORIZONTAL", C.accent, C.accent2)
 	tip.lines, tip.n = {}, 0
+	-- never left behind: closes when its owner is hidden (as the game's tooltip does), and a tip
+	-- that follows the cursor (map areas) closes once nothing moves it for a moment (whatever
+	-- drove it stopped, e.g. its map was closed under the cursor)
+	tip.idle = 0
+	tip:SetScript("OnUpdate", function(self, elapsed)
+		self.idle = (self.idle or 0) + (elapsed or 0)
+		local o = self.owner
+		if type(o) == "table" and o.IsVisible then
+			local ok, vis = pcall(o.IsVisible, o)
+			if ok and vis == false then self:Hide(); return end
+		end
+		if self.anchor == "ANCHOR_CURSOR" and self.idle > 0.4 then self:Hide() end
+	end)
 
 	-- anchor "ANCHOR_SIDE" with a third argument `ref` (a window): the tip opens beside that window,
 	-- on the side with more room (the window nearer the right edge: to its left), level with the owner,
@@ -282,6 +295,7 @@ function T.Tooltip()
 	function tip:NumLines() return self.n end
 	-- beside the cursor (bottom-left corner just right of and above it), kept on the screen
 	function tip:PlaceAtCursor()
+		self.idle = 0
 		local x, y = 0, 0
 		if GetCursorPosition then x, y = GetCursorPosition() end
 		local s = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1

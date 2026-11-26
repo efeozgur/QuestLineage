@@ -140,6 +140,25 @@ function QL.ConfirmAbandon(id)
 		L("Abandon"), function() QL.AbandonQuest(id) end)
 end
 
-for _, e in ipairs({ "QUEST_LOG_UPDATE", "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP" }) do
+-- The context is dropped at once on every quest-log event, but STATE_CHANGED (which makes plates,
+-- the current quest window, quest areas, routes and the window recompute) fires once per burst:
+-- QUEST_LOG_UPDATE comes several times a second in combat (every kill and loot), and each one
+-- used to redo all of it. Rare events (accepted, turned in, removed, level up) fire at once.
+local pending = false
+local function fireState()
+	pending = false
+	QL.Fire("STATE_CHANGED")
+end
+QL.Event("QUEST_LOG_UPDATE", function()
+	cache = nil
+	if pending then return end
+	if C_Timer and C_Timer.After then
+		pending = true
+		C_Timer.After(0.15, fireState)
+	else
+		fireState()
+	end
+end)
+for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP" }) do
 	QL.Event(e, function() cache = nil; QL.Fire("STATE_CHANGED") end)
 end

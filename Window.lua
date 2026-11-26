@@ -12,7 +12,8 @@
 --  └──────┴─────────────────────┴─────────────────────────────┴─────────────────┘
 --
 -- The rail on the left picks the list: Quests (normal quests, most XP first), Chains (this zone),
--- Class (the character's class quests) and Search. "Chains" lists the chains that have a quest in the player's zone (Zone.lua), the ones in
+-- Class (the character's class quests), Zones (every zone by continent, then one zone's quests)
+-- and Search. "Chains" lists the chains that have a quest in the player's zone (Zone.lua), the ones in
 -- progress first; it follows the player from zone to zone. "Search" finds quests by name or
 -- id as you type. Picking either opens that quest's family tree in the middle and its details
 -- on the right. Each part renders under pcall: an error is recorded (/ql errors) and flagged in
@@ -29,6 +30,8 @@ local ZONE_ROW_H, SEARCH_ROW_H = 66, 50
 
 local win
 local focusId
+local mapMode = false -- the Zones tab shows the picked zone's map in the middle (ZoneMap.lua)
+local spotView       -- a task's places on the map in the middle: { kind, id, name, questId, map }
 
 local function L(s) return QL.L(s) end
 
@@ -92,8 +95,15 @@ local function newRow(list, height)
 	ck:Hide()
 	r.check = ck
 	r:SetScript("OnEnter", function(self)
+		if self.isHeader then return end
 		if not self.selected then T.Color(self.bg, C.rowHover) end
-		if self.questId then
+		if self.questId and QL.ZoneMapSpotlight then QL.ZoneMapSpotlight(self.questId) end
+		if self.tipFn then
+			local tip = QL.Tip()
+			tip:SetOwner(self, "ANCHOR_RIGHT")
+			self.tipFn(self, tip)
+			tip:Show()
+		elseif self.questId then
 			local tip = QL.Tip()
 			tip:SetOwner(self, "ANCHOR_RIGHT")
 			QL.FillQuestTooltip(tip, self.questId)
@@ -101,10 +111,13 @@ local function newRow(list, height)
 		end
 	end)
 	r:SetScript("OnLeave", function(self)
+		if self.isHeader then return end
+		if QL.ZoneMapSpotlight then QL.ZoneMapSpotlight(nil) end
 		T.Color(self.bg, self.selected and C.rowActive or C.row)
 		QL.Tip():Hide()
 	end)
 	r:SetScript("OnClick", function(self)
+		if self.onClick then return self.onClick(self) end
 		if not self.openId then return end
 		-- the Quests list also points the arrow at the quest
 		if self.arrowOnClick and not (QL.RouteActive and QL.RouteActive()) then
@@ -171,6 +184,44 @@ local function filterChainRows(rows, q)
 		end
 	end
 	return out
+end
+
+-- Sorting a page's list (the buttons beside its filter box; setting per page, nil = the page's own
+-- order): "xp" most XP first, "level" lowest level first, "distance" nearest first. Rows keep their
+-- tier (open before later before done) and are ordered within it; unknown values go last.
+--   sortRows(rows, mode, info) info(row) -> tier, id, xp, level (distance is measured from id)
+local function sortRows(rows, mode, ctx, info)
+	if mode ~= "xp" and mode ~= "level" and mode ~= "distance" then return rows end
+	local keys = {}
+	for _, row in ipairs(rows) do
+		local tier, id, xp, level = info(row)
+		local v
+		if mode == "xp" then v = (type(xp) == "number" and xp > 0) and -xp or nil
+		elseif mode == "level" then v = level
+		else v = id and QL.QuestDistance and (QL.QuestDistance(id, ctx)) or nil end
+		keys[row] = { tier = tier or 1, v = v, id = id or 0 }
+	end
+	table.sort(rows, function(a, b)
+		local ka, kb = keys[a], keys[b]
+		if ka.tier ~= kb.tier then return ka.tier < kb.tier end
+		if ka.v ~= kb.v then
+			if ka.v == nil then return false end
+			if kb.v == nil then return true end
+			return ka.v < kb.v
+		end
+		return ka.id < kb.id
+	end)
+	return rows
+end
+
+local function chainInfo(ctx)
+	return function(row)
+		local e, p = row.entry, row.progress
+		local done = p.state == "done"
+		local focus = (not done) and p.focus or nil
+		return done and 2 or 1, focus or e.head, (not done) and QL.ChainXP(e.ids, ctx).remaining or nil,
+			(focus and QL.QuestLevel(focus)) or e.minLevel
+	end
 end
 
 -- Chain rows (the Chains and Class pages): the chain's first quest, levels, done count, XP
@@ -271,6 +322,8 @@ local function renderZone()
 		quests = quests + row.entry.size
 	end
 	page.filter:SetPlaceholder(L("Filter chains by quest name"))
+	page:ShowSort(true)
+	sortRows(rows, QL.DB()[page.sortKey], ctx, chainInfo(ctx))
 	local q = pageQuery(page)
 	local all = #rows
 	rows = filterChainRows(rows, q)
@@ -284,6 +337,244 @@ local function renderZone()
 		page.sub:SetText(L("%d chains · %d open · %d quests"):format(#rows, open, quests))
 	end
 	fillChainRows(list, rows, ctx)
+end
+
+-- Sidebar: Zones (every zone with quests, grouped by continent; a click lists that zone's quests) --
+
+local ZONES_ROW_H, ZONES_HEAD_H = 58, 30
+
+-- a row at a given height and offset (the zone list mixes continent headings and zone rows)
+local function placeRow(list, i, y, height)
+	local r = list.rows[i]
+	if not r then
+		r = newRow(list, height)
+		list.rows[i] = r
+	end
+	r:SetHeight(height)
+	r:ClearAllPoints()
+	r:SetPoint("TOPLEFT", list.child, "TOPLEFT", 0, -y)
+	r:SetPoint("RIGHT", list, "RIGHT", 0, 0)
+	r.check:Hide()
+	r.title:SetPoint("TOPLEFT", 18, -11)
+	r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
+	r.questId, r.openId, r.distId, r.zone = nil, nil, nil, nil
+	r.onClick, r.tipFn, r.isHeader, r.arrowOnClick = nil, nil, nil, nil
+	r.dist:SetText("")
+	r.chip:SetText("")
+	r.sub:Show(); r.sep:Show()
+	if r.bar then r.bar:Hide() end
+	r:Show()
+	return r
+end
+
+local BAND_WORDS = {
+	inside = "You are within this band",
+	above = "Above your level: quests here are hard for you",
+	below = "Below your level: quests here are easy for you",
+}
+
+local function zoneLevelText(z, level)
+	if not z.minLevel then return nil end
+	local c = QL.ZoneBand(z.minLevel, z.maxLevel, level)
+	local t = z.minLevel == z.maxLevel and L("Lv %d"):format(z.minLevel) or L("Lv %d–%d"):format(z.minLevel, z.maxLevel)
+	return QL.Theme.Hex(c) .. t .. "|r"
+end
+
+local function zoneTip(self, tip)
+	local z = self.zone
+	local S = QL.Theme.STATUS
+	tip:AddLine(z.name, 1, 1, 1)
+	local level = QL.Context().level
+	local lt = zoneLevelText(z, level)
+	if lt then
+		local _, rel = QL.ZoneBand(z.minLevel, z.maxLevel, level)
+		tip:AddLine(lt .. (rel and ("  " .. L(BAND_WORDS[rel])) or ""), 0.8, 0.8, 0.8)
+	end
+	tip:AddLine(L("%d quests for your character"):format(z.total), 0.8, 0.8, 0.8)
+	if z.active > 0 then tip:AddLine(L("%d in your log"):format(z.active), S.active[1], S.active[2], S.active[3]) end
+	if z.available > 0 then tip:AddLine(L("%d to take now"):format(z.available), S.available[1], S.available[2], S.available[3]) end
+	if z.later > 0 then tip:AddLine(L("%d for later"):format(z.later), S.locked[1], S.locked[2], S.locked[3]) end
+	if z.done > 0 then tip:AddLine(L("%d done"):format(z.done), S.done[1], S.done[2], S.done[3]) end
+	tip:AddLine(L("Click: list its quests"), 0.5, 0.55, 0.6)
+end
+
+local function renderZoneList(page, ctx)
+	local T, C = QL.Theme, QL.Theme.C
+	local list = page.list
+	page.back:Hide()
+	page.zone:SetText(L("Zones"))
+	page.filter:SetPlaceholder(L("Filter zones by name"))
+	page:ShowSort(false)
+	local here = QL.PlayerZone()
+	local zones = QL.ZoneOverview(ctx)
+	local q = pageQuery(page)
+	-- grouped by continent, continents by name; places without one (dungeons) last
+	local groups, order = {}, {}
+	local shown, open = 0, 0
+	for _, z in ipairs(zones) do
+		if not q or z.name:lower():find(q, 1, true) then
+			local key = z.continent or ""
+			if not groups[key] then groups[key] = {}; order[#order + 1] = key end
+			table.insert(groups[key], z)
+			shown = shown + 1
+			if z.available + z.active > 0 then open = open + 1 end
+		end
+	end
+	table.sort(order, function(a, b)
+		if (a == "") ~= (b == "") then return b == "" end
+		return a < b
+	end)
+	if q then
+		page.sub:SetText(L("%d of %d match"):format(shown, #zones))
+	elseif #zones == 0 then
+		page.sub:SetText(L("No zones with quests found."))
+	else
+		page.sub:SetText(L("%d zones · %d with quests to take"):format(shown, open))
+	end
+	local i, y = 0, 0
+	for _, key in ipairs(order) do
+		i = i + 1
+		local h = placeRow(list, i, y, ZONES_HEAD_H)
+		h.isHeader = true
+		h.title:SetPoint("TOPLEFT", 18, -12)
+		h.title:SetText((key == "" and L("Dungeons and other places") or key):upper())
+		h.title:SetTextColor(unpack(C.dim))
+		h.sub:Hide(); h.sep:Hide()
+		selectRow(h, false)
+		T.Color(h.bg, C.sidebar)
+		y = y + ZONES_HEAD_H
+		for _, z in ipairs(groups[key]) do
+			i = i + 1
+			local r = placeRow(list, i, y, ZONES_ROW_H)
+			r.zone = z
+			r.tipFn = zoneTip
+			r.onClick = function(self)
+				QL.DB().zonesArea = self.zone.area
+				mapMode, focusId = true, nil
+				if page.filter:GetText() ~= "" then page.filter:SetText("") end
+				QL.RenderWindow(false)
+			end
+			local isHere = z.area == here
+			r.title:SetText((isHere and (T.Hex(C.accent) .. "» |r") or "") .. z.name)
+			r.title:SetTextColor(unpack((z.available + z.active > 0) and C.text or C.muted))
+			local parts = {}
+			local lt = zoneLevelText(z, ctx.level)
+			if lt then parts[#parts + 1] = lt end
+			parts[#parts + 1] = L("%d/%d done"):format(z.done, z.total)
+			if z.active > 0 then parts[#parts + 1] = T.Hex(T.STATUS.active) .. L("%d in your log"):format(z.active) .. "|r" end
+			r.sub:SetText(table.concat(parts, "  ·  "))
+			if isHere then
+				r.chip:SetText(L("You are here"))
+				r.chip:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+			elseif z.available > 0 then
+				r.chip:SetText(L("%d to take"):format(z.available))
+				r.chip:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+			end
+			if not r.bar then
+				r.bar = T.Bar(r, 3)
+				r.bar:SetPoint("BOTTOMLEFT", 18, 12)
+				r.bar:SetPoint("BOTTOMRIGHT", -16, 12)
+			end
+			r.bar:SetValue(z.done / z.total, z.done >= z.total and T.STATUS.done or nil)
+			r.bar:Show()
+			selectRow(r, false)
+			y = y + ZONES_ROW_H
+		end
+	end
+	hideRows(list, i + 1)
+	list:SetContentHeight(y + 8)
+end
+
+local function renderZoneQuests(page, ctx, area)
+	local T, C = QL.Theme, QL.Theme.C
+	local list = page.list
+	page.back:SetLabel("‹  " .. L("Zones"))
+	page.back:Show()
+	page.mapBtn:SetLabel(L("Map"))
+	page.mapBtn:SetActive(mapMode)
+	page.mapBtn:Show()
+	local z
+	for _, e in ipairs(QL.ZoneOverview(ctx)) do if e.area == area then z = e; break end end
+	page.zone:SetText(z and z.name or (QL.AreaName(area) or ("#" .. area)))
+	page.filter:SetPlaceholder(L("Filter quests by name"))
+	page:ShowSort(true)
+	local rows = QL.ZoneQuestRows(area, ctx)
+	local TIER = { ready = 1, active = 1, available = 1, toolow = 2, locked = 2 }
+	sortRows(rows, QL.DB()[page.sortKey], ctx, function(row)
+		local tier = TIER[row.status] or 3
+		return tier, row.id, tier < 3 and QL.QuestXPAt(row.id, ctx.level) or nil, row.level
+	end)
+	local q = pageQuery(page)
+	local all = #rows
+	if q then
+		local kept = {}
+		for _, row in ipairs(rows) do if questMatches(row.id, q) then kept[#kept + 1] = row end end
+		rows = kept
+	end
+	if q then
+		page.sub:SetText(L("%d of %d match"):format(#rows, all))
+	elseif z then
+		local lt = zoneLevelText(z, ctx.level)
+		page.sub:SetText((lt and (lt .. "  ·  ") or "") .. L("%d/%d done"):format(z.done, z.total) .. "  ·  " .. L("%d to take"):format(z.available))
+	elseif #rows == 0 then
+		page.sub:SetText(L("No quests to take here right now."))
+	end
+	local y = 0
+	for i, row in ipairs(rows) do
+		local id, st = row.id, row.status
+		local r = placeRow(list, i, y, SEARCH_ROW_H)
+		r.questId, r.openId = id, id
+		local faded = st == "done" or st == "closed" or st == "other"
+		r.arrowOnClick = not faded
+		r.sub:SetPoint("RIGHT", r, "RIGHT", -86, 0)
+		if st == "available" or st == "active" or st == "ready" then
+			r.distId = id
+			r.dist:SetText(QL.DistanceMarkup and QL.DistanceMarkup(id, ctx) or "")
+		end
+		local pointed = QL.ArrowQuest and QL.ArrowQuest() == id
+		r.title:SetText((pointed and (T.Hex(C.accent) .. "» |r") or "") .. QL.QuestTitle(id))
+		r.title:SetTextColor(unpack(faded and C.muted or (QL.TitleColor(id, ctx) or C.text)))
+		local s = T.STATUS[st] or T.STATUS.locked
+		local chain = QL.ChainSummary(id, ctx)
+		local dungeon = QL.DungeonMarkup(id)
+		r.sub:SetText((row.level and (QL.LevelMarkup(id, ctx) .. "  ·  ") or "") .. (dungeon and (dungeon .. "  ·  ") or "")
+			.. T.Hex(s) .. L(s[4]) .. "|r"
+			.. (chain and ("  ·  " .. L("Chain %d/%d"):format(chain.index, chain.total)) or ""))
+		local xp = (not faded) and QL.QuestXPAt(id, ctx.level) or nil
+		if xp then
+			r.chip:SetText("+" .. QL.XPText(xp))
+			r.chip:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+		end
+		selectRow(r, id == focusId)
+		y = y + SEARCH_ROW_H
+	end
+	hideRows(list, #rows + 1)
+	list:SetContentHeight(y + 8)
+end
+
+local function renderZones()
+	local page = win.zonesPage
+	page.mapBtn:Hide()
+	if QL.DataStatus() ~= "ok" or not QL.IndexReady() then
+		page.back:Hide()
+		page.zone:SetText(L("Zones"))
+		hideRows(page.list, 1)
+		if QL.DataStatus() ~= "ok" then
+			page.sub:SetText(L("QuestieDB is missing."))
+		else
+			page.sub:SetText(L("Building the chain index..."))
+			QL.WhenIndexed(QL.RenderWindow)
+		end
+		return
+	end
+	local ctx = QL.Context()
+	local area = QL.DB().zonesArea
+	if type(area) == "number" then renderZoneQuests(page, ctx, area) else renderZoneList(page, ctx) end
+	-- the world map shows the picked zone's pins: redraw them when another zone is picked
+	if win.worldArea ~= area then
+		win.worldArea = area
+		if QL.RefreshWorldPins then pcall(QL.RefreshWorldPins) end
+	end
 end
 
 -- Sidebar: Search ---------------------------------------------------------------------------
@@ -336,6 +627,8 @@ local function renderClass()
 		xpLeft = xpLeft + QL.ChainXP(row.entry.ids, ctx).remaining
 	end
 	page.filter:SetPlaceholder(L("Filter class quests"))
+	page:ShowSort(true)
+	sortRows(rows, QL.DB()[page.sortKey], ctx, chainInfo(ctx))
 	local q = pageQuery(page)
 	local all = #rows
 	rows = filterChainRows(rows, q)
@@ -381,6 +674,10 @@ local function renderQuests()
 		total = total + (q.xp or 0)
 	end
 	page.filter:SetPlaceholder(L("Filter quests by name"))
+	page:ShowSort(true)
+	sortRows(quests, QL.DB()[page.sortKey], ctx, function(item)
+		return 1, item.id, item.xp, QL.QuestLevel(item.id)
+	end)
 	local q = pageQuery(page)
 	local all = #quests
 	if q then
@@ -467,7 +764,7 @@ local function renderSearch()
 	local list = page.list
 	local text = (page.input:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
 	page.input.hint:SetShown(text == "")
-	page.input:SetPlaceholder(L("Quest name or id"))
+	page.input:SetPlaceholder(QL.CreatureSearchOn() and L("Quest or creature name, or quest id") or L("Quest name or id"))
 	if QL.DataStatus() ~= "ok" then
 		page.sub:SetText(L("QuestieDB is missing."))
 		hideRows(list, 1)
@@ -486,16 +783,18 @@ local function renderSearch()
 		return
 	end
 	local ids = QL.SearchQuests(text)
-	page.sub:SetText(#ids == 0 and L("No quest found.") or L("%d quests found"):format(#ids))
+	local npcs = tonumber(text) and {} or QL.SearchNpcs(text)
+	if #ids == 0 and #npcs == 0 then
+		page.sub:SetText(L("Nothing found."))
+	else
+		page.sub:SetText(L("%d quests found"):format(#ids) .. (#npcs > 0 and ("  ·  " .. L("%d creatures"):format(#npcs)) or ""))
+	end
 	local ctx = QL.Context()
+	local y = 0
 	for i, id in ipairs(ids) do
-		local r = listRow(list, i, SEARCH_ROW_H)
+		local r = placeRow(list, i, y, SEARCH_ROW_H)
+		y = y + SEARCH_ROW_H
 		r.arrowOnClick = true
-		r.check:Hide()
-		r.title:SetPoint("TOPLEFT", 18, -11)
-		r.distId = nil
-		r.dist:SetText("")
-		r.sub:SetPoint("RIGHT", r, "RIGHT", -16, 0)
 		r.questId, r.openId = id, id
 		r.title:SetText(QL.QuestTitle(id))
 		r.title:SetTextColor(unpack(QL.TitleColor(id, ctx) or C.text))
@@ -510,8 +809,69 @@ local function renderSearch()
 		if r.bar then r.bar:Hide() end
 		selectRow(r, id == focusId)
 	end
-	hideRows(list, #ids + 1)
-	list:SetContentHeight(#ids * SEARCH_ROW_H + 8)
+	-- creatures by name: where they stand, on the map in the middle (the task places view)
+	local i = #ids
+	if #npcs > 0 then
+		local shownView = QL.TaskSourcesShown and QL.TaskSourcesShown()
+		i = i + 1
+		local h = placeRow(list, i, y, ZONES_HEAD_H)
+		h.isHeader = true
+		h.title:SetPoint("TOPLEFT", 18, -12)
+		h.title:SetText(L("Creatures"):upper())
+		h.title:SetTextColor(unpack(C.dim))
+		h.sub:Hide(); h.sep:Hide()
+		selectRow(h, false)
+		T.Color(h.bg, C.sidebar)
+		y = y + ZONES_HEAD_H
+		-- one row for all of them together (only when there is more than one)
+		if #npcs > 1 then
+			i = i + 1
+			local r = placeRow(list, i, y, SEARCH_ROW_H)
+			y = y + SEARCH_ROW_H
+			r.onClick = function() QL.ShowTaskSources("name", text, "\"" .. text .. "\"") end
+			r.tipFn = function(_, tip)
+				tip:AddLine(L("Every creature named like this"), 1, 1, 1)
+				tip:AddLine(L("Click: show where they are on the map"), 0.5, 0.55, 0.6)
+			end
+			r.title:SetText(T.Hex(C.accent) .. L("All on the map") .. "|r")
+			r.title:SetTextColor(unpack(C.text))
+			local here = 0
+			for _, n in ipairs(npcs) do if n.here then here = here + 1 end end
+			r.sub:SetText(L("%d kinds"):format(math.min(#npcs, 8)) .. (here > 0 and ("  ·  " .. L("%d in your zone"):format(here)) or ""))
+			selectRow(r, shownView ~= nil and shownView.kind == "name" and shownView.id == text)
+		end
+		for _, n in ipairs(npcs) do
+			i = i + 1
+			local r = placeRow(list, i, y, SEARCH_ROW_H)
+			y = y + SEARCH_ROW_H
+			local npc = n
+			r.onClick = function() QL.ShowTaskSources("npc", npc.id, npc.name) end
+			r.tipFn = function(_, tip)
+				tip:AddLine(npc.name, 1, 1, 1)
+				for zi, z in ipairs(npc.zones or {}) do
+					if zi > 8 then tip:AddLine(L("+%d more"):format(#npc.zones - 8), 0.6, 0.6, 0.6); break end
+					local c = (npc.here and zi == 1) and C.accent or C.text
+					tip:AddLine((QL.AreaName(z.area) or L("Unknown zone")) .. "  " .. QL.Theme.Hex(C.dim) .. L("%d places"):format(z.count) .. "|r", c[1], c[2], c[3])
+				end
+				tip:AddLine(L("Click: show where they are on the map"), 0.5, 0.55, 0.6)
+			end
+			r.title:SetText(npc.name)
+			r.title:SetTextColor(unpack(npc.here and C.text or C.muted))
+			-- where: the zone (yours first, else the one with most places), "+n zones" for the rest
+			local zones = npc.zones or {}
+			local where = zones[1] and (QL.AreaName(zones[1].area) or L("Unknown zone")) or nil
+			if where then
+				where = (npc.here and T.Hex(C.accent) or T.Hex(C.text)) .. where .. "|r"
+				if #zones > 1 then where = where .. "  " .. T.Hex(C.dim) .. L("+%d zones"):format(#zones - 1) .. "|r" end
+			end
+			r.sub:SetText((where and (where .. "  ·  ") or "") .. L("%d places"):format(npc.count))
+			r.chip:SetText("#" .. npc.id)
+			r.chip:SetTextColor(unpack(C.dim))
+			selectRow(r, shownView ~= nil and shownView.kind == "npc" and shownView.id == npc.id)
+		end
+	end
+	hideRows(list, i + 1)
+	list:SetContentHeight(y + 8)
 end
 
 -- Main: the tree ----------------------------------------------------------------------------
@@ -543,6 +903,44 @@ local function renderMain(animate)
 		setEmpty(L("Building the chain index..."), L("This takes a few seconds once per session."))
 		return
 	end
+	-- a task's places (a click on a task in the detail panel) over everything else in the middle
+	if spotView then
+		local ctx = QL.Context()
+		setEmpty(nil)
+		win.canvasScroll:Hide()
+		local zm = win.zoneMap
+		zm:ShowSpots(spotView, ctx, win.shownSpots ~= spotView)
+		win.shownSpots = spotView
+		zm.treeBtn:SetLabel(L("Back"))
+		zm.treeBtn:Show()
+		-- the detail panel already on this quest keeps its scroll (the click came from it)
+		if focusId and win.inspector.shownId ~= focusId then
+			local chain = QL.BuildChain(focusId, ctx)
+			if chain then win.inspector:Show(focusId, chain) end
+		end
+		return
+	end
+	win.shownSpots = nil
+	local mapArea = mapMode and QL.DB().page == "zones" and type(QL.DB().zonesArea) == "number" and QL.DB().zonesArea or nil
+	win.canvasScroll:SetShown(not mapArea)
+	if mapArea then
+		local ctx = QL.Context()
+		setEmpty(nil)
+		local zm = win.zoneMap
+		zm:Show(mapArea, ctx, focusId, win.shownMapArea ~= mapArea)
+		win.shownMapArea = mapArea
+		zm.treeBtn:SetLabel(L("Show chain tree"))
+		zm.treeBtn:SetShown(focusId ~= nil)
+		local chain = focusId and QL.BuildChain(focusId, ctx)
+		if chain then
+			win.inspector:Show(focusId, chain)
+		else
+			win.inspector:Clear(L("Pick a quest on the map"), L("Click a pin to see the quest here."))
+		end
+		return
+	end
+	win.zoneMap:Hide()
+	win.shownMapArea = nil
 	if not focusId then
 		win.tree:Clear()
 		setEmpty(L("Pick a quest chain"), L("Choose one from this zone on the left, or search for any quest."))
@@ -635,14 +1033,17 @@ function QL.RenderWindow(animate)
 	win.questsTab:SetLabel(L("Quests"))
 	win.zoneTab:SetLabel(L("Chains"))
 	win.classTab:SetLabel(L("Class"))
+	win.zonesTab:SetLabel(L("Zones"))
 	win.searchTab:SetLabel(L("Search"))
 	win.questsTab:SetActive(page == "quests")
 	win.zoneTab:SetActive(page == "zone")
 	win.classTab:SetActive(page == "class")
+	win.zonesTab:SetActive(page == "zones")
 	win.searchTab:SetActive(page == "search")
 	win.questsPage:SetShown(page == "quests")
 	win.zonePage:SetShown(page == "zone")
 	win.classPage:SetShown(page == "class")
+	win.zonesPage:SetShown(page == "zones")
 	win.searchPage:SetShown(page == "search")
 	win.headerSub:SetText(L("Quest chains"))
 	local tr = QL.UseTurkish()
@@ -653,6 +1054,7 @@ function QL.RenderWindow(animate)
 	if page == "quests" then safe("quest list", renderQuests)
 	elseif page == "zone" then safe("zone list", renderZone)
 	elseif page == "class" then safe("class list", renderClass)
+	elseif page == "zones" then safe("zones", renderZones)
 	else safe("search", renderSearch) end
 	if animate == nil then animate = win.shownFocus ~= focusId end
 	win.shownFocus = focusId
@@ -766,12 +1168,17 @@ local function createWindow()
 		{ "questsTab", "nav_quests", "quests" },
 		{ "zoneTab", "nav_chains", "zone" },
 		{ "classTab", "nav_class", "class" },
+		{ "zonesTab", "nav_zones", "zones" },
 		{ "searchTab", "nav_search", "search" },
 	}) do
 		local b = T.RailButton(rail, MEDIA .. item[2], RAIL_W - 1, 62)
 		b:SetPoint("TOPLEFT", 0, y)
 		local key = item[3]
-		b:SetScript("OnClick", function() QL.ShowPage(key) end)
+		b:SetScript("OnClick", function()
+			-- the Zones button on its own page goes back to the zone list
+			if key == "zones" and QL.DB().page == "zones" then QL.DB().zonesArea = nil end
+			QL.ShowPage(key)
+		end)
 		f[item[1]] = b
 		y = y - 64
 	end
@@ -792,7 +1199,48 @@ local function createWindow()
 	end
 
 	-- a zone page: zone name, a summary line, a scrolling list
-	local function zonePage()
+	-- sort buttons beside the filter box: XP · Lv · Near (a click on the lit one: the page's own order)
+	local SORTS = { { "xp", "XP", 34 }, { "level", "Lv", 34 }, { "distance", "Near", 46 } }
+	local SORT_TIPS = {
+		xp = "Most XP first",
+		level = "Lowest level first",
+		distance = "Nearest first",
+	}
+	local function addSort(zp, key)
+		zp.sortKey = key
+		zp.sorts = {}
+		local x = -16
+		for i = #SORTS, 1, -1 do
+			local mode, label, w = SORTS[i][1], SORTS[i][2], SORTS[i][3]
+			local b = T.Button(zp, w, 28)
+			b:SetPoint("TOPRIGHT", x, -66)
+			x = x - w - 2
+			b.mode = mode
+			b.label:SetText(L(label))
+			b:SetScript("OnClick", function()
+				local cur = QL.DB()[key]
+				QL.Set(key, cur ~= mode and mode or nil)
+				QL.RenderWindow(false)
+			end)
+			local enter, leave = b:GetScript("OnEnter"), b:GetScript("OnLeave")
+			b:SetScript("OnEnter", function(self)
+				if enter then enter(self) end
+				local tip = QL.Tip()
+				tip:SetOwner(self, "ANCHOR_BOTTOM")
+				tip:AddLine(L("Sort: ") .. L(SORT_TIPS[mode]), 1, 1, 1)
+				tip:AddLine(QL.DB()[key] == mode and L("Click again for the list's own order.") or L("Open quests stay above later and finished ones."), 0.7, 0.7, 0.7, true)
+				tip:Show()
+			end)
+			b:SetScript("OnLeave", function(self)
+				if leave then leave(self) end
+				QL.Tip():Hide()
+			end)
+			zp.sorts[mode] = b
+		end
+		zp.sortW = 16 - x - 6 -- room the buttons take, with a gap before the filter box
+	end
+
+	local function zonePage(sortKey)
 		local zp = page()
 		zp.zone = T.Text(zp, 18, C.text, nil, true)
 		zp.zone:SetPoint("TOPLEFT", 18, -8)
@@ -812,6 +1260,17 @@ local function createWindow()
 			if C_Timer and C_Timer.After then C_Timer.After(0.2, run) else run() end
 		end)
 		zp.filter:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+		-- sorting: buttons beside the filter box, which narrows to make room while they show
+		function zp:ShowSort(on)
+			if not self.sorts then return end
+			local mode = QL.DB()[self.sortKey]
+			for m, b in pairs(self.sorts) do
+				b:SetShown(on)
+				b:SetActive(on and mode == m)
+			end
+			self.filter:SetWidth(on and (SIDEBAR_W - 32 - self.sortW) or (SIDEBAR_W - 32))
+		end
+		if sortKey then addSort(zp, sortKey) end
 		zp.list = T.Scroll(zp)
 		zp.list:SetPoint("TOPLEFT", 0, -102)
 		zp.list:SetPoint("BOTTOMRIGHT", 0, 8)
@@ -823,7 +1282,7 @@ local function createWindow()
 		T.Color(sep, C.lineSoft)
 		return zp
 	end
-	f.questsPage = zonePage()
+	f.questsPage = zonePage("sortQuests")
 	do
 		local qp = f.questsPage
 		qp.list:SetPoint("BOTTOMRIGHT", 0, 96)
@@ -849,9 +1308,9 @@ local function createWindow()
 		foot.clear:SetScript("OnClick", function() QL.ClearRouteSelection() end)
 		qp.foot = foot
 	end
-	f.zonePage = zonePage()
+	f.zonePage = zonePage("sortChains")
 	-- the class page: the class's emblem beside its name
-	local cp = zonePage()
+	local cp = zonePage("sortClass")
 	cp.icon = cp:CreateTexture(nil, "ARTWORK")
 	cp.icon:SetSize(30, 30)
 	cp.icon:SetPoint("TOPLEFT", 16, -6)
@@ -862,6 +1321,27 @@ local function createWindow()
 	cp.sub:SetPoint("TOPLEFT", 18, -40)
 	cp.sub:SetPoint("RIGHT", cp, "RIGHT", -16, 0)
 	f.classPage = cp
+
+	-- the zones page: the zone list, or one zone's quests with a way back
+	local zs = zonePage("sortZoneQuests")
+	zs.back = T.Button(zs, 84, 22)
+	zs.back:SetPoint("TOPRIGHT", -16, -6)
+	zs.back:SetScript("OnClick", function()
+		QL.DB().zonesArea = nil
+		if zs.filter:GetText() ~= "" then zs.filter:SetText("") end
+		QL.RenderWindow(false)
+	end)
+	zs.back:Hide()
+	-- back to the zone's map after a quest's tree was opened
+	zs.mapBtn = T.Button(zs, 58, 22)
+	zs.mapBtn:SetPoint("RIGHT", zs.back, "LEFT", -6, 0)
+	zs.mapBtn:SetScript("OnClick", function()
+		mapMode = true
+		QL.RenderWindow(false)
+	end)
+	zs.mapBtn:Hide()
+	zs.zone:SetPoint("RIGHT", zs, "RIGHT", -170, 0)
+	f.zonesPage = zs
 
 	local sp = page()
 	sp.input = T.Input(sp, SIDEBAR_W - 32, 34)
@@ -985,6 +1465,15 @@ local function createWindow()
 	f.emptySub:SetPoint("TOP", f.emptyTitle, "BOTTOM", 0, -8)
 	f.emptySub:SetJustifyH("CENTER")
 
+	-- main: the zone map (Zones tab), over the tree area
+	f.zoneMap = QL.ZoneMap.New(main)
+	f.zoneMap.frame:SetFrameLevel(main:GetFrameLevel() + 60)
+	f.zoneMap.treeBtn:SetScript("OnClick", function()
+		-- from a task's places back to what was there (the zone map or the tree); else to the tree
+		if spotView then spotView = nil else mapMode = false end
+		QL.RenderWindow(true)
+	end)
+
 	f:SetScript("OnShow", function() f.errorFlag:Hide(); QL.RenderWindow() end)
 	local since = 0
 	f:SetScript("OnUpdate", function(_, elapsed)
@@ -994,7 +1483,7 @@ local function createWindow()
 		local ok, err = pcall(QL.RefreshDistances)
 		if not ok then QL.Debug("distances: " .. tostring(err)) end
 	end)
-	f:SetScript("OnHide", function() f.shownFocus = nil end)
+	f:SetScript("OnHide", function() f.shownFocus = nil; f.shownMapArea = nil end)
 	f:Hide()
 end
 
@@ -1003,11 +1492,14 @@ local function ensureWindow()
 	return win
 end
 
-function QL.Open(arg)
+-- opts.keepMap: a pin on the zone map opens the quest beside the map instead of its tree.
+function QL.Open(arg, opts)
 	if not ensureWindow() then return end
 	local id = tonumber(arg)
 	if id then
 		focusId = id
+		if not (opts and opts.keepMap) then mapMode = false end
+		spotView = nil
 		if win:IsShown() then QL.RenderWindow() else win:Show() end
 		return
 	end
@@ -1026,11 +1518,46 @@ function QL.Open(arg)
 	end)
 end
 
+-- Show where a task's target is found (an item: who drops it; a creature or an object: its spawns)
+-- on the map in the middle; the detail panel stays on the quest. "Back" returns to the view before.
+function QL.ShowTaskSources(kind, id, name, questId)
+	if not ensureWindow() then return end
+	spotView = { kind = kind, id = id, name = name, questId = questId }
+	if questId then focusId = questId end
+	if win:IsShown() then QL.RenderWindow(false) else win:Show() end
+end
+
+function QL.TaskSourcesShown() return spotView end
+
+-- /ql bul <name>: the Search tab with that name, and every creature so named on the map.
+function QL.FindCreatures(text)
+	text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if #text < 2 then
+		QL.Chat(L("Usage: /ql find <creature name>"))
+		return
+	end
+	if not QL.CreatureSearchOn() then
+		QL.Print(L("Creature search is off (settings, General)."), "warn")
+		return
+	end
+	if not ensureWindow() then return end
+	QL.DB().page = "search"
+	win.searchPage.input:SetText(text)
+	QL.WhenIndexed(function()
+		if #QL.SearchNpcs(text) == 0 then
+			QL.Print(L("No creature with places found for: ") .. text, "warn")
+			if win:IsShown() then QL.RenderWindow() else win:Show() end
+			return
+		end
+		QL.ShowTaskSources("name", text, "\"" .. text .. "\"")
+	end)
+end
+
 -- The distances on the Quests list and in the detail panel, re-measured as you move.
 function QL.RefreshDistances()
 	if not win or not win:IsShown() or not QL.DistanceText then return end
 	local ctx = QL.Context()
-	for _, page in ipairs({ win.questsPage, win.zonePage }) do
+	for _, page in ipairs({ win.questsPage, win.zonePage, win.zonesPage }) do
 		if page:IsShown() then
 			for _, r in ipairs(page.list.rows) do
 				if r:IsShown() and r.distId then

@@ -143,7 +143,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Paths.lua", "Flight.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "ZoneMap.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Paths.lua", "Flight.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -201,6 +201,26 @@ Eq(qrows[2].chip.text, "no XP data", "no data chip")
 Check(qrows[2].sub.text:find("In your log", 1, true), "state on the row: " .. qrows[2].sub.text)
 Check(qrows[1].sub.text:find("Chain ", 1, true), "chain position on the row: " .. qrows[1].sub.text)
 Check(qp.sub.text:find("2 quests · 1 in your log", 1, true), "summary: " .. qp.sub.text)
+-- sorting: XP · Lv · Near beside the filter box
+local function shownIds(page)
+	local ids = {}
+	for _, r in ipairs(page.list.rows) do if r.shown then ids[#ids + 1] = r.questId end end
+	return table.concat(ids, ",")
+end
+Eq(qp.sorts.level.shown, true, "sort buttons beside the filter")
+Eq(qp.sorts.xp.active, false, "none lit: the list's own order")
+qp.sorts.level.scripts.OnClick(qp.sorts.level)
+Eq(QL.DB().sortQuests, "level", "sorted by level")
+Eq(qp.sorts.level.active, true, "its button lit")
+Eq(shownIds(qp), "2,5", "lowest level first (Second Steps 3, Rumours 4)")
+qp.sorts.xp.scripts.OnClick(qp.sorts.xp)
+Eq(shownIds(qp), "5,2", "most XP first, no XP data last")
+qp.sorts.distance.scripts.OnClick(qp.sorts.distance)
+Eq(QL.DB().sortQuests, "distance", "by distance")
+Eq(#QL.errors, 0, "distance sort without errors: " .. table.concat(QL.errors, " | "))
+qp.sorts.distance.scripts.OnClick(qp.sorts.distance)
+Eq(QL.DB().sortQuests, nil, "a click on the lit one: the list's own order")
+Eq(shownIds(qp), "5,2", "back to the own order")
 qrows[1].scripts.OnClick(qrows[1])
 Eq(f.inspector.hero.title.text, "Rumours", "a quest row opens its details")
 Eq(qrows[1].selected, true, "the open quest's row is selected")
@@ -301,6 +321,186 @@ for _, r in ipairs(f.classPage.list.rows) do if r.shown then kept[#kept + 1] = r
 Eq(table.concat(kept, ","), "22", "class quests filter too")
 f.classPage.filter:SetText("")
 f.classPage.filter.scripts.OnTextChanged(f.classPage.filter, true)
+
+-- Zones: every zone with quests, by continent; a click lists one zone's quests -----------------------
+do
+	local getInfo = C_Map.GetMapInfo
+	C_Map.GetMapInfo = function(id)
+		if id == 1414 then return { name = "Kalimdor", mapType = 2 } end
+		if id == 1412 then return { name = "Mulgore", parentMapID = 1414 } end
+		return getInfo(id)
+	end
+	f.zonesTab.scripts.OnClick(f.zonesTab)
+	local zs = f.zonesPage
+	Eq(zs.shown, true, "zones page shown")
+	Eq(f.zonesTab.active, true, "zones rail button active")
+	Eq(zs.zone.text, "Zones", "zone list heading")
+	Eq(zs.back.shown, false, "no back button on the list")
+	Eq(zs.sorts.xp.shown, false, "no sort buttons on the zone list")
+	local heads, zrows = {}, {}
+	for _, r in ipairs(zs.list.rows) do
+		if r.shown then
+			if r.isHeader then heads[#heads + 1] = r.title.text else zrows[#zrows + 1] = r end
+		end
+	end
+	Eq(heads[1], "KALIMDOR", "continent heading first")
+	Eq(heads[#heads], "DUNGEONS AND OTHER PLACES", "places without a continent last")
+	local durotar
+	for _, r in ipairs(zrows) do if r.zone.area == 14 then durotar = r end end
+	Check(durotar, "Durotar listed")
+	Check(durotar.title.text:find("Durotar", 1, true), "zone name: " .. durotar.title.text)
+	Eq(durotar.chip.text, "You are here", "the player's zone is marked")
+	Check(durotar.sub.text:find("done", 1, true), "done count on the row: " .. durotar.sub.text)
+	Check(zs.sub.text:find("zones", 1, true), "zone summary: " .. zs.sub.text)
+	durotar.scripts.OnEnter(durotar)
+	durotar.scripts.OnLeave(durotar)
+	-- the filter narrows zones by name
+	zs.filter:SetText("mulg")
+	zs.filter.scripts.OnTextChanged(zs.filter, true)
+	local names = {}
+	for _, r in ipairs(zs.list.rows) do if r.shown and not r.isHeader then names[#names + 1] = r.zone.name end end
+	Eq(table.concat(names, ","), "Mulgore", "filtered to Mulgore")
+	zs.filter:SetText("")
+	zs.filter.scripts.OnTextChanged(zs.filter, true)
+	-- a click opens the zone's quests: open ones first, done ones after
+	-- (the fixture quests have no givers in Durotar: each gets a spot of its own, 2 and 5 share one)
+	-- map art: without art calls the classic file paths; with them, called plainly (not as methods)
+	local _, pathFiles, source = QL.ZoneMapArt(1411)
+	Eq(source, "path", "no art calls: classic files")
+	Eq(pathFiles[12], "Interface\\WorldMap\\Durotar\\Durotar12", "Durotar's last tile")
+	C_Map.GetMapArtLayers = function(m)
+		assert(type(m) == "number", "GetMapArtLayers called as a method")
+		return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256 } }
+	end
+	C_Map.GetMapArtLayerTextures = function(m, layer)
+		assert(type(m) == "number" and layer == 1, "GetMapArtLayerTextures called as a method")
+		local ids = {}
+		for i = 1, 12 do ids[i] = 1000 + i end
+		return ids
+	end
+	local _, ids, src = QL.ZoneMapArt(1411)
+	Eq(src, "client", "file ids from the client")
+	Eq(#ids, 12, "twelve tiles")
+	local questTarget = QL.QuestTarget
+	QL.QuestTarget = function(id)
+		local x = (id == 2 or id == 5) and 0.3 or (0.05 * id)
+		return { kind = "pickup", points = { { map = 1411, x = x, y = 0.5 }, { map = 1412, x = 0.9, y = 0.9 } } }
+	end
+	for _, r in ipairs(zs.list.rows) do if r.shown and r.zone and r.zone.area == 14 then durotar = r end end
+	durotar.scripts.OnClick(durotar)
+	Eq(QL.DB().zonesArea, 14, "zone remembered")
+	Eq(zs.back.shown, true, "back button shown")
+	Eq(zs.zone.text, "Durotar", "zone heading")
+	Eq(zs.sorts.xp.shown, true, "sort buttons over a zone's quests")
+	local function zoneIds()
+		local ids, sts = {}, {}
+		for _, r in ipairs(zs.list.rows) do if r.shown then ids[#ids + 1] = r.questId end end
+		return ids
+	end
+	local own = table.concat(zoneIds(), ",")
+	zs.sorts.level.scripts.OnClick(zs.sorts.level)
+	local lv = zoneIds()
+	local TIER = { ready = 1, active = 1, available = 1, toolow = 2, locked = 2 }
+	local ctxz = QL.Context()
+	for i = 2, #lv do
+		local ta, tb = TIER[QL.NodeStatus(lv[i - 1], ctxz)] or 3, TIER[QL.NodeStatus(lv[i], ctxz)] or 3
+		Check(ta < tb or (ta == tb and (QL.QuestLevel(lv[i - 1]) or 0) <= (QL.QuestLevel(lv[i]) or 0)), "zone quests by level within their tier at " .. i)
+	end
+	zs.sorts.level.scripts.OnClick(zs.sorts.level)
+	Eq(table.concat(zoneIds(), ","), own, "own order back")
+	-- the zone's map in the middle, pins for what can be done there
+	Eq(f.zoneMap.frame.shown, true, "the zone map shows")
+	Eq(f.canvasScroll.shown, false, "the tree is hidden under it")
+	Eq(f.zoneMap.title.text, "Durotar", "map heading")
+	Eq(f.zoneMap.noArt.text, "", "the art was drawn")
+	local pins = QL.ZoneMapPins(14, QL.Context())
+	Check(#pins >= 1, "pins on Durotar's map: " .. #pins)
+	for _, pin in ipairs(pins) do
+		Check(pin.x >= 0 and pin.x <= 1 and pin.y >= 0 and pin.y <= 1, "pin inside the map")
+	end
+	Check(f.zoneMap.shownPins >= 1 and f.zoneMap.shownPins <= #pins, "pins drawn: " .. f.zoneMap.shownPins)
+	-- "level too low" is hidden until its switch is clicked
+	local before = f.zoneMap.shownPins
+	Check(f.zoneMap.switches.toolow.text.text:find("Level too low", 1, true), "switch label: " .. f.zoneMap.switches.toolow.text.text)
+	f.zoneMap.switches.toolow.scripts.OnClick(f.zoneMap.switches.toolow)
+	Eq(QL.ZoneMapHidden().toolow, nil, "level too low shown now")
+	Check(f.zoneMap.shownPins > before, "more pins with them: " .. before .. " -> " .. f.zoneMap.shownPins)
+	f.zoneMap.switches.toolow.scripts.OnClick(f.zoneMap.switches.toolow)
+	Eq(QL.ZoneMapHidden().toolow, true, "and hidden again")
+	Eq(f.zoneMap.shownPins, before, "back to the first count")
+	-- hovering a quest in the list brings its pin forward and fades the rest
+	f.zoneMap.frame.scripts.OnUpdate(f.zoneMap.frame, 2)
+	local row5
+	for _, r in ipairs(zs.list.rows) do if r.shown and r.questId == 5 then row5 = r end end
+	row5.scripts.OnEnter(row5)
+	local lit, faded = 0, 0
+	for i = 1, f.zoneMap.shownPins do
+		local p = f.zoneMap.pins[i]
+		if p.hover then lit = lit + 1; Check(p.alpha == 1, "the quest's pin stays bright") elseif p.alpha < 1 then faded = faded + 1 end
+	end
+	Eq(lit, 1, "one pin in front")
+	Eq(faded, f.zoneMap.shownPins - 1, "the others faded")
+	row5.scripts.OnLeave(row5)
+	Eq(f.zoneMap.pins[1].alpha, 1, "all bright again")
+	f.zoneMap.frame.scripts.OnUpdate(f.zoneMap.frame, 2) -- the pop-in animation runs to its end
+	Eq(f.zoneMap.pins[1].shown, true, "pins shown after the animation")
+	local pin = f.zoneMap.pins[1]
+	pin.scripts.OnEnter(pin); pin.scripts.OnLeave(pin)
+	pin.scripts.OnClick(pin)
+	Eq(f.zoneMap.frame.shown, true, "a pin keeps the map")
+	Eq(f.inspector.hero.title.text, QL.QuestTitle(pin.ids[1]), "and opens its quest beside it")
+	Eq(f.zoneMap.treeBtn.shown, true, "a way to the quest's chain tree")
+	f.zoneMap.treeBtn.scripts.OnClick(f.zoneMap.treeBtn)
+	Eq(f.zoneMap.frame.shown, false, "the tree replaces the map")
+	Eq(f.canvasScroll.shown, true, "tree shown")
+	zs.mapBtn.scripts.OnClick(zs.mapBtn)
+	Eq(f.zoneMap.frame.shown, true, "the Map button brings it back")
+	-- the picked zone on the game's world map: the button opens it there, its pins are drawn
+	Eq(f.zoneMap.worldBtn.label and f.zoneMap.worldBtn.label.text or "Open on the world map", "Open on the world map", "world map button")
+	f.zoneMap.worldBtn.scripts.OnClick(f.zoneMap.worldBtn)
+	Eq(WorldMapFrame.shown, true, "the world map opens")
+	local spots = QL.WorldPinSpots(1411)
+	Check(#spots >= 1, "spots on Durotar's world map: " .. #spots)
+	Check(QL.worldPins.shown >= 1, "pins drawn on the world map: " .. tostring(QL.worldPins.shown))
+	local wp = QL.worldPins.pins[1]
+	wp.scripts.OnEnter(wp); wp.scripts.OnLeave(wp)
+	Eq(#QL.WorldPinSpots(1412), 0, "nothing on another zone's map (no projection in the mock)")
+	QL.Set("worldMapPins", false)
+	QL.RefreshWorldPins()
+	Eq(QL.worldPins.shown, 0, "the setting turns them off")
+	QL.Set("worldMapPins", true)
+	WorldMapFrame.shown = false
+	QL.RefreshWorldPins()
+	Eq(QL.worldPins.shown, 0, "none while the world map is closed")
+	Eq(#QL.errors, 0, "world pins without errors: " .. table.concat(QL.errors, " | "))
+	local shared
+	for _, p in ipairs(pins) do if #p.ids == 2 then shared = p end end
+	Check(shared, "quests at one spot share a pin")
+	QL.QuestTarget = questTarget
+	QL.ClearArrow()
+	local qids, sts = {}, {}
+	for _, r in ipairs(zs.list.rows) do
+		if r.shown then qids[#qids + 1] = r.questId; sts[#sts + 1] = r.sub.text end
+	end
+	Check(#qids >= 5, "Durotar's quests listed: " .. #qids)
+	Eq(qids[1], 2, "the quest in the log first")
+	Check(sts[#sts]:find("Done", 1, true), "done quests last: " .. sts[#sts])
+	for _, r in ipairs(zs.list.rows) do if r.shown and r.questId == 5 then r.scripts.OnClick(r) end end
+	Eq(f.inspector.hero.title.text, "Rumours", "a quest row opens it")
+	Eq(QL.ArrowQuest(), 5, "and points the arrow")
+	QL.ClearArrow()
+	-- back to the list
+	zs.back.scripts.OnClick(zs.back)
+	Eq(QL.DB().zonesArea, nil, "back clears the zone")
+	Eq(zs.back.shown, false, "back button hidden again")
+	-- the rail button on its own page also goes back to the list
+	QL.DB().zonesArea = 14
+	f.zonesTab.scripts.OnClick(f.zonesTab)
+	Eq(QL.DB().zonesArea, nil, "rail button returns to the zone list")
+	Eq(#QL.errors, 0, "zones page without errors: " .. table.concat(QL.errors, " | "))
+	C_Map.GetMapInfo = getInfo
+	C_Map.GetMapArtLayers, C_Map.GetMapArtLayerTextures = nil, nil
+end
 
 -- Search: as you type -------------------------------------------------------------------------------
 QL.ShowPage("search")
@@ -409,6 +609,30 @@ Check(names:find("Boar Ribs", 1, true), "item task")
 Check(names:find("Alice", 1, true), "turn-in NPC row")
 Check(names:find("Second Steps", 1, true) and names:find("Side Road", 1, true), "comes after: 2 and 4")
 Check(names:find("Left Path", 1, true), "leads to 6")
+-- a task's places: an item's droppers' spawns, a creature's own
+local bobSrc = QL.TaskSources("npc", 100)
+Eq(#bobSrc.sources, 1, "Bob is his own source")
+Eq(bobSrc.maps[1].map, 1411, "on Durotar's map")
+Eq(#QL.TaskSources("item", 501).sources, 0, "the boar that drops the ribs has no spawns in the fixture")
+local bobTask
+for _, r in ipairs(insp.pools.row) do if r.shown and r.name.text == "Bob questioned" then bobTask = r end end
+bobTask.scripts.OnClick(bobTask)
+Check(QL.TaskSourcesShown(), "a task click shows its places")
+Eq(f.zoneMap.frame.shown, true, "on the map in the middle")
+Eq(f.zoneMap.kicker.text, "Where to find", "heading")
+Eq(f.zoneMap.shownSpots, 1, "Bob's one spawn")
+Eq(f.zoneMap.worldBtn.shown, false, "the zone view's parts are off")
+Eq(f.inspector.hero.title.text, "The Gathering", "the detail panel stays on the quest")
+local spot = f.zoneMap.spots[1]
+spot.scripts.OnEnter(spot); spot.scripts.OnLeave(spot)
+spot.scripts.OnClick(spot)
+Eq(QL.ArrowTarget().kind, "place", "a spot points the arrow")
+QL.ClearArrow()
+f.zoneMap.treeBtn.scripts.OnClick(f.zoneMap.treeBtn)
+Eq(QL.TaskSourcesShown(), nil, "Back leaves the places")
+Eq(f.zoneMap.frame.shown, false, "and the tree is back")
+Eq(#QL.errors, 0, "task places without errors: " .. table.concat(QL.errors, " | "))
+QL.Open(3)
 local subs = texts("row", "sub")
 Check(subs:find("Durotar  ·  45.2, 63.1", 1, true), "giver place: " .. subs)
 local tiles = 0
@@ -945,6 +1169,38 @@ QL.ClearArrow()
 QL.ClearRouteSelection()
 Eq(#QL.errors, 0, "route flow without errors: " .. table.concat(QL.errors, " | "))
 
+-- The route on the minimap: legs from you through the stops, clipped to the rim; a badge on the
+-- stops inside it (the player stands at 0.5, 0.4 of a 1000 x 800 yd map)
+do
+	local stopsOf = QL.MapRouteStops
+	QL.MapRouteStops = function()
+		return {
+			{ id = 5, n = 1, spot = { map = 1411, x = 0.52, y = 0.4 } }, -- 20 yd east
+			{ id = 2, n = 2, spot = { map = 1411, x = 0.9, y = 0.9 } },  -- far away
+		}, { index = 1, total = 2 }
+	end
+	local half = 70
+	local pts = QL.MinimapRoutePoints(half)
+	Eq(#pts, 2, "two stops on the minimap")
+	Check(pts[1].x > 0 and math.abs(pts[1].y) < 1e-6, "the first stop due east: " .. pts[1].x .. ", " .. pts[1].y)
+	Eq(pts[1].next, true, "the first is the next stop")
+	QL.DrawMinimapRoute()
+	local d = QL.minimapRouteDrawn
+	Check(d, "the route drawn on the minimap")
+	Eq(d.legs, 2, "both legs (the far one clipped to the rim)")
+	Eq(d.badges, 1, "a badge on the stop inside the rim only")
+	-- without a route (only the arrow's quest), the minimap is left to the arrow
+	QL.MapRouteStops = function() return { { id = 5, n = 1, spot = { map = 1411, x = 0.52, y = 0.4 } } }, nil end
+	QL.DrawMinimapRoute()
+	Eq(QL.minimapRouteDrawn, nil, "no route, nothing drawn")
+	-- the setting turns it off
+	QL.MapRouteStops = stopsOf
+	QL.Set("minimapRoute", false)
+	Eq(QL.MinimapRoutePoints(half), nil, "off by the setting")
+	QL.Set("minimapRoute", true)
+	Eq(#QL.errors, 0, "minimap route without errors: " .. table.concat(QL.errors, " | "))
+end
+
 -- Detail panel: the giver and turn-in rows point the arrow at that NPC ----------------------------
 QL.Set("lang", "en")
 QL.Open(3)
@@ -1116,6 +1372,35 @@ QL.SetArrowTarget(3)
 QL.RefreshCurrent()
 local cur = QuestLineageCurrent
 Check(cur and cur.shown, "current quest window shown")
+-- it hangs from its top-left corner after a drag, so folding pulls the bottom up, not both edges
+cur.GetLeft = function() return 1500 end
+cur.GetTop = function() return 700 end
+cur.scripts.OnDragStop(cur)
+local cp = QL.DB().currentPoint
+Eq(cp[1], "TOPLEFT", "saved by its top-left corner")
+Eq(cp[2], "BOTTOMLEFT", "from the screen's bottom-left")
+Eq(cp[3], 1500, "left edge")
+Eq(cp[4], 700, "top edge")
+cur.GetLeft, cur.GetTop = nil, nil
+-- the lock: pinned in place, drags do nothing; a second click frees it
+Eq(cur.lock.shown, true, "lock button shown")
+local moved = 0
+cur.StartMoving = function() moved = moved + 1 end
+cur.scripts.OnDragStart(cur)
+Eq(moved, 1, "unlocked: drags move it")
+cur.lock.scripts.OnClick(cur.lock)
+Eq(QL.DB().currentLocked, true, "locked by its button")
+cur.scripts.OnDragStart(cur)
+cur.logHead.scripts.OnDragStart(cur.logHead)
+Eq(moved, 1, "locked: no drag moves it")
+cur.lock.scripts.OnEnter(cur.lock)
+Eq(QL.Tip().lines[1].text, "Window locked", "its tooltip says so")
+cur.lock.scripts.OnLeave(cur.lock)
+cur.lock.scripts.OnClick(cur.lock)
+Eq(QL.DB().currentLocked, false, "unlocked again")
+cur.scripts.OnDragStart(cur)
+Eq(moved, 2, "moves again")
+cur.StartMoving = nil
 Eq(cur.title.text, "The Gathering", "the arrow's quest is current")
 Check(cur.state.text:find("In your log", 1, true), "its stage: " .. cur.state.text)
 Eq(cur.rows[1].count.text, "0/1", "first objective counter")
@@ -1163,6 +1448,26 @@ QL.ResetContext()
 -- the log list under it: the other logged quest (Second Steps)
 Eq(cur.logHead.shown, true, "Quests header shown")
 Check(cur.logHead.text.text:find("QUESTS", 1, true), "header text: " .. cur.logHead.text.text)
+-- the EN | TR pill on the list header
+do
+	local pill, savedLang, savedQTR = cur.logHead.lang, QL.DB().lang, QTR_QuestData
+	QTR_QuestData = nil
+	QL.RefreshCurrent()
+	Eq(pill.halves[1].on, true, "EN lit without WoWTR")
+	pill.halves[2].scripts.OnClick(pill.halves[2])
+	Eq(QL.UseTurkish(), false, "TR refused without WoWTR")
+	QTR_QuestData = {}
+	pill.halves[2].scripts.OnClick(pill.halves[2])
+	Eq(QL.DB().lang, "tr", "TR chosen from the list header")
+	Eq(pill.halves[2].on, true, "TR lit")
+	Check(cur.logHead.text.text:find("GÖREVLER", 1, true), "header in Turkish: " .. cur.logHead.text.text)
+	pill.halves[1].scripts.OnClick(pill.halves[1])
+	Eq(QL.DB().lang, "en", "back to English")
+	Eq(pill.halves[1].on, true, "EN lit again")
+	QTR_QuestData = savedQTR
+	QL.Set("lang", savedLang)
+	QL.RefreshCurrent()
+end
 Eq(cur.logRows[1].questId, 2, "the other quest in the log")
 Eq(cur.logRows[1].title.text, "Second Steps", "its title")
 -- clicking it makes it current
@@ -1336,6 +1641,28 @@ Eq(two[1].label, "Bear", "the smaller first")
 cursorX = 100 + hit.x + hit.r + 5
 QL.HoverMinimapAreas()
 Eq(tip.shown, false, "hidden when the cursor leaves the area")
+-- never stuck: a cursor tip nobody moves any more closes by itself, and so does a tip whose
+-- owner is hidden (the world map closed under the cursor left it on screen until a reload)
+cursorX = 100 + hit.x
+QL.HoverMinimapAreas()
+Eq(tip.shown, true, "shown again over the area")
+tip.scripts.OnUpdate(tip, 0.1)
+Eq(tip.shown, true, "kept while it is moved")
+tip.scripts.OnUpdate(tip, 0.5)
+Eq(tip.shown, false, "a cursor tip left alone closes")
+QL.HoverMinimapAreas()
+Eq(tip.shown, true, "and comes back while still hovered")
+local owner = CreateFrame("Frame", nil, UIParent)
+owner.IsVisible = function(self) return self.shown == true end
+owner:Show()
+tip:SetOwner(owner, "ANCHOR_RIGHT")
+tip:AddLine("x")
+tip:Show()
+tip.scripts.OnUpdate(tip, 5)
+Eq(tip.shown, true, "an anchored tip stays while its owner is shown")
+owner:Hide()
+tip.scripts.OnUpdate(tip, 0.01)
+Eq(tip.shown, false, "closes with its owner")
 Minimap.IsMouseOver, Minimap.IsVisible, Minimap.GetCenter = nil, nil, nil
 GetCursorPosition = function() return 0, 0 end
 Eq(#QL.errors, 0, "areas without errors: " .. table.concat(QL.errors, " | "))
@@ -1413,6 +1740,30 @@ end
 Eq(badgeOf("nameplate1").text.text, "3/5", "the boar's plate counts the ribs")
 Eq(badgeOf("nameplate2").text.text, "0/1", "Bob's plate counts the questioning")
 Eq(badgeOf("nameplate3"), nil, "no badge on a creature no quest needs")
+Eq(QL.DB().plateColorMode, "status", "colour by quest by default")
+Eq(badgeOf("nameplate1").icon.vertex[2], QL.PLATE_CURRENT[2], "the current quest's creature: light green")
+Eq(badgeOf("nameplate1").alpha, 1, "at full strength")
+-- a dropper the database does not list: looting the ribs from creature 206 teaches it
+GetNumLootItems = function() return 2 end
+GetLootSlotLink = function(slot) return slot == 1 and "|cffffffff|Hitem:501::::::::5:::::|h[Boar Ribs]|h|r" or "|Hitem:9999::|h[Junk]|h" end
+GetLootSourceInfo = function() return "Creature-0-0-0-0-206-0003", 1 end
+for _, fn in ipairs(QL.events.LOOT_OPENED) do fn("LOOT_OPENED") end
+Eq(QL.DB().learnedDrops and QL.DB().learnedDrops[501] and QL.DB().learnedDrops[501][206], true, "creature 206 learned as a ribs dropper")
+Eq(QL.DB().learnedDrops[9999], nil, "items no quest asks for are not learned")
+Eq(badgeOf("nameplate3").text.text, "3/5", "and its plate now counts the ribs")
+Eq(QL.LearnDrop(501, 102), false, "a dropper the database knows is not stored again")
+local said = {}
+local realChat = QL.Chat
+QL.Chat = function(m) said[#said + 1] = m end
+guids.target = guids.nameplate3
+QL.PlateDebug()
+QL.Chat = realChat
+guids.target = nil
+said = table.concat(said, "\n")
+Check(said:find("206", 1, true) and said:find("target drops it: yes", 1, true), "/ql plate explains: " .. said)
+GetNumLootItems, GetLootSlotLink, GetLootSourceInfo = nil, nil, nil
+QL.DB().learnedDrops = nil
+QL.RefreshPlates()
 -- other quests nearby: cards for another logged quest's creatures and areas
 QL.ResetNearby()
 QL.ClearToasts()
@@ -1420,6 +1771,10 @@ QL.lastNearbyHint = nil
 for _, fn in ipairs(QL.events.NAME_PLATE_UNIT_ADDED) do fn("NAME_PLATE_UNIT_ADDED", "nameplate2") end
 Eq(QL.lastNearbyHint, nil, "nothing for the current quest's own creatures")
 QL.SetArrowTarget(2) -- Second Steps becomes current; Bob now belongs to another quest
+QL.RefreshPlates()
+Eq(badgeOf("nameplate2").icon.vertex[1], QL.PLATE_OTHER[1], "another quest's creature: amber")
+Eq(badgeOf("nameplate2").icon.vertex[2], QL.PLATE_OTHER[2], "amber (green part)")
+Eq(badgeOf("nameplate2").alpha, 1, "told apart by colour, not faded")
 guids.target = guids.nameplate2
 for _, fn in ipairs(QL.events.PLAYER_TARGET_CHANGED) do fn("PLAYER_TARGET_CHANGED") end
 Check(QL.lastNearbyHint and QL.lastNearbyHint.questId == 3, "targeting Bob: a card for The Gathering")
@@ -1531,7 +1886,7 @@ Eq(bob.point[4], -10 - 12, "anchored 12 px further left (above the name)")
 QuestLineagePlateOffset.scripts.OnValueChanged(QuestLineagePlateOffset, 99)
 Eq(QL.DB().plateOffsetX, 40, "capped at +40")
 QuestLineagePlateOffset.scripts.OnValueChanged(QuestLineagePlateOffset, 0)
-QuestLineagePlateColor2.scripts.OnClick(QuestLineagePlateColor2)
+QuestLineagePlateColor3.scripts.OnClick(QuestLineagePlateColor3)
 local _, dc = QL.QuestDifficulty(5, 5)
 Eq(bob.icon.vertex[1], dc[1], "difficulty colour (The Gathering, level 5: normal)")
 QuestLineagePlateCount.checked = false
@@ -1563,6 +1918,22 @@ Eq(ObjectiveTrackerFrame.shown, false, "never touched in combat")
 function InCombatLockdown() return false end
 for _, fn in ipairs(QL.events.PLAYER_REGEN_ENABLED) do fn("PLAYER_REGEN_ENABLED") end
 Eq(ObjectiveTrackerFrame.shown, true, "shown again once combat ends")
+Eq(ObjectiveTrackerFrame:GetAlpha(), 1, "and opaque")
+-- the game shows it in combat (a kill updates the quest): see-through at once, put away after
+local trackerParent = ObjectiveTrackerFrame:GetParent()
+QL.Set("hideGameTracker", true)
+Check(ObjectiveTrackerFrame:GetParent() ~= trackerParent, "moved under a hidden frame")
+function InCombatLockdown() return true end
+ObjectiveTrackerFrame.shown = false
+ObjectiveTrackerFrame:Show()
+Eq(ObjectiveTrackerFrame:GetAlpha(), 0, "shown in combat: see-through at once")
+function InCombatLockdown() return false end
+for _, fn in ipairs(QL.events.PLAYER_REGEN_ENABLED) do fn("PLAYER_REGEN_ENABLED") end
+Eq(ObjectiveTrackerFrame.shown, false, "hidden after combat")
+QL.Set("hideGameTracker", false)
+Eq(ObjectiveTrackerFrame:GetParent(), trackerParent, "its own parent back when shown again")
+Eq(ObjectiveTrackerFrame:GetAlpha(), 1, "opaque again")
+Eq(ObjectiveTrackerFrame.shown, true, "shown again")
 InCombatLockdown = nil
 
 -- The way back to the corpse ---------------------------------------------------------------------
@@ -1688,6 +2059,59 @@ do
 	QL.RefreshCurrent()
 	Eq(tab.shown, false, "the setting hides it")
 	QL.Set("currentZoneTab", true)
+end
+
+-- Creature search: "where are the boars?"
+do
+	local found = QL.SearchNpcs("boar")
+	Eq(#found, 2, "two boars with places (the fixture's plain Boar has none)")
+	Eq(found[1].id, 206, "the one in your zone first")
+	Eq(found[1].here, true, "marked as in your zone")
+	Eq(found[2].id, 207, "then the other")
+	Eq(found[2].count, 2, "with its number of places")
+	Eq(#QL.SearchNpcs("b"), 0, "two letters at least")
+	local all = QL.TaskSources("name", "boar")
+	Eq(#all.sources, 2, "the name view takes every match")
+	QL.ShowPage("search")
+	local sp = f.searchPage
+	sp.input:SetText("boar")
+	sp.input.scripts.OnTextChanged(sp.input, true)
+	QL.RenderWindow()
+	Check(sp.sub.text:find("2 creatures", 1, true), "the count names the creatures: " .. sp.sub.text)
+	local rows = {}
+	for _, r in ipairs(sp.list.rows) do if r.shown then rows[#rows + 1] = r end end
+	local allRow, raging
+	for _, r in ipairs(rows) do
+		if r.title.text:find("All on the map", 1, true) then allRow = r end
+		if r.title.text == "Raging Boar" then raging = r end
+	end
+	Check(allRow and raging, "an all-together row and a row per creature")
+	Check(raging.sub.text:find("Durotar", 1, true), "a creature row names its zone: " .. raging.sub.text)
+	Eq(found[2].zones[1].area, 215, "zones per creature")
+	raging.scripts.OnEnter(raging); raging.scripts.OnLeave(raging)
+	raging.scripts.OnClick(raging)
+	Eq(QL.TaskSourcesShown().kind, "npc", "a creature row shows its places")
+	Eq(f.zoneMap.shownSpots, 1, "the Raging Boar's spot on your map")
+	allRow.scripts.OnClick(allRow)
+	Eq(QL.TaskSourcesShown().kind, "name", "the all row shows every match")
+	Eq(f.zoneMap.kicker.text, "Creatures", "heading")
+	f.zoneMap.treeBtn.scripts.OnClick(f.zoneMap.treeBtn)
+	QL.Command("find boar")
+	Eq(QL.TaskSourcesShown().id, "boar", "/ql find opens the map for the name")
+	f.zoneMap.treeBtn.scripts.OnClick(f.zoneMap.treeBtn)
+	QL.Command("find zzzz")
+	Eq(QL.TaskSourcesShown(), nil, "nothing found: no map")
+	-- the setting: off drops the name list and the search; on builds it again at the next search
+	QL.Set("creatureSearch", false)
+	Eq(QL.index.npcNames, nil, "off frees the name list")
+	Eq(#QL.SearchNpcs("boar"), 0, "off: no creatures")
+	QL.Command("find boar")
+	Eq(QL.TaskSourcesShown(), nil, "off: /ql find shows nothing")
+	QL.RenderWindow()
+	Check(not sp.sub.text:find("creatures", 1, true), "off: the Search tab lists quests only: " .. sp.sub.text)
+	QL.Set("creatureSearch", true)
+	Eq(#QL.SearchNpcs("boar"), 2, "on again: built at the first search")
+	Eq(#QL.errors, 0, "creature search without errors: " .. table.concat(QL.errors, " | "))
 end
 
 -- Slash commands do not error

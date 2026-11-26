@@ -33,6 +33,8 @@ QL.defaults = {
 	arrowGlow = true,     -- the soft glow behind it
 	mapPaths = true,      -- your own routes: the "My route" panel on the world map
 	mapRoute = true,      -- the route (or the arrow's quest) drawn on the world map
+	minimapRoute = true,  -- the route (quest route or your own) drawn on the minimap too
+	worldMapPins = true,  -- the Zones tab's picked zone: its quest pins on the world map too
 	quickBarLocked = false, -- the "Where?" bar pinned where it stands
 	quickBarVertical = false, -- the "Where?" bar laid out as a column
 	quickBar = true,      -- the "Where?" quick bar under the arrow
@@ -56,7 +58,9 @@ QL.defaults = {
 	nearbyCooldown = 3,   -- minutes before the same quest's card can come again (1-15)
 	logObjectives = true, -- the list's rows show their objectives (each row can be minimised: logFolded)
 	questsHideChains = true, -- the main window's Quests tab leaves chain quests to the Chains tab
-	hideGameTracker = false, -- hide the game's own quest tracker (QuestLineage's window replaces it)
+	currentLocked = false, -- the current quest window pinned in place (its lock button)
+	creatureSearch = true, -- creatures by name on the Search tab and /ql find (a name list in the index)
+	hideGameTracker = true, -- hide the game's own quest tracker (QuestLineage's window replaces it)
 	questAreas = true,    -- the current quest's objective areas on the minimap and world map
 	questAreasOthers = true, -- the other logged quests' areas too (soft, one colour per quest)
 	hideGameAreas = false, -- hide the game's own (blue) quest area on the minimap
@@ -69,7 +73,7 @@ QL.defaults = {
 	corpseRoute = true,   -- while dead: a path to the corpse on the minimap and world map, and the arrow
 	nameplates = true,    -- quest badges and counters on objective creatures' nameplates
 	plateSide = "left",   -- where the badge sits: "left" | "right" | "top"
-	plateColorMode = "accent", -- "accent" | "difficulty" | "custom"
+	plateColorMode = "status", -- "status" (current quest green, others amber) | "accent" | "difficulty" | "custom"
 	plateColor = { 0.984, 0.749, 0.141 }, -- the custom colour
 	plateScale = 1,
 	plateOffsetX = 0,     -- the badge nudged left (-) or right (+), in pixels
@@ -203,16 +207,25 @@ function QL.Command(msg)
 		if QL.ObjectiveDebug then QL.ObjectiveDebug(rest) end
 	elseif cmd == "kart" or cmd == "card" then
 		if QL.CardDebug then QL.CardDebug() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
+	elseif cmd == "map" or cmd == "harita" then
+		if QL.ZoneMapDebug then QL.ZoneMapDebug(rest) else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
+	elseif cmd == "bul" or cmd == "find" then
+		if QL.FindCreatures then QL.FindCreatures(rest) end
+	elseif cmd == "plate" or cmd == "plaka" then
+		if QL.PlateDebug then QL.PlateDebug() end
 	elseif cmd == "flight" or cmd == "ucus" then
 		if QL.FlightDemo then QL.FlightDemo() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
 	elseif cmd == "help" then
 		QL.Chat("/ql  " .. L("open or close the chain window"))
 		QL.Chat("/ql <id|name>  " .. L("show the chain of a quest"))
+		QL.Chat("/ql find <name>  " .. L("where a creature stands, on the map (e.g. /ql find boar)"))
+		QL.Chat("/ql plate  " .. L("why the target has a quest badge on its nameplate, or not"))
 		QL.Chat("/ql status  " .. L("database and language status"))
 		QL.Chat("/ql arrow [id]  " .. L("arrow status, or point it at a quest"))
 		QL.Chat("/ql lang en|tr  " .. L("interface language"))
 		QL.Chat("/ql kart  " .. L("what the open quest card holds"))
 		QL.Chat("/ql hedef [id]  " .. L("where a quest's objectives come from"))
+		QL.Chat("/ql map [area]  " .. L("what the client gives for a zone's map picture"))
 		QL.Chat("/ql flight  " .. L("a sample flight to see the flight timer"))
 		QL.Chat("/ql options  " .. L("settings"))
 	else

@@ -322,3 +322,112 @@ function QL.ChainProgress(entry, ctx)
 		focus = firstLog or firstAvail or firstOpen or entry.head,
 	}
 end
+
+-- Every zone, for the Zones tab -------------------------------------------------------------------
+-- The zones that hold quests this character can take (index.byZone, subzones already folded), each
+-- with its continent (the uiMap's parents up to a continent map, mapType 2; none for dungeons and
+-- places without a map), its level band (QL.ZoneLevels) and counts by state. Built for one context
+-- (QL.Context() is the same table until the quest log changes), so it is cached against it.
+--   QL.ZoneOverview(ctx) -> { { area, name, continent, minLevel, maxLevel, total, done, active, available, later }, ... }
+--   QL.ZoneQuestRows(area, ctx) -> { { id, status, level }, ... } (open first, then by level)
+--   QL.ZoneBand(lo, hi, level) -> colour, relation ("inside" | "above" | "below" | nil)
+
+local overviewCache
+QL.On("INDEX_READY", function() overviewCache = nil end)
+QL.On("SETTING_CHANGED", function(key) if key == "hideOther" then overviewCache = nil end end)
+
+local continentCache = {}
+
+function QL.ZoneContinent(area)
+	local hit = continentCache[area]
+	if hit ~= nil then return hit or nil end
+	local name
+	local ui = QL.AreaUiMap(area)
+	for _ = 1, 6 do
+		if type(ui) ~= "number" or ui <= 0 then break end
+		local info = mapInfo(ui)
+		if not info then break end
+		if info.mapType == 2 then name = info.name; break end
+		ui = info.parentMapID
+	end
+	if type(name) ~= "string" or name == "" then name = nil end
+	continentCache[area] = name or false
+	return name
+end
+
+local function zoneName(area)
+	return (QL.AreaName and QL.AreaName(area)) or ("#" .. tostring(area))
+end
+
+function QL.ZoneOverview(ctx)
+	if not QL.IndexReady or not QL.IndexReady() or not QL.index then return {} end
+	ctx = ctx or QL.Context()
+	if overviewCache and overviewCache.ctx == ctx then return overviewCache.list end
+	local list = {}
+	for area, ids in pairs(QL.index.byZone) do
+		local z = { area = area, total = 0, done = 0, active = 0, available = 0, later = 0 }
+		for _, id in ipairs(ids) do
+			local s = QL.NodeStatus(id, ctx)
+			if s ~= "other" and s ~= "closed" then
+				z.total = z.total + 1
+				if s == "done" then z.done = z.done + 1
+				elseif s == "active" or s == "ready" then z.active = z.active + 1
+				elseif s == "available" then z.available = z.available + 1
+				else z.later = z.later + 1 end
+			end
+		end
+		if z.total > 0 then
+			z.name = zoneName(area)
+			z.continent = QL.ZoneContinent(area)
+			z.minLevel, z.maxLevel = QL.ZoneLevels(area, ctx)
+			list[#list + 1] = z
+		end
+	end
+	table.sort(list, function(a, b)
+		local la, lb = a.minLevel or 999, b.minLevel or 999
+		if la ~= lb then return la < lb end
+		return a.name < b.name
+	end)
+	overviewCache = { ctx = ctx, list = list }
+	return list
+end
+
+local ROW_ORDER = { ready = 1, active = 2, available = 3, toolow = 4, locked = 5, done = 6, closed = 7, other = 8 }
+
+function QL.ZoneQuestRows(area, ctx)
+	ctx = ctx or QL.Context()
+	local hide = QL.DB().hideOther
+	local out, seen = {}, {}
+	for _, id in ipairs(QL.ZoneQuests(area)) do
+		if not seen[id] then
+			seen[id] = true
+			local s = QL.NodeStatus(id, ctx)
+			if not (hide and s == "other") then
+				out[#out + 1] = { id = id, status = s, level = QL.QuestLevel(id) }
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		local oa, ob = ROW_ORDER[a.status] or 9, ROW_ORDER[b.status] or 9
+		if oa ~= ob then return oa < ob end
+		local la, lb = a.level or 0, b.level or 0
+		if la ~= lb then return la < lb end
+		return a.id < b.id
+	end)
+	return out
+end
+
+-- How a zone's level band sits against your level: teal inside it, the quests' difficulty colour
+-- when you are below it (orange/red) or above it (green/grey).
+function QL.ZoneBand(lo, hi, level)
+	local C = QL.Theme.C
+	if not lo or not level then return C.muted, nil end
+	if level < lo then
+		local _, dc = QL.QuestDifficulty(lo, level)
+		return dc or C.accent, "above"
+	elseif level > hi then
+		local _, dc = QL.QuestDifficulty(hi, level)
+		return dc or C.muted, "below"
+	end
+	return C.accent, "inside"
+end

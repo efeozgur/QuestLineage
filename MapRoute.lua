@@ -493,3 +493,210 @@ QL.Event("ADDON_LOADED", function(_, name) if name == "Blizzard_WorldMap" then p
 for _, m in ipairs({ "ROUTE_CHANGED", "ARROW_CHANGED", "SETTING_CHANGED", "PATH_CHANGED" }) do
 	QL.On(m, function() if overlay then pcall(QL.RefreshMapRoute) end end)
 end
+
+-- On the minimap --------------------------------------------------------------------------------------
+-- The same route on the minimap (setting minimapRoute): while a quest route runs or your own route is
+-- followed, edited or looked at (QL.MapRouteStops with route info; the arrow's quest alone is left
+-- to the arrow). From you through the detour's stop-over points and every stop: the next leg in the
+-- accent with lights flowing along it, later legs violet and fading; each leg clipped to the rim
+-- (QL.ClipToCircle); small numbered badges on the stops inside the rim, the next stop waiting on the
+-- rim when it is further away. Positions as the corpse path does it: yards from you through
+-- QL.MinimapOffset (rotating minimap included), the rim = QL.MinimapYards().
+--   QL.MinimapRoutePoints(half) -> { { x, y, n, id, title, next, via }, ... } (offsets from the
+--   minimap's centre in pixels, y up) or nil;  test hook QL.minimapRouteDrawn
+
+local mmr = { glows = {}, cores = {}, dots = {}, badges = {} }
+local MM_DOT_GAP, MM_DOT_SPEED = 12, 20
+
+local function worldSize(map)
+	if not (C_Map and C_Map.GetMapWorldSize) then return nil end
+	local ok, w, h = pcall(C_Map.GetMapWorldSize, map)
+	if ok and type(w) == "number" and type(h) == "number" and w > 0 and h > 0 then return w, h end
+	return nil
+end
+
+function QL.MinimapRoutePoints(half)
+	if QL.DB().minimapRoute == false then return nil end
+	local stops, info = QL.MapRouteStops()
+	if not info or #stops == 0 then return nil end
+	local map, px, py = QL.PlayerPosition()
+	if not map or not px then return nil end
+	local w, h = worldSize(map)
+	if not w then return nil end
+	local radius = QL.MinimapYards and QL.MinimapYards() or 150
+	local rotate = GetCVar and GetCVar("rotateMinimap") == "1"
+	local facing = GetPlayerFacing and GetPlayerFacing()
+	if facing ~= nil and issecretvalue and issecretvalue(facing) then facing = nil end
+	local function offset(spot)
+		local x, y = QL.ProjectToMap(spot.map, spot.x, spot.y, map)
+		if not x then return nil end
+		local nx, ny = QL.MinimapOffset((x - px) * w, (y - py) * h, facing, rotate, radius)
+		return nx * half, ny * half
+	end
+	local out = {}
+	-- a detour bends the first leg (only a quest route's first stop or the followed stop has one)
+	if QL.DetourVias and not info.editing then
+		for _, v in ipairs(QL.DetourVias(stops[1].spot)) do
+			local x, y = offset(v)
+			if x then out[#out + 1] = { x = x, y = y, via = true } end
+		end
+	end
+	for i, s in ipairs(stops) do
+		local x, y = offset(s.spot)
+		if x then
+			out[#out + 1] = { x = x, y = y, n = s.n, id = s.id, title = s.title, next = (i == 1) }
+		end
+	end
+	return out
+end
+
+local function mmLine(list, i, layer, sub)
+	local l = list[i]
+	if not l then
+		l = mmr.frame:CreateLine(nil, layer, nil, sub)
+		list[i] = l
+	end
+	return l
+end
+
+local function mmBadge(i)
+	local b = mmr.badges[i]
+	if b then return b end
+	local T, C = QL.Theme, QL.Theme.C
+	b = CreateFrame("Frame", nil, mmr.frame)
+	b:SetSize(14, 14)
+	b.disc = b:CreateTexture(nil, "ARTWORK")
+	b.disc:SetTexture(MEDIA .. "disc")
+	b.disc:SetAllPoints()
+	b.disc:SetVertexColor(0.055, 0.063, 0.082, 0.95)
+	b.ring = b:CreateTexture(nil, "ARTWORK", nil, 1)
+	b.ring:SetTexture(MEDIA .. "ring")
+	b.ring:SetAllPoints()
+	b.pulse = b:CreateTexture(nil, "BACKGROUND")
+	b.pulse:SetTexture(MEDIA .. "ring")
+	b.pulse:SetPoint("CENTER")
+	b.num = T.Text(b, 9, C.text, nil, true)
+	b.num:SetPoint("CENTER", 0, 0)
+	b.num:SetJustifyH("CENTER")
+	mmr.badges[i] = b
+	return b
+end
+
+local function mmHide()
+	for _, l in ipairs(mmr.glows) do l:Hide() end
+	for _, l in ipairs(mmr.cores) do l:Hide() end
+	for _, d in ipairs(mmr.dots) do d:Hide() end
+	for _, b in ipairs(mmr.badges) do b:Hide() end
+	QL.minimapRouteDrawn = nil
+end
+
+local function drawMinimapRoute()
+	if not mmr.frame then return end
+	mmHide()
+	if not Minimap:IsVisible() then return end
+	local half = (Minimap:GetWidth() or 140) / 2
+	local pts = QL.MinimapRoutePoints(half)
+	if not pts or #pts == 0 then return end
+	local C = QL.Theme.C
+	local edge = half * 0.94
+	local drawn = { legs = 0, badges = 0, onRim = false }
+	local ax, ay = 0, 0
+	local legNo, dotN = 0, 0
+	local passed = false -- the next stop has been reached in the list
+	local clock = mmr.clock or 0
+	for i, p in ipairs(pts) do
+		-- the leg from the previous point; stop at the first point after a stop beyond the rim
+		legNo = legNo + 1
+		local sx, sy, ex, ey = QL.ClipToCircle(ax, ay, p.x, p.y, edge)
+		if sx then
+			-- the way to the next stop (with its stop-over points) is the first leg
+			local first = not passed
+			local c = first and C.accent or C.accent2
+			local fade = first and 1 or math.max(0.3, 1 - (legNo - 1) * 0.15)
+			local g = mmLine(mmr.glows, legNo, "BORDER")
+			g:SetThickness(5)
+			g:SetColorTexture(c[1], c[2], c[3], 0.2 * fade)
+			g:SetStartPoint("CENTER", Minimap, sx, sy); g:SetEndPoint("CENTER", Minimap, ex, ey)
+			g:Show()
+			local l = mmLine(mmr.cores, legNo, "ARTWORK")
+			l:SetThickness(first and 2 or 1.5)
+			l:SetColorTexture(c[1], c[2], c[3], 0.9 * fade)
+			l:SetStartPoint("CENTER", Minimap, sx, sy); l:SetEndPoint("CENTER", Minimap, ex, ey)
+			l:Show()
+			drawn.legs = drawn.legs + 1
+			-- lights flowing along the legs to the next stop
+			if first then
+				local len = math.sqrt((ex - sx) ^ 2 + (ey - sy) ^ 2)
+				if len > MM_DOT_GAP then
+					local ux, uy = (ex - sx) / len, (ey - sy) / len
+					local t = (clock * MM_DOT_SPEED) % MM_DOT_GAP
+					while t < len - 3 do
+						dotN = dotN + 1
+						local d = mmr.dots[dotN]
+						if not d then
+							d = mmr.frame:CreateTexture(nil, "ARTWORK", nil, 3)
+							d:SetTexture(MEDIA .. "disc")
+							d:SetSize(3, 3)
+							mmr.dots[dotN] = d
+						end
+						d:ClearAllPoints()
+						d:SetPoint("CENTER", Minimap, "CENTER", sx + ux * t, sy + uy * t)
+						d:SetVertexColor(1, 1, 1, 0.4 + 0.5 * (t / len))
+						d:Show()
+						t = t + MM_DOT_GAP
+					end
+				end
+			end
+		end
+		-- the stop's badge: inside the rim, or the next stop waiting on it
+		if p.n then
+			local dist = math.sqrt(p.x * p.x + p.y * p.y)
+			local inside = dist <= edge
+			if inside or p.next then
+				local bx, by = p.x, p.y
+				if not inside then bx, by = p.x / dist * edge, p.y / dist * edge; drawn.onRim = true end
+				drawn.badges = drawn.badges + 1
+				local b = mmBadge(drawn.badges)
+				local c = p.next and C.accent or C.accent2
+				b.ring:SetVertexColor(c[1], c[2], c[3], 1)
+				b.num:SetText(tostring(p.n))
+				b:SetAlpha(inside and 1 or 0.8)
+				b:ClearAllPoints()
+				b:SetPoint("CENTER", Minimap, "CENTER", bx, by)
+				if p.next then
+					local f = (clock * 0.8) % 1
+					b.pulse:SetSize(14 + 14 * f, 14 + 14 * f)
+					b.pulse:SetVertexColor(c[1], c[2], c[3], 0.8 * (1 - f))
+					b.pulse:Show()
+				else
+					b.pulse:Hide()
+				end
+				b:SetFrameLevel(mmr.frame:GetFrameLevel() + (p.next and 5 or 2))
+				b:Show()
+			end
+		end
+		ax, ay = p.x, p.y
+		if p.n then passed = true end
+	end
+	for k = dotN + 1, #mmr.dots do mmr.dots[k]:Hide() end
+	QL.minimapRouteDrawn = drawn
+end
+QL.DrawMinimapRoute = function() local ok, err = pcall(drawMinimapRoute); if not ok then QL.Debug("minimap route: " .. tostring(err)) end end
+
+QL.Event("PLAYER_LOGIN", function()
+	if not (Minimap and CreateFrame) then return end
+	local f = CreateFrame("Frame", nil, Minimap)
+	f:SetAllPoints(Minimap)
+	f:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 5)
+	if not f.CreateLine then QL.Debug("minimap route: no Line objects on this client"); return end
+	mmr.frame = f
+	local since = 0
+	f:SetScript("OnUpdate", function(_, elapsed)
+		elapsed = elapsed or 0
+		mmr.clock = (mmr.clock or 0) + elapsed
+		since = since + elapsed
+		if since < 0.04 then return end
+		since = 0
+		QL.DrawMinimapRoute()
+	end)
+end)

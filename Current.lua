@@ -40,7 +40,22 @@ local function lower(s) return type(s) == "string" and s:lower() or "" end
 
 -- The live objectives of a logged quest, each matched to the database task it is about (by name
 -- in the objective's text, else by order), or the database tasks of a quest not yet taken.
+-- Kept per context table (a new one comes with every quest-log change), so plates, areas, the
+-- window and the nearby hints share one reading of the client per quest. Callers never change the
+-- rows they get.
+local rowCache = setmetatable({}, { __mode = "k" })
+local buildRows
 function QL.ObjectiveRows(id, ctx)
+	ctx = ctx or (QL.Context and QL.Context())
+	if type(ctx) ~= "table" or id == nil then return buildRows(id) end
+	local byId = rowCache[ctx]
+	if not byId then byId = {}; rowCache[ctx] = byId end
+	local rows = byId[id]
+	if not rows then rows = buildRows(id); byId[id] = rows end
+	return rows
+end
+
+function buildRows(id)
 	local tasks = QL.QuestTasks(id)
 	local live = QL.LiveObjectives(id)
 	local rows = {}
@@ -99,9 +114,31 @@ end
 
 -- The window -------------------------------------------------------------------------------------------
 
+-- The window hangs from its top-left corner, so it grows and folds downwards (from the top) and
+-- never around its middle: after a drag the client anchors it wherever it likes (CENTER, RIGHT...),
+-- so the point is re-made as TOPLEFT on UIParent's BOTTOMLEFT (both in the window's own units).
+local function pinTopLeft()
+	local ok, left, top = pcall(function() return frame:GetLeft(), frame:GetTop() end)
+	if not (ok and type(left) == "number" and type(top) == "number") then return nil end
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+	return left, top
+end
+
+-- Locked (setting currentLocked): no drag moves the window; the lock in its corner switches it.
+local function startMove()
+	if QL.DB().currentLocked == true then return end
+	frame:StartMoving()
+end
+
 local function savePoint()
-	local point, _, relPoint, x, y = frame:GetPoint(1)
-	QL.DB().currentPoint = { point, relPoint, x, y }
+	local left, top = pinTopLeft()
+	if left then
+		QL.DB().currentPoint = { "TOPLEFT", "BOTTOMLEFT", left, top }
+	else
+		local point, _, relPoint, x, y = frame:GetPoint(1)
+		QL.DB().currentPoint = { point, relPoint, x, y }
+	end
 end
 
 local function newRow()
@@ -134,13 +171,21 @@ local function build()
 	frame:SetScale(math.max(0.6, math.min(1.6, (tonumber(QL.DB().currentScale) or 100) / 100)))
 	local p = QL.DB().currentPoint
 	if type(p) == "table" and p[1] then frame:SetPoint(p[1], UIParent, p[2], p[3], p[4]) else frame:SetPoint("RIGHT", UIParent, "RIGHT", -40, 120) end
+	-- a point saved another way (older saves, the default) turns into the top-left one once the
+	-- window is laid out, where it stands, so it folds from the top from then on
+	frame:HookScript("OnShow", function()
+		local sp = QL.DB().currentPoint
+		if type(sp) == "table" and sp[1] == "TOPLEFT" and sp[2] == "BOTTOMLEFT" then return end
+		local function convert() pcall(savePoint) end
+		if C_Timer and C_Timer.After then C_Timer.After(0, convert) else convert() end
+	end)
 	frame:SetFrameStrata("MEDIUM")
 	frame:SetClampedToScreen(true)
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:RegisterForDrag("LeftButton")
 	frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-	frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+	frame:SetScript("OnDragStart", function() startMove() end)
 	frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); savePoint() end)
 	frame:SetScript("OnClick", function(self, button)
 		if button == "RightButton" then
@@ -209,9 +254,51 @@ local function build()
 	head.all:SetScript("OnClick", function() QL.ToggleLogObjectives() end)
 	head.all:SetScript("OnEnter", function(self) self.text:SetTextColor(unpack(C.text)) end)
 	head.all:SetScript("OnLeave", function(self) self.text:SetTextColor(unpack(C.muted)) end)
+	-- the interface language: a small EN | TR pill, the chosen half lit (TR needs WoWTR, dimmed without it)
+	local lang = CreateFrame("Frame", nil, head)
+	lang:SetSize(48, 16)
+	lang:SetFrameLevel((head:GetFrameLevel() or 1) + 3)
+	T.Fill(lang, { 1, 1, 1, 0.03 })
+	T.Border(lang, C.lineSoft)
+	lang.lit = lang:CreateTexture(nil, "ARTWORK")
+	lang.lit:SetTexture(T.WHITE)
+	lang.lit:SetSize(23, 14)
+	T.Color(lang.lit, { C.accent[1], C.accent[2], C.accent[3], 0.18 })
+	lang.halves = {}
+	for i, code in ipairs({ "en", "tr" }) do
+		local b = CreateFrame("Button", nil, lang)
+		b:SetSize(24, 16)
+		b:SetPoint("LEFT", (i - 1) * 24, 0)
+		b.code = code
+		b.text = T.Text(b, 9, C.muted, nil, true)
+		b.text:SetPoint("CENTER", 0, 0)
+		b.text:SetText(code:upper())
+		b:SetScript("OnClick", function()
+			if code == "tr" and not QL.HasWoWTR() then
+				QL.Print(L("Turkish needs WoWTR; showing English until it is loaded."), "warn")
+				return
+			end
+			if QL.DB().lang ~= code then QL.Set("lang", code) end
+			if QL.RenderWindow then pcall(QL.RenderWindow, false) end
+		end)
+		b:SetScript("OnEnter", function(self)
+			if not self.on then self.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1) end
+			local tip = QL.Tip()
+			tip:SetOwner(self, "ANCHOR_SIDE", frame)
+			tip:AddLine(code == "tr" and "Türkçe" or "English", 1, 1, 1)
+			if code == "tr" and not QL.HasWoWTR() then tip:AddLine(L("Turkish needs WoWTR"), 0.97, 0.44, 0.44) end
+			tip:Show()
+		end)
+		b:SetScript("OnLeave", function()
+			QL.RefreshLangPill()
+			QL.Tip():Hide()
+		end)
+		lang.halves[i] = b
+	end
+	head.lang = lang
 	head:SetScript("OnClick", function() QL.Set("currentLogCollapsed", not QL.DB().currentLogCollapsed) end)
 	head:RegisterForDrag("LeftButton")
-	head:SetScript("OnDragStart", function() frame:StartMoving() end)
+	head:SetScript("OnDragStart", function() startMove() end)
 	head:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
 	head:Hide()
 	frame.logHead = head
@@ -259,6 +346,39 @@ local function build()
 	end)
 	mini:Hide()
 	frame.mini = mini
+	-- the lock: pins the window where it stands (drags do nothing), a click switches it. A small tab
+	-- on the window's top edge at the right (the zone tab's twin), clear of every text inside.
+	local lock = CreateFrame("Button", nil, frame)
+	lock:SetSize(26, 22)
+	lock:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, -1)
+	lock:SetFrameLevel((frame:GetFrameLevel() or 1) + 5)
+	T.Fill(lock, { 0.055, 0.063, 0.082, 0.94 })
+	T.Border(lock, C.line)
+	lock.bg = T.Fill(lock, { 0, 0, 0, 0 }, "ARTWORK")
+	lock.icon = lock:CreateTexture(nil, "OVERLAY")
+	lock.icon:SetSize(13, 13)
+	lock.icon:SetPoint("CENTER", 0, 0)
+	lock:SetScript("OnClick", function()
+		QL.Set("currentLocked", not (QL.DB().currentLocked == true))
+		QL.RefreshCurrentLock()
+		if QL.Tip then QL.Tip():Hide() end
+	end)
+	lock:SetScript("OnEnter", function(self)
+		self.hover = true
+		QL.RefreshCurrentLock()
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_SIDE", frame)
+		local locked = QL.DB().currentLocked == true
+		tip:AddLine(locked and L("Window locked") or L("Lock the window"), 1, 1, 1)
+		tip:AddLine(locked and L("Click to unlock it, then drag to move it.") or L("Click to pin it where it stands; dragging then does nothing."), 0.7, 0.7, 0.7, true)
+		tip:Show()
+	end)
+	lock:SetScript("OnLeave", function(self)
+		self.hover = false
+		QL.RefreshCurrentLock()
+		QL.Tip():Hide()
+	end)
+	frame.lock = lock
 	QL.BuildZoneTab()
 	local since = 0
 	frame:SetScript("OnUpdate", function(self, elapsed)
@@ -438,7 +558,7 @@ local function logRow(i)
 	r.fold:SetPoint("TOPRIGHT", -8, -3)
 	-- dragging a row moves the window
 	r:RegisterForDrag("LeftButton")
-	r:SetScript("OnDragStart", function() frame:StartMoving() end)
+	r:SetScript("OnDragStart", function() startMove() end)
 	r:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
 	frame.logRows[i] = r
 	return r
@@ -492,7 +612,7 @@ local function chip(i)
 	b:SetScript("OnEnter", function(self) if not self.active then T.Color(self.bg, C.rowHover) end end)
 	b:SetScript("OnLeave", function(self) T.Color(self.bg, { 0, 0, 0, 0 }) end)
 	b:RegisterForDrag("LeftButton")
-	b:SetScript("OnDragStart", function() frame:StartMoving() end)
+	b:SetScript("OnDragStart", function() startMove() end)
 	b:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
 	frame.logChips[i] = b
 	return b
@@ -518,6 +638,23 @@ local function drawChips(y, groups, filter)
 	return y - 24
 end
 
+-- The list header's EN | TR pill: the language in use lit, TR dimmed while WoWTR is missing.
+function QL.RefreshLangPill()
+	local lang = frame and frame.logHead and frame.logHead.lang
+	if not lang then return end
+	local C = QL.Theme.C
+	local tr = QL.UseTurkish()
+	for i, b in ipairs(lang.halves) do
+		b.on = (b.code == "tr") == tr
+		local c = b.on and C.accent or (b.code == "tr" and not QL.HasWoWTR() and C.dim or C.muted)
+		b.text:SetTextColor(c[1], c[2], c[3], 1)
+		if b.on then
+			lang.lit:ClearAllPoints()
+			lang.lit:SetPoint("LEFT", (i - 1) * 24 + 1, 0)
+		end
+	end
+end
+
 local function drawLog(y, ctx, currentId)
 	local T, C = QL.Theme, QL.Theme.C
 	local ids = QL.LogQuests(ctx, currentId)
@@ -534,6 +671,13 @@ local function drawLog(y, ctx, currentId)
 	head.fold:SetText(folded and "+" or "–")
 	head.all:SetShown(not folded)
 	head.all.text:SetText((QL.DB().logObjectives ~= false) and L("– objectives") or L("+ objectives"))
+	head.lang:ClearAllPoints()
+	if folded then
+		head.lang:SetPoint("RIGHT", head.fold, "LEFT", -10, 0)
+	else
+		head.lang:SetPoint("RIGHT", head.all.text, "LEFT", -10, 0)
+	end
+	QL.RefreshLangPill()
 	head:Show()
 	y = y - 26
 	if folded then return y end
@@ -612,6 +756,19 @@ local STAGE = {
 	ready = "Ready to turn in",
 }
 
+-- The lock tab's look: closed and in the accent while locked, open and dim otherwise.
+function QL.RefreshCurrentLock()
+	local lock = frame and frame.lock
+	if not lock then return end
+	local C = QL.Theme.C
+	local locked = QL.DB().currentLocked == true
+	lock.icon:SetTexture("Interface\\AddOns\\QuestLineage\\Media\\" .. (locked and "lock" or "lock_open"))
+	local c = locked and C.accent or (lock.hover and C.text or C.dim)
+	lock.icon:SetVertexColor(c[1], c[2], c[3], 1)
+	QL.Theme.Color(lock.bg, lock.hover and C.rowHover or { 0, 0, 0, 0 })
+	lock:Show()
+end
+
 function QL.RefreshCurrent(flashes)
 	if not frame then return end
 	if QL.DB().currentQuest == false then frame:Hide(); return end
@@ -621,6 +778,7 @@ function QL.RefreshCurrent(flashes)
 	local currentParts = { frame.label, frame.meta, frame.title, frame.stateDot, frame.state, frame.progress, frame.bar }
 	frame.foldHint:Hide()
 	frame.mini:SetShown(id ~= nil)
+	QL.RefreshCurrentLock()
 	if not id then
 		-- no current quest: the window shows the log alone (or nothing when the log is empty)
 		frame.questId = nil
@@ -755,7 +913,7 @@ function QL.BuildZoneTab()
 	tab:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, -1)
 	tab:EnableMouse(true)
 	tab:RegisterForDrag("LeftButton")
-	tab:SetScript("OnDragStart", function() frame:StartMoving() end)
+	tab:SetScript("OnDragStart", function() startMove() end)
 	tab:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
 	T.Fill(tab, TAB_BG)
 	T.Border(tab, C.line)
@@ -875,8 +1033,44 @@ local pendingTracker = false
 
 local function inCombat() return InCombatLockdown and InCombatLockdown() end
 
-function QL.ApplyGameTracker()
+-- Hidden for good: outside combat the tracker moves under a hidden frame (a Show from the game then
+-- draws nothing); in combat, where that is not allowed, it only goes see-through (alpha is never
+-- protected), and the move waits for PLAYER_REGEN_ENABLED. The game shows its tracker on every
+-- quest update, kills in combat included, which made it pop up while hidden.
+local hiddenParent
+local function getHiddenParent()
+	if not hiddenParent and CreateFrame then
+		hiddenParent = CreateFrame("Frame", nil, UIParent)
+		hiddenParent:Hide()
+	end
+	return hiddenParent
+end
+
+local function silence(f)
+	pcall(f.SetAlpha, f, 0)
 	if inCombat() then pendingTracker = true; return end
+	local hp = getHiddenParent()
+	if hp and f.SetParent and f.GetParent then
+		local ok, p = pcall(f.GetParent, f)
+		if ok and p ~= hp then
+			f.qlParent, f.qlMoved = p, true
+			pcall(f.SetParent, f, hp)
+		end
+	end
+	pcall(f.Hide, f)
+end
+
+local function restore(f, name)
+	if inCombat() then pendingTracker = true; return end
+	if f.qlMoved and f.SetParent then pcall(f.SetParent, f, f.qlParent or UIParent) end
+	f.qlParent, f.qlMoved = nil, nil
+	pcall(f.SetAlpha, f, 1)
+	pcall(f.Show, f)
+	if name == "ObjectiveTrackerFrame" and ObjectiveTracker_Update then pcall(ObjectiveTracker_Update) end
+	if name == "QuestWatchFrame" and QuestWatch_Update then pcall(QuestWatch_Update) end
+end
+
+function QL.ApplyGameTracker()
 	pendingTracker = false
 	local hide = QL.DB().hideGameTracker == true
 	for _, name in ipairs(GAME_TRACKERS) do
@@ -884,24 +1078,25 @@ function QL.ApplyGameTracker()
 		if type(f) == "table" and f.Hide then
 			if not hookedTrackers[name] and f.HookScript then
 				hookedTrackers[name] = true
-				-- the game shows it again on quest changes: hide it again (outside combat)
+				-- the game shows it again on quest changes: silence it again at once
 				pcall(f.HookScript, f, "OnShow", function(self)
-					if QL.DB().hideGameTracker == true then
-						if inCombat() then pendingTracker = true else self:Hide() end
-					end
+					if QL.DB().hideGameTracker == true then silence(self) end
 				end)
 			end
 			if hide then
-				pcall(f.Hide, f)
+				silence(f)
+				f.wasHiddenByQL = true
 			elseif f.wasHiddenByQL then
-				pcall(f.Show, f)
-				if name == "ObjectiveTrackerFrame" and ObjectiveTracker_Update then pcall(ObjectiveTracker_Update) end
-				if name == "QuestWatchFrame" and QuestWatch_Update then pcall(QuestWatch_Update) end
+				restore(f, name)
+				if not pendingTracker then f.wasHiddenByQL = false end
 			end
-			f.wasHiddenByQL = hide
 		end
 	end
 end
+
+-- trackers that load later (load-on-demand) and quest-watch changes get the same treatment
+QL.Event("ADDON_LOADED", function() if QL.DB().hideGameTracker == true then pcall(QL.ApplyGameTracker) end end)
+QL.Event("QUEST_WATCH_UPDATE", function() if QL.DB().hideGameTracker == true then pcall(QL.ApplyGameTracker) end end)
 
 QL.Event("PLAYER_REGEN_ENABLED", function() if pendingTracker then pcall(QL.ApplyGameTracker) end end)
 function QL.ApplyCurrentScale()
@@ -916,6 +1111,13 @@ QL.On("SETTING_CHANGED", function(key)
 end)
 
 QL.Event("PLAYER_LOGIN", function()
+	-- the game's tracker is now hidden by default; saved settings from before (where the old
+	-- default "shown" was written in) switch over once
+	local db = QL.DB()
+	if not db.trackerDefaultHidden then
+		db.trackerDefaultHidden = true
+		db.hideGameTracker = true
+	end
 	pcall(QL.ApplyGameTracker)
 	local ok, err = pcall(build)
 	if not ok then QL.Debug("current quest: " .. tostring(err)); return end

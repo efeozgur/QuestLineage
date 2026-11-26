@@ -50,6 +50,7 @@ local NPCS = {
 	[204] = { name = "Ore Teacher", subName = "Mining Trainer", npcFlags = 16, friendlyToFaction = "AH", spawns = { [14] = { { 55, 45 } } } },
 	[205] = { name = "Innkeeper Grosk", subName = "Innkeeper", npcFlags = 4 + 128, friendlyToFaction = "H", spawns = { [14] = { { 51, 42 } } } },
 	[206] = { name = "Raging Boar", friendlyToFaction = nil, npcFlags = 0, spawns = { [14] = { { 50, 40 } } } },
+	[207] = { name = "Plains Boar", spawns = { [215] = { { 30, 30 }, { 31, 31 } } } },
 }
 
 local function entity(rows)

@@ -99,7 +99,14 @@ local ROWS = {
 	{ key = "mapPaths", page = "maps", group = "Your own routes",
 		label = "\"My route\" panel on the world map", note = "Put stops on the world map yourself (Shift+click while editing), save the route by name and let the arrow follow it." },
 	{ key = "nextQuestOffer", page = "tracking", group = "Other quests nearby",
-		label = "Offer the next quest when the current one is handed in", note = "A small card for five seconds; a click switches to that quest, otherwise nothing changes." },
+		label = "Offer the next quest when the current one is handed in", note = "A small card for five seconds; a click switches to that quest, otherwise nothing changes." },	{ key = "minimapRoute", page = "maps", group = "Quests",
+		label = "Route on the minimap", note = "The way to the next stop and the stops after it, on the minimap too; the next stop waits on the rim when it is further away." },
+	{ key = "worldMapPins", page = "maps", group = "Quests",
+		label = "The picked zone's quests on the world map", note = "The zone open on the Zones tab: its quest pins also on the game's world map, on that zone and on its continent." },
+	{ key = "currentLocked", parent = "currentQuest", page = "tracking", group = "Current quest window",
+		label = "Lock the current quest window", note = "It stays where it stands; the lock in its corner does the same." },
+	{ key = "creatureSearch", page = "general", group = "Search",
+		label = "Creature search", note = "Creatures by name on the Search tab and /ql find, with their places on the map. Off saves the memory of the name list." },
 }
 
 local PAGES = {
@@ -125,6 +132,7 @@ local PLATE_SIDES = {
 	{ mode = "top", label = "Above the name" },
 }
 local PLATE_COLORS = {
+	{ mode = "status", label = "By quest: current one green, others amber" },
 	{ mode = "accent", label = "The theme's colour" },
 	{ mode = "difficulty", label = "The quest's difficulty colour" },
 	{ mode = "custom", label = "My own colour" },
@@ -409,7 +417,7 @@ local function refresh()
 		end
 		for i, m in ipairs(PLATE_COLORS) do
 			setLabel(p.colors[i], L(m.label))
-			p.colors[i]:SetChecked((db.plateColorMode or "accent") == m.mode)
+			p.colors[i]:SetChecked((db.plateColorMode or "status") == m.mode)
 			p.colors[i]:SetEnabled(on)
 		end
 		local c = type(db.plateColor) == "table" and db.plateColor or { 1, 1, 1 }
@@ -545,7 +553,7 @@ local function buildPlatePage(y)
 	p.colorLabel = text(y, "Colour", 12, C.text, 20)
 	y = y - 20
 	p.colors, y = radios("QuestLineagePlateColor", PLATE_COLORS, "plateColorMode", y)
-	p.swatch = swatch("QuestLineagePlateSwatch", p.colors[3], "plateColor", "plateColorMode")
+	p.swatch = swatch("QuestLineagePlateSwatch", p.colors[4], "plateColor", "plateColorMode")
 	y = y - 8
 	p.sizeLabel = label(y); y = y - 22
 	p.slider = slider("QuestLineagePlateScale", "plateScale", 0.5, 2, y, p.sizeLabel); y = y - 44

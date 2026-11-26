@@ -82,8 +82,51 @@ end
 
 -- index.rewards[questId] = item ids the quest can give (from each item's questRewards)
 local function newIndex()
-	return { dependents = {}, names = {}, byZone = {}, rewards = {}, byClass = {}, services = {} }
+	local on = QL.CreatureSearchOn()
+	return { dependents = {}, names = {}, byZone = {}, rewards = {}, byClass = {}, services = {}, npcNames = on and {} or nil }
 end
+
+-- The creature search (setting creatureSearch). Off: no name list is kept and nothing is searched.
+function QL.CreatureSearchOn()
+	return not (QL.DB and QL.DB().creatureSearch == false)
+end
+
+-- index.npcNames = { {id, lowercase name, name}, ... }: every creature, for the creature search
+-- (spawns are read only for the matches, at search time). Built in the index pass while the
+-- setting is on; switched on later, built at the first search.
+local function addNpcName(list, id)
+	local name = QL.N(id, "name")
+	if type(name) == "string" and name ~= "" then
+		list[#list + 1] = { id, name:lower(), name }
+	end
+end
+
+local function indexNpc(index, id)
+	if index.npcNames then addNpcName(index.npcNames, id) end
+	if QL.IndexServiceNpc then QL.IndexServiceNpc(index, id) end
+end
+
+local function npcNames()
+	local index = QL.index
+	if not index or not QL.CreatureSearchOn() then return nil end
+	if not index.npcNames then
+		local l = resolve()
+		local list = {}
+		if l and l.Npc and l.Npc.GetAllIds then
+			local ok, ids = pcall(l.Npc.GetAllIds)
+			if ok and type(ids) == "table" then
+				for _, id in ipairs(ids) do pcall(addNpcName, list, id) end
+			end
+		end
+		index.npcNames = list
+	end
+	return index.npcNames
+end
+
+-- off: the list is dropped (its memory freed)
+QL.On("SETTING_CHANGED", function(key, value)
+	if key == "creatureSearch" and value == false and QL.index then QL.index.npcNames = nil end
+end)
 
 local function indexItem(index, itemId)
 	for _, q in ipairs(QL.Ids(QL.I(itemId, "questRewards"))) do
@@ -166,7 +209,7 @@ local function workList(l)
 	local work = {}
 	local jobs = { { l.Quest, indexOne }, { l.Item, indexItem } }
 	-- services (Services.lua): trainers, vendors and service NPCs, and mailboxes
-	if QL.IndexServiceNpc then jobs[#jobs + 1] = { l.Npc, function(index, id) QL.IndexServiceNpc(index, id) end } end
+	jobs[#jobs + 1] = { l.Npc, indexNpc }
 	if QL.IndexServiceObject then jobs[#jobs + 1] = { l.Object, function(index, id) QL.IndexServiceObject(index, id) end } end
 	for _, job in ipairs(jobs) do
 		local entity, fn = job[1], job[2]
@@ -256,6 +299,55 @@ function QL.SearchQuests(text)
 		end
 	end
 	return out
+end
+
+-- Creatures by a part of their name (English, as QuestieDB has them), only those with spawns.
+-- -> { {id, name, here = spawns in the player's zone, count = spawns, zones = { {area, count}, ... }
+-- (subzones folded; your zone first, then most spawns)}, ... } (max 20): those in your
+-- zone first, then exact name, name starting with the text, name containing it; same name by id.
+function QL.SearchNpcs(text)
+	text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	local names = #text >= 2 and npcNames()
+	if not names then return {} end
+	local needle = text:lower()
+	local zone = QL.PlayerZone and QL.PlayerZone()
+	local found = {}
+	for _, row in ipairs(names) do
+		local name = row[2]
+		local rank = name == needle and 1 or (name:sub(1, #needle) == needle and 2) or (name:find(needle, 1, true) and 3)
+		if rank then
+			local spawns = QL.N(row[1], "spawns")
+			local count, here, per = 0, false, {}
+			if type(spawns) == "table" then
+				for area, list in pairs(spawns) do
+					if type(list) == "table" and #list > 0 then
+						count = count + #list
+						local top = (QL.TopArea and QL.TopArea(area)) or area
+						per[top] = (per[top] or 0) + #list
+						if zone and (area == zone or top == zone) then here = true end
+					end
+				end
+			end
+			if count > 0 then
+				local zones = {}
+				for area, n in pairs(per) do zones[#zones + 1] = { area = area, count = n } end
+				table.sort(zones, function(a, b)
+					if (a.area == zone) ~= (b.area == zone) then return a.area == zone end
+					if a.count ~= b.count then return a.count > b.count end
+					return a.area < b.area
+				end)
+				found[#found + 1] = { id = row[1], name = row[3], rank = rank, here = here, count = count, zones = zones }
+			end
+		end
+	end
+	table.sort(found, function(a, b)
+		if a.here ~= b.here then return a.here end
+		if a.rank ~= b.rank then return a.rank < b.rank end
+		if a.name ~= b.name then return a.name < b.name end
+		return a.id < b.id
+	end)
+	for i = #found, 21, -1 do found[i] = nil end
+	return found
 end
 
 -- The first NPC (or object) that starts / ends a quest, by name.
