@@ -90,4 +90,12 @@ local pc = QL.PlayerClass()
 Eq(pc.name, "Savaşçı", "class name from the client")
 Eq(pc.color[1], 0.78, "class colour")
 
+-- a zone's level band from its quests
+local lo, hi, n = QL.ZoneLevels(14, QL.TestContext())
+Check(lo and hi and n, "Durotar has a level band")
+Check(lo >= 2 and hi <= 10 and lo <= hi, ("band inside the quest levels: %s-%s"):format(tostring(lo), tostring(hi)))
+Check(n >= 8, "counted from its quests: " .. tostring(n))
+Eq(QL.ZoneLevels(99999, QL.TestContext()), nil, "no band for a zone without quests")
+Eq(QL.ZoneLevels(nil, QL.TestContext()), nil, "no band without a zone")
+
 print("zone (classes): ok")

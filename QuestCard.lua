@@ -255,6 +255,7 @@ local function build()
 	local T, C = QL.Theme, QL.Theme.C
 	card = CreateFrame("Frame", "QuestLineageQuestCard", UIParent)
 	card:SetSize(W, 400)
+	card:SetScale(math.max(0.6, math.min(1.6, (tonumber(QL.DB().cardScale) or 100) / 100)))
 	card:SetFrameStrata("HIGH")
 	card:SetToplevel(true)
 	card:SetClampedToScreen(true)
@@ -508,6 +509,11 @@ function QL.RefreshCardFooter()
 		T.SetFont(b.label, 12, true)
 		b.label:SetTextColor(unpack(b == card.accept and (ready and C.text or C.dim) or C.muted))
 		b.label:Show()
+	end
+	-- the main button stands out: a solid accent fill with dark text when it can be pressed
+	if ready then
+		T.Color(card.accept.bg, C.accent)
+		card.accept.label:SetTextColor(0.04, 0.06, 0.08, 1)
 	end
 end
 
@@ -975,7 +981,12 @@ function QL.CardDebug()
 		local fs = b.label
 		QL.Chat(("%s: shown %s · text '%s' · width %.0f · font %s"):format(k, tostring(b:IsVisible()), tostring(fs:GetText()),
 			fs:GetStringWidth() or -1, tostring((fs:GetFont()))))
+		local r, g, bl, a = fs:GetTextColor()
+		QL.Chat(("  colour %.2f %.2f %.2f alpha %s · effective alpha %s · button %dx%d · font size %s · strata %s level %s"):format(
+			r or -1, g or -1, bl or -1, tostring(a), tostring(fs.GetEffectiveAlpha and fs:GetEffectiveAlpha()),
+			b:GetWidth() or 0, b:GetHeight() or 0, tostring(select(2, fs:GetFont())), tostring(b:GetFrameStrata()), tostring(b:GetFrameLevel())))
 	end
+	QL.Chat(("font setting %s · card scale %s"):format(tostring(QL.DB().fontFace), tostring(card:GetScale())))
 	if id then
 		local tasks = QL.QuestTasks(id)
 		QL.Chat(("tasks from the database: %d"):format(#tasks))
@@ -1128,6 +1139,11 @@ function QL.ShowQuestCard(id) return QL.ShowQuestCardMode("detail", id) end
 function QL.ShowNpcQuestList(host)
 	local entries = QL.NpcQuestEntries(host)
 	if #entries.available + #entries.active == 0 then return false end
+	-- one quest to take and nothing else to choose from: no list, straight to the quest
+	if #entries.available == 1 and #entries.active == 0 and #entries.options == 0 and entries.available[1].pick then
+		entries.available[1].pick()
+		return true
+	end
 	if not ensure() then return false end
 	local T, C = QL.Theme, QL.Theme.C
 	local ctx = QL.Context()
@@ -1224,7 +1240,17 @@ QL.Event("QUEST_ACCEPTED", function(_, a, b)
 	if type(id) == "number" and id > 0 then pcall(QL.Open, id) end
 end)
 
+function QL.ApplyCardScale()
+	if not card then return end
+	local pct = tonumber(QL.DB().cardScale) or 100
+	card:SetScale(math.max(0.6, math.min(1.6, pct / 100)))
+end
+
 QL.On("SETTING_CHANGED", function(key)
+	if key == "cardScale" then pcall(QL.ApplyCardScale) end
+	if key == "fontFace" and card and card:IsShown() and card.questId and card.mode ~= "list" then
+		pcall(QL.ShowQuestCardMode, card.mode, card.questId)
+	end
 	if key == "questCard" and QL.DB().questCard == false then pcall(QL.HideQuestCard) end
 	if key == "hideGameQuestFrame" and card and card:IsShown() then
 		if QL.DB().hideGameQuestFrame then hideGameFrame() else restoreGameFrame() end

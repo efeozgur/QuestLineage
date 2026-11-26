@@ -79,6 +79,20 @@ function QL.PlateColor(npcId)
 	return C.accent[1], C.accent[2], C.accent[3]
 end
 
+-- Full strength when the creature counts for the current quest, faded when only another logged
+-- quest needs it.
+local FADED = 0.4
+function QL.PlateAlpha(npcId)
+	local list = QL.PlateIndex()[npcId]
+	if not list or not QL.CurrentQuest then return 1 end
+	local ok, current = pcall(QL.CurrentQuest)
+	if not ok or not current then return 1 end
+	for _, entry in ipairs(list) do
+		if entry[1] == current then return 1 end
+	end
+	return FADED
+end
+
 local function npcIdOf(unit)
 	if not UnitGUID then return nil end
 	local ok, guid = pcall(UnitGUID, unit)
@@ -153,6 +167,7 @@ function QL.UpdatePlate(unit)
 	placeBadge(b)
 	b.icon:SetVertexColor(QL.PlateColor(npcIdOf(unit)))
 	b.text:SetText(text)
+	b:SetAlpha(QL.PlateAlpha(npcIdOf(unit)))
 	b:Show()
 end
 
@@ -177,6 +192,7 @@ QL.Event("NAME_PLATE_UNIT_REMOVED", function(_, unit)
 end)
 QL.On("STATE_CHANGED", function() index = nil; pcall(QL.RefreshPlates) end)
 QL.On("INDEX_READY", function() index = nil; pcall(QL.RefreshPlates) end)
+QL.On("ARROW_CHANGED", function() pcall(QL.RefreshPlates) end) -- the current quest may have changed
 QL.On("SETTING_CHANGED", function(key)
 	if key == "nameplates" or (type(key) == "string" and key:sub(1, 5) == "plate") then
 		index = nil -- plateDroppers changes what is indexed

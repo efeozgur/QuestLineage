@@ -34,16 +34,45 @@ T.FONT_FALLBACKS = {
 
 -- Set a font, falling back down the list when the client refuses one (SetFont returns false,
 -- or errors, for a file it cannot load). Inter runs wide, so sizes come out a touch smaller.
+-- The fonts the player can choose (setting fontFace). Inter has every Turkish letter; the game's
+-- own faces may lack them on some builds, so Inter stays the default.
+T.FONT_FACES = {
+	{ id = "inter", label = "Inter (default)" },
+	{ id = "arial", label = "Arial Narrow (the game's)", path = "Fonts\\ARIALN.TTF", bold = "Fonts\\ARIALN.TTF" },
+	{ id = "friz", label = "Friz Quadrata (the game's)", path = "Fonts\\FRIZQT__.TTF", bold = "Fonts\\FRIZQT__.TTF" },
+	{ id = "skurri", label = "Skurri (the game's)", path = "Fonts\\skurri.ttf", bold = "Fonts\\skurri.ttf" },
+}
+
+local function chosenFace()
+	local id = QL.DB and QL.DB().fontFace
+	for _, f in ipairs(T.FONT_FACES) do
+		if f.id == id and f.path then return f end
+	end
+	return nil
+end
+
+-- every font string set through SetFont, so a change of font applies to the open windows
+local styled = setmetatable({}, { __mode = "k" })
+
 function T.SetFont(fs, size, bold, flags)
 	if type(fs) ~= "table" or not fs.SetFont then return end
+	styled[fs] = { size, bold, flags }
 	size = math.max(8, math.floor((size or 12) * 0.92 + 0.5))
 	flags = flags or ""
-	local list = { bold and T.FONT_BOLD or T.FONT }
+	local list = {}
+	local face = chosenFace()
+	if face then list[1] = bold and face.bold or face.path end
+	list[#list + 1] = bold and T.FONT_BOLD or T.FONT
 	for _, f in ipairs(T.FONT_FALLBACKS) do list[#list + 1] = f end
 	for _, path in ipairs(list) do
 		local ok, set = pcall(fs.SetFont, fs, path, size, flags)
 		if ok and set ~= false then return path end
 	end
+end
+
+-- Set the font of every font string again (after the font setting changed).
+function T.ReapplyFonts()
+	for fs, a in pairs(styled) do T.SetFont(fs, a[1], a[2], a[3]) end
 end
 
 T.C = {
@@ -225,8 +254,11 @@ function T.Tooltip()
 	T.Gradient(top, "HORIZONTAL", C.accent, C.accent2)
 	tip.lines, tip.n = {}, 0
 
-	function tip:SetOwner(owner, anchor)
-		self.owner, self.anchor = owner, anchor or "ANCHOR_RIGHT"
+	-- anchor "ANCHOR_SIDE" with a third argument `ref` (a window): the tip opens beside that window,
+	-- on the side with more room (the window nearer the right edge: to its left), level with the owner,
+	-- so it never covers the window.
+	function tip:SetOwner(owner, anchor, ref)
+		self.owner, self.anchor, self.ref = owner, anchor or "ANCHOR_RIGHT", ref
 		for _, fs in ipairs(self.lines) do fs:Hide() end
 		self.n = 0
 	end
@@ -284,6 +316,23 @@ function T.Tooltip()
 		local o, a = self.owner, self.anchor
 		if not o then
 			self:SetPoint("CENTER")
+		elseif a == "ANCHOR_SIDE" then
+			local ref = self.ref or o
+			local left = false -- opens to the window's left?
+			local ok, cx = pcall(function() return (ref:GetCenter() or 0) * ref:GetEffectiveScale() end)
+			local okU, sw = pcall(function() return UIParent:GetWidth() * UIParent:GetEffectiveScale() end)
+			if ok and okU and type(cx) == "number" and type(sw) == "number" then left = cx > sw / 2 end
+			-- level with the owner (a row), measured from the window's top
+			local dy = 0
+			local okT, d = pcall(function()
+				return ((o:GetTop() or 0) - (ref:GetTop() or 0)) * o:GetEffectiveScale() / self:GetEffectiveScale()
+			end)
+			if okT and type(d) == "number" and d <= 0 then dy = d end
+			if left then
+				self:SetPoint("TOPRIGHT", ref, "TOPLEFT", -8, dy)
+			else
+				self:SetPoint("TOPLEFT", ref, "TOPRIGHT", 8, dy)
+			end
 		elseif a == "ANCHOR_LEFT" then
 			self:SetPoint("TOPRIGHT", o, "TOPLEFT", -8, 0)
 		elseif a == "ANCHOR_BOTTOM" then
@@ -595,3 +644,8 @@ function T.Scroll(parent)
 	sf:SetScript("OnSizeChanged", function(self) child:SetWidth(self:GetWidth() or 1); update() end)
 	return sf
 end
+
+-- A change of font applies to every open window at once.
+QL.On("SETTING_CHANGED", function(key)
+	if key == "fontFace" then pcall(T.ReapplyFonts) end
+end)

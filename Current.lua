@@ -131,6 +131,7 @@ local function build()
 	frame = CreateFrame("Button", "QuestLineageCurrent", UIParent)
 	frame:SetWidth(W)
 	frame:SetHeight(80)
+	frame:SetScale(math.max(0.6, math.min(1.6, (tonumber(QL.DB().currentScale) or 100) / 100)))
 	local p = QL.DB().currentPoint
 	if type(p) == "table" and p[1] then frame:SetPoint(p[1], UIParent, p[2], p[3], p[4]) else frame:SetPoint("RIGHT", UIParent, "RIGHT", -40, 120) end
 	frame:SetFrameStrata("MEDIUM")
@@ -158,7 +159,7 @@ local function build()
 	frame.label = T.Text(frame, 10, C.accent, nil, true)
 	frame.label:SetPoint("TOPLEFT", 14, -12)
 	frame.meta = T.Text(frame, 11, C.muted)
-	frame.meta:SetPoint("TOPRIGHT", -14, -12)
+	frame.meta:SetPoint("TOPRIGHT", -34, -12) -- room for the minimise button
 	frame.meta:SetJustifyH("RIGHT")
 	frame.title = T.Text(frame, 15, C.text, nil, true)
 	frame.title:SetPoint("TOPLEFT", 14, -28)
@@ -220,7 +221,7 @@ local function build()
 	frame:SetScript("OnEnter", function(self)
 		if not self.questId then return end
 		local tip = QL.Tip()
-		tip:SetOwner(self, "ANCHOR_LEFT")
+		tip:SetOwner(self, "ANCHOR_SIDE", frame)
 		QL.FillQuestTooltip(tip, self.questId)
 		tip:AddLine(L("Click: open · Right-click: fold · Drag: move"), 0.5, 0.5, 0.5)
 		tip:Show()
@@ -230,6 +231,35 @@ local function build()
 	-- (made after the window's own OnEnter/OnLeave, which it hooks)
 	frame.drop = QL.AbandonButton(frame, function() return frame.questId end)
 	frame.drop:SetPoint("TOPRIGHT", -8, -26)
+	-- the minimise button: folds the whole window down to its title and progress line
+	local mini = CreateFrame("Button", nil, frame)
+	mini:SetSize(18, 18)
+	mini:SetPoint("TOPRIGHT", -8, -8)
+	mini:SetFrameLevel((frame:GetFrameLevel() or 1) + 5)
+	mini.bg = T.Fill(mini, { 0, 0, 0, 0 })
+	mini.text = T.Text(mini, 14, C.dim, nil, true)
+	mini.text:SetPoint("CENTER", 0, 1)
+	mini:SetScript("OnClick", function()
+		QL.Set("currentMinimized", not QL.DB().currentMinimized)
+		pcall(QL.RefreshCurrent)
+		if QL.Tip then QL.Tip():Hide() end
+	end)
+	mini:SetScript("OnEnter", function(self)
+		T.Color(self.bg, C.rowHover)
+		self.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_SIDE", frame)
+		tip:AddLine(QL.DB().currentMinimized and L("Show the whole window") or L("Fold the window down to its title"), 1, 1, 1)
+		tip:Show()
+	end)
+	mini:SetScript("OnLeave", function(self)
+		T.Color(self.bg, { 0, 0, 0, 0 })
+		self.text:SetTextColor(C.dim[1], C.dim[2], C.dim[3], 1)
+		QL.Tip():Hide()
+	end)
+	mini:Hide()
+	frame.mini = mini
+	QL.BuildZoneTab()
 	local since = 0
 	frame:SetScript("OnUpdate", function(self, elapsed)
 		elapsed = elapsed or 0.016
@@ -394,7 +424,7 @@ local function logRow(i)
 	r:SetScript("OnEnter", function(self)
 		T.Color(self.bg, C.rowHover)
 		local tip = QL.Tip()
-		tip:SetOwner(self, "ANCHOR_LEFT")
+		tip:SetOwner(self, "ANCHOR_SIDE", frame)
 		QL.FillQuestTooltip(tip, self.questId)
 		tip:AddLine(L("Click: make it current · Right-click: open"), 0.5, 0.5, 0.5)
 		tip:Show()
@@ -590,6 +620,7 @@ function QL.RefreshCurrent(flashes)
 	local T, C = QL.Theme, QL.Theme.C
 	local currentParts = { frame.label, frame.meta, frame.title, frame.stateDot, frame.state, frame.progress, frame.bar }
 	frame.foldHint:Hide()
+	frame.mini:SetShown(id ~= nil)
 	if not id then
 		-- no current quest: the window shows the log alone (or nothing when the log is empty)
 		frame.questId = nil
@@ -643,6 +674,27 @@ function QL.RefreshCurrent(flashes)
 	frame.bar:SetShown(p ~= nil)
 	frame.completion = p
 
+	-- minimised: only the label, the title, the share done and the bar
+	local mini = QL.DB().currentMinimized and true or false
+	frame.mini.text:SetText(mini and "+" or "–")
+	frame.bar:ClearAllPoints()
+	frame.bar:SetPoint("TOPLEFT", 14, mini and -50 or -64)
+	frame.bar:SetPoint("TOPRIGHT", -14, mini and -50 or -64)
+	if mini then
+		for _, q in ipairs({ frame.stateDot, frame.state, frame.progress, frame.sep, frame.foldHint, frame.logHead, frame.logMore }) do q:Hide() end
+		for _, r in ipairs(frame.rows) do r:Hide() end
+		for _, r in ipairs(frame.logRows) do r:Hide() end
+		for _, b in ipairs(frame.logChips) do b:Hide() end
+		if p then
+			frame.meta:SetText(T.Hex(p.fraction >= 1 and T.STATUS.done or C.accent) .. ("%d%%"):format(p.percent) .. "|r")
+		else
+			frame.meta:SetText("")
+		end
+		frame:SetHeight(p and 62 or 50)
+		frame:Show()
+		return
+	end
+
 	-- objectives (right-click folds them; then a line says how many are hidden)
 	local all = QL.ObjectiveRows(id, ctx)
 	local folded = QL.DB().currentCollapsed and #all > 0
@@ -688,6 +740,103 @@ function QL.RefreshCurrent(flashes)
 	y = drawLog(y, ctx, id)
 	frame:SetHeight(-y + 8)
 	frame:Show()
+end
+
+-- The zone tab: a small tab on the window's top edge naming the zone you are in and its level band
+-- (from the zone's quests, QL.ZoneLevels). The band's colour says how it sits against your level:
+-- teal when you are inside it, the quests' difficulty colour when you are below (orange/red) or above
+-- (green/grey); a thin line along the bottom shows where you stand in it.
+local TAB_BG = { 0.055, 0.063, 0.082, 0.94 }
+
+function QL.BuildZoneTab()
+	local T, C = QL.Theme, QL.Theme.C
+	local tab = CreateFrame("Frame", nil, frame)
+	tab:SetHeight(22)
+	tab:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, -1)
+	tab:EnableMouse(true)
+	tab:RegisterForDrag("LeftButton")
+	tab:SetScript("OnDragStart", function() frame:StartMoving() end)
+	tab:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
+	T.Fill(tab, TAB_BG)
+	T.Border(tab, C.line)
+	tab.pin = tab:CreateTexture(nil, "ARTWORK")
+	tab.pin:SetTexture("Interface\\AddOns\\QuestLineage\\Media\\disc")
+	tab.pin:SetSize(7, 7)
+	tab.pin:SetPoint("LEFT", 10, 0)
+	tab.name = T.Text(tab, 11, C.text, nil, true)
+	tab.name:SetPoint("LEFT", tab.pin, "RIGHT", 6, 0)
+	tab.range = T.Text(tab, 11, C.accent, nil, true)
+	tab.range:SetPoint("LEFT", tab.name, "RIGHT", 9, 0)
+	tab.line = tab:CreateTexture(nil, "OVERLAY", nil, 5)
+	tab.line:SetTexture(T.WHITE)
+	tab.line:SetPoint("BOTTOMLEFT", 1, 1)
+	tab.line:SetHeight(2)
+	tab:SetScript("OnEnter", function(self)
+		if not self.zoneName then return end
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_SIDE", frame)
+		tip:AddLine(self.zoneName, 1, 1, 1)
+		if self.lo then
+			tip:AddLine(L("Quest levels here: %d–%d"):format(self.lo, self.hi), 0.75, 0.8, 0.85)
+			tip:AddLine(L("from %d quests of this zone"):format(self.count or 0), 0.5, 0.55, 0.6)
+			tip:AddLine(L(self.relation or ""), self.rr or 1, self.rg or 1, self.rb or 1)
+		else
+			tip:AddLine(L("No level data for this zone"), 0.5, 0.55, 0.6)
+		end
+		tip:Show()
+	end)
+	tab:SetScript("OnLeave", function() QL.Tip():Hide() end)
+	tab:Hide()
+	frame.zoneTab = tab
+end
+
+function QL.RefreshZoneTab(ctx)
+	local tab = frame and frame.zoneTab
+	if not tab then return end
+	if QL.DB().currentZoneTab == false or not frame:IsShown() then tab:Hide(); return end
+	local area, _, name = QL.PlayerZone()
+	if type(name) ~= "string" or name == "" then tab:Hide(); return end
+	ctx = ctx or QL.Context()
+	local T, C = QL.Theme, QL.Theme.C
+	local lo, hi, count
+	if area then lo, hi, count = QL.ZoneLevels(area, ctx) end
+	tab.zoneName, tab.lo, tab.hi, tab.count = name, lo, hi, count
+	tab.name:SetText(name)
+	local c, relation = C.accent, "You are within this band"
+	local level = ctx.level
+	if lo and level then
+		if level < lo then
+			local _, dc = QL.QuestDifficulty(lo, level)
+			c, relation = dc or C.accent, "Above your level: quests here are hard for you"
+		elseif level > hi then
+			local _, dc = QL.QuestDifficulty(hi, level)
+			c, relation = dc or C.muted, "Below your level: quests here are easy for you"
+		end
+	end
+	tab.relation, tab.rr, tab.rg, tab.rb = relation, c[1], c[2], c[3]
+	tab.pin:SetVertexColor(c[1], c[2], c[3], 1)
+	local width = 10 + 7 + 6 + (tab.name:GetStringWidth() or 0) + 14
+	if lo then
+		tab.range:SetText(lo == hi and L("Lv %d"):format(lo) or L("Lv %d–%d"):format(lo, hi))
+		tab.range:SetTextColor(c[1], c[2], c[3], 1)
+		tab.range:Show()
+		width = width + 9 + (tab.range:GetStringWidth() or 0)
+		local f = (level and hi > lo) and math.max(0, math.min(1, (level - lo) / (hi - lo))) or (level and level >= lo and 1 or 0)
+		tab.line:SetVertexColor(c[1], c[2], c[3], 0.9)
+		tab.line:SetWidth(math.max(0.01, (width - 2) * f))
+		tab.line:SetShown(f > 0)
+	else
+		tab.range:Hide()
+		tab.line:Hide()
+	end
+	tab:SetWidth(width)
+	tab:Show()
+end
+
+local refreshCurrentInner = QL.RefreshCurrent
+function QL.RefreshCurrent(flashes)
+	refreshCurrentInner(flashes)
+	if frame then pcall(QL.RefreshZoneTab) end
 end
 
 -- How far a logged quest is: { done, total (objectives), fraction, percent } from its objective
@@ -755,7 +904,16 @@ function QL.ApplyGameTracker()
 end
 
 QL.Event("PLAYER_REGEN_ENABLED", function() if pendingTracker then pcall(QL.ApplyGameTracker) end end)
-QL.On("SETTING_CHANGED", function(key) if key == "hideGameTracker" then pcall(QL.ApplyGameTracker) end end)
+function QL.ApplyCurrentScale()
+	if not frame then return end
+	local pct = tonumber(QL.DB().currentScale) or 100
+	frame:SetScale(math.max(0.6, math.min(1.6, pct / 100)))
+end
+
+QL.On("SETTING_CHANGED", function(key)
+	if key == "hideGameTracker" then pcall(QL.ApplyGameTracker) end
+	if key == "currentScale" then pcall(QL.ApplyCurrentScale) end
+end)
 
 QL.Event("PLAYER_LOGIN", function()
 	pcall(QL.ApplyGameTracker)

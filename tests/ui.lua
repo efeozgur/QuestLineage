@@ -143,7 +143,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Paths.lua", "Flight.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -670,6 +670,13 @@ GetNumActiveQuests = function() return 0 end
 local greetPick
 SelectAvailableQuest = function(i) greetPick = i end
 for _, fn in ipairs(QL.events.QUEST_GREETING) do fn("QUEST_GREETING") end
+Eq(greetPick, 1, "a lone quest is picked without a list")
+-- two quests: the list
+GetNumAvailableQuests = function() return 2 end
+GetAvailableTitle = function(i) return i == 1 and "Rumours" or "Gossip" end
+GetAvailableQuestInfo = function(i) return false, 0, false, false, i == 1 and 5 or 6 end
+greetPick = nil
+for _, fn in ipairs(QL.events.QUEST_GREETING) do fn("QUEST_GREETING") end
 Eq(qc.mode, "list", "the greeting as a list too")
 Eq(qc.rows[2].questId, 5, "quest id from the greeting")
 qc.rows[2].scripts.OnClick(qc.rows[2])
@@ -798,7 +805,8 @@ Check(f.questsPage.list.rows[1].title.text:find("»", 1, true), "the arrow's que
 -- a quest with a place: The Gathering's giver Bob at 45.2, 63.1; the player at 50, 40
 QL.SetArrowTarget(3)
 QL.UpdateArrow()
-Eq(arrow.dist.text, "191 yd", "distance sqrt(48^2 + 184.8^2): " .. arrow.dist.text)
+Eq(arrow.dist.text, "191", "distance sqrt(48^2 + 184.8^2): " .. arrow.dist.text)
+Eq(arrow.unit.text, "yd", "the unit beside it")
 Check(arrow.label.text:find("Bob", 1, true), "what to do there: " .. arrow.label.text)
 Check(arrow.arrow.rotation and arrow.arrow.rotation > 0, "arrow turned")
 Eq(arrow.shade.rotation, arrow.arrow.rotation, "the facet turns with it")
@@ -1645,6 +1653,42 @@ QTR_QuestData = nil
 f.langTR.scripts.OnClick(f.langTR)
 Eq(QL.DB().lang, "en", "without WoWTR, TR is refused")
 QTR_QuestData = saved
+
+-- The flight timer: a sample flight shows its window, counts down, lands and leaves
+do
+	local t = 5000
+	GetTime = function() return t end
+	QL.Command("flight")
+	local watcher = QL.flightWatcher
+	Check(watcher and watcher.scripts.OnUpdate, "the flight watcher runs every frame")
+	local function tick(secs) t = t + secs; watcher.scripts.OnUpdate(watcher, secs) end
+	tick(0.5)
+	Eq(QuestLineageFlight.shown, true, "the flight window shows")
+	Eq(QuestLineageFlight.big.text, "0:20", "20 s flight, half a second in (rounded up)")
+	tick(10)
+	Eq(QuestLineageFlight.big.text, "0:10", "counting down")
+	tick(10.5)
+	Eq(QuestLineageFlight.big.text, "Arrived", "landed")
+	tick(5)
+	Eq(QuestLineageFlight.shown, false, "the window leaves after the landing")
+	GetTime = nil
+end
+
+-- The zone tab above the current quest window
+do
+	local cur = QuestLineageCurrent
+	Check(cur and cur.zoneTab, "the current quest window has a zone tab")
+	QL.SetArrowTarget(2)
+	QL.RefreshCurrent()
+	local tab = cur.zoneTab
+	Eq(tab.shown, true, "the zone tab shows with the window")
+	Check(tab.name.text ~= "", "it names the zone: " .. tostring(tab.name.text))
+	Check(tab.range.text:find("%d"), "and gives the level band: " .. tostring(tab.range.text))
+	QL.Set("currentZoneTab", false)
+	QL.RefreshCurrent()
+	Eq(tab.shown, false, "the setting hides it")
+	QL.Set("currentZoneTab", true)
+end
 
 -- Slash commands do not error
 QL.Command("status")

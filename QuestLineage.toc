@@ -25,6 +25,7 @@ Window.lua
 Arrow.lua
 Route.lua
 MapRoute.lua
+Paths.lua
 Services.lua
 QuickBar.lua
 Toast.lua
@@ -32,6 +33,7 @@ Current.lua
 Plates.lua
 QuestAreas.lua
 Corpse.lua
+Flight.lua
 Nearby.lua
 QuestCard.lua
 MinimapButton.lua

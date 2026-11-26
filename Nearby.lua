@@ -32,11 +32,34 @@ local function counter(row)
 	return nil
 end
 
+-- A picture for a quest's card: the icon of an item it collects (the objective the hint is about
+-- first), else QuestLineage's quest mark.
+function QL.QuestPicture(questId, row)
+	local function iconOf(task)
+		if task and task.kind == "item" and QL.ItemIcon then
+			local ok, icon = pcall(QL.ItemIcon, task.id)
+			if ok and icon then return icon end
+		end
+	end
+	local icon = row and iconOf(row.task)
+	if not icon then
+		local ok, tasks = pcall(QL.QuestTasks, questId)
+		for _, t in ipairs(ok and tasks or {}) do
+			icon = iconOf(t)
+			if icon then break end
+		end
+	end
+	if icon then return icon, true end
+	return "Interface" .. string.char(92) .. "AddOns" .. string.char(92) .. "QuestLineage" .. string.char(92) .. "Media" .. string.char(92) .. "quest_mark", false
+end
+
 local function show(h)
 	local T, C = QL.Theme, QL.Theme.C
 	local title = QL.QuestTitle(h.questId)
 	local lines
-	if h.reason == "area" then
+	if h.current then
+		lines = L("Your current quest is here: %s"):format(T.Hex(C.text) .. title .. "|r")
+	elseif h.reason == "area" then
 		lines = L("You are in the area of %s"):format(T.Hex(C.text) .. title .. "|r")
 	else
 		lines = (h.name and (T.Hex(C.text) .. h.name .. "|r  ") or "") .. L("counts for %s"):format(T.Hex(C.text) .. title .. "|r")
@@ -45,12 +68,14 @@ local function show(h)
 	local count = counter(h.row)
 	if what ~= "" then lines = lines .. "\n" .. T.Hex(C.muted) .. what .. "|r" end
 	if count and not what:find(count, 1, true) then lines = lines .. "  " .. T.Hex(C.accent) .. count .. "|r" end
-	lines = lines .. "\n" .. T.Hex(C.dim) .. L("Click: make it the current quest") .. "|r"
+	if not h.current then lines = lines .. "\n" .. T.Hex(C.dim) .. L("Click: make it the current quest") .. "|r" end
 	shown[h.questId] = now()
 	if QL.DB().toasts ~= false and QL.Toast then
 		local id = h.questId
 		QL.Toast(lines, "quest", {
-			head = L("ANOTHER QUEST HERE"),
+			icon = select(1, QL.QuestPicture(h.questId, h.row)),
+			crop = select(2, QL.QuestPicture(h.questId, h.row)),
+			head = h.current and L("CURRENT QUEST HERE") or L("ANOTHER QUEST HERE"),
 			onClick = function() if QL.SetArrowTarget then QL.SetArrowTarget(id) end end,
 		})
 	else
@@ -61,15 +86,16 @@ end
 
 -- A hint for questId (row = the objective it is about, reason = "target" | "plate" | "area").
 -- Returns true when a card went up (or waits for the end of combat).
-function QL.NearbyHint(questId, row, reason, name)
+function QL.NearbyHint(questId, row, reason, name, current)
 	if not questId then return false end
 	local ctx = QL.Context()
 	if not ctx.log[questId] or (ctx.complete and ctx.complete[questId]) then return false end
-	if QL.CurrentQuest and QL.CurrentQuest(ctx) == questId then return false end
+	local isCurrent = QL.CurrentQuest and QL.CurrentQuest(ctx) == questId
+	if isCurrent and not current then return false end
 	if row and (row.done or (row.need and row.need > 0 and (row.have or 0) >= row.need)) then return false end
 	local last = shown[questId]
 	if last and now() - last < cooldown() then return false end
-	local h = { questId = questId, row = row, reason = reason, name = name }
+	local h = { questId = questId, row = row, reason = reason, name = name, current = current and isCurrent or nil }
 	if inCombat() then
 		waiting[questId] = h
 		return true
@@ -117,7 +143,7 @@ QL.Event("PLAYER_REGEN_ENABLED", function()
 	waiting = {}
 	for questId, h in pairs(list) do
 		shown[questId] = nil -- it was held, not shown
-		pcall(QL.NearbyHint, questId, h.row, h.reason, h.name)
+		pcall(QL.NearbyHint, questId, h.row, h.reason, h.name, h.current)
 	end
 end)
 
@@ -130,12 +156,12 @@ local function rebuildAreas()
 	local ctx = QL.Context()
 	local current = QL.CurrentQuest and QL.CurrentQuest(ctx)
 	for id in pairs(ctx.log) do
-		if id ~= current and not (ctx.complete and ctx.complete[id]) then
+		if (id ~= current or QL.DB().nearbyCurrent ~= false) and not (ctx.complete and ctx.complete[id]) then
 			local ok, list = pcall(QL.QuestAreas, id, ctx)
 			if ok then
 				local rows = QL.ObjectiveRows(id, ctx)
 				for k, a in ipairs(list or {}) do
-					a.questId, a.key = id, id .. ":" .. k
+					a.questId, a.key, a.isCurrent = id, id .. ":" .. k, (id == current)
 					-- the objective it belongs to, by its label
 					for _, r in ipairs(rows) do
 						if r.task and (r.task.name == a.label or r.text == a.label) then a.row = r; break end
@@ -170,7 +196,7 @@ function QL.CheckNearbyAreas(force)
 			local dx, dy = (x - px) * w, (y - py) * h
 			if dx * dx + dy * dy <= a.r * a.r then
 				still[a.key] = true
-				if not inside[a.key] then QL.NearbyHint(a.questId, a.row, "area") end
+				if not inside[a.key] then QL.NearbyHint(a.questId, a.row, "area", nil, a.isCurrent) end
 			end
 		end
 	end
@@ -192,3 +218,121 @@ end)
 for _, m in ipairs({ "STATE_CHANGED", "ARROW_CHANGED" }) do
 	QL.On(m, function() areasAt = -999 end)
 end
+
+-- Next quest ---------------------------------------------------------------------------------------------
+-- When the current quest is handed in, a small card offers the next quest in the log for five seconds:
+-- a click makes it current, otherwise nothing changes. Setting nextQuestOffer (on).
+
+local NEXT_LIFE = 5
+local recent = {} -- the last two current quests (the turn-in can come after the log already changed)
+
+local function noteCurrent()
+	if not QL.CurrentQuest then return end
+	local ok, id = pcall(QL.CurrentQuest)
+	if not ok or not id or recent[1] == id then return end
+	recent = { id, recent[1] }
+end
+QL.On("STATE_CHANGED", noteCurrent)
+QL.On("ARROW_CHANGED", noteCurrent)
+
+-- the quest to offer after `doneId`: ready ones first, then by level (QL.LogQuests)
+function QL.NextQuestAfter(doneId, ctx)
+	ctx = ctx or QL.Context()
+	for _, id in ipairs(QL.LogQuests(ctx, doneId)) do
+		if ctx.log[id] and QL.NodeStatus(id, ctx) ~= "done" then return id end
+	end
+	return nil
+end
+
+function QL.OfferNextQuest(doneId)
+	if QL.DB().nextQuestOffer == false then return false end
+	if QL.RouteActive and QL.RouteActive() then return false end
+	local ctx = QL.Context()
+	local nextId = QL.NextQuestAfter(doneId, ctx)
+	if not nextId then return false end
+	local q = QL.ArrowQuest and QL.ArrowQuest()
+	if q and q ~= doneId and ctx.log[q] then return false end -- already pointing at another logged quest
+	local T, C = QL.Theme, QL.Theme.C
+	local ready = ctx.complete and ctx.complete[nextId]
+	local lines = T.Hex(C.text) .. QL.QuestTitle(nextId) .. "|r"
+	if ready then lines = lines .. "  " .. T.Hex(T.STATUS.done) .. L("ready to hand in") .. "|r" end
+	lines = lines .. "\n" .. T.Hex(C.dim) .. L("Click: switch to it") .. "|r"
+	QL.lastNextOffer = nextId
+	if QL.DB().toasts ~= false and QL.Toast then
+		QL.Toast(lines, "quest", {
+			head = L("NEXT QUEST?"),
+			icon = select(1, QL.QuestPicture(nextId)),
+			crop = select(2, QL.QuestPicture(nextId)),
+			life = NEXT_LIFE,
+			onClick = function() if QL.SetArrowTarget then QL.SetArrowTarget(nextId) end end,
+		})
+	else
+		QL.Chat(L("Next quest: ") .. QL.QuestTitle(nextId))
+	end
+	return true
+end
+
+-- The chain goes on: the quest(s) that follow a handed-in one. -> questId, "available" | "toolow", level
+function QL.ChainFollowUp(doneId, ctx)
+	ctx = ctx or QL.Context()
+	local lowId
+	for _, e in ipairs(QL.Dependents(doneId)) do
+		local id, kind = e[1], e[2]
+		if kind ~= "parent" and id and id ~= doneId then
+			local st = QL.NodeStatus(id, ctx)
+			if st == "available" then return id, "available" end
+			if st == "toolow" and not lowId then lowId = id end
+		end
+	end
+	if lowId then return lowId, "toolow", tonumber(QL.Q(lowId, "requiredLevel")) end
+	return nil
+end
+
+-- A card for the next quest of the chain: a click points the arrow at it; too high a level says so.
+function QL.OfferChainQuest(doneId)
+	if QL.DB().nextQuestOffer == false then return false end
+	local ctx = QL.Context()
+	ctx.done = ctx.done or {}
+	ctx.done[doneId] = true -- the cached context may not know the hand-in yet
+	if ctx.log then ctx.log[doneId] = nil end
+	local id, state, need = QL.ChainFollowUp(doneId, ctx)
+	if not id then return false end
+	local T, C = QL.Theme, QL.Theme.C
+	local lines = T.Hex(C.text) .. QL.QuestTitle(id) .. "|r"
+	local icon, crop = QL.QuestPicture(id)
+	if state == "available" then
+		lines = lines .. "\n" .. T.Hex(C.dim) .. L("Click: head to it") .. "|r"
+		QL.lastChainOffer = id
+		if QL.DB().toasts ~= false and QL.Toast then
+			QL.Toast(lines, "quest", {
+				head = L("THE CHAIN CONTINUES"), icon = icon, crop = crop, life = NEXT_LIFE,
+				onClick = function() if QL.SetArrowTarget then QL.SetArrowTarget(id) end end,
+			})
+		else
+			QL.Chat(L("Next in the chain: ") .. QL.QuestTitle(id))
+		end
+	else
+		local msg = need and L("This quest is not suitable for your level yet (needs level %d)"):format(need)
+			or L("This quest is not suitable for your level yet")
+		lines = lines .. "\n" .. T.Hex(C.muted) .. msg .. "|r"
+		QL.lastChainOffer = id
+		if QL.DB().toasts ~= false and QL.Toast then
+			QL.Toast(lines, "warn", { head = L("THE CHAIN CONTINUES"), icon = icon, crop = crop, life = NEXT_LIFE })
+		else
+			QL.Chat(QL.QuestTitle(id) .. ": " .. msg)
+		end
+	end
+	return true
+end
+
+QL.Event("QUEST_TURNED_IN", function(_, questId)
+	questId = tonumber(questId)
+	if not questId then return end
+	local wasCurrent = recent[1] == questId or recent[2] == questId
+	if wasCurrent then recent = {} end
+	local function go()
+		local ok, shownChain = pcall(QL.OfferChainQuest, questId)
+		if wasCurrent and not (ok and shownChain) then pcall(QL.OfferNextQuest, questId) end
+	end
+	if C_Timer and C_Timer.After then C_Timer.After(0.8, go) else go() end
+end)

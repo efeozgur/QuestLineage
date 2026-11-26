@@ -10,6 +10,8 @@
 --
 -- Colour (setting arrowColorMode): by direction (the accent when you face it, amber to the side,
 -- red behind; the default), the theme's accent, or a colour of your own (arrowColor).
+-- Look (setting arrowStyle): "theme" (default; the arrow sits on a dark round plate with a thin ring in
+-- the arrow's colour, like the windows) or "classic" (the bare arrow).
 -- Size: arrowScale. Glow: arrowGlow. While the settings page is open the arrow shows a turning
 -- preview when it has no quest (QL.ArrowPreview).
 -- Left-drag moves it (arrowPoint), right-click stops it. It follows the quest: once the
@@ -20,6 +22,10 @@ local _, QL = ...
 local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
 local ARRIVED = 10      -- yards
 local UPDATE = 0.03     -- seconds between updates
+local ARROW_SIZE = 62   -- the arrow's size in the classic look (the theme look: THEME_ARROW on a PLATE)
+local THEME_ARROW, PLATE = 40, 82
+local arrowPx = ARROW_SIZE -- the arrow's size now (set by the style)
+local coreSize = ARROW_SIZE -- the visual size of the arrow with its plate (the text sits below it)
 
 local frame, target, questId
 local elapsedSince = 0
@@ -72,6 +78,17 @@ function QL.ApplyArrowSettings()
 	if scale < 0.4 then scale = 0.4 elseif scale > 2.5 then scale = 2.5 end
 	frame:SetScale(scale)
 	frame.glow:SetShown(db.arrowGlow ~= false)
+	local themed = db.arrowStyle ~= "classic"
+	arrowPx = themed and THEME_ARROW or ARROW_SIZE
+	coreSize = themed and PLATE or ARROW_SIZE
+	frame.plate:SetShown(themed)
+	frame.rim:SetShown(themed)
+	frame.core:SetSize(coreSize, coreSize)
+	frame.plate:SetSize(PLATE, PLATE)
+	frame.rim:SetSize(PLATE, PLATE)
+	frame.glow:SetSize(themed and 116 or 104, themed and 116 or 104)
+	frame.arrow:SetSize(arrowPx, arrowPx)
+	frame.ring:SetSize(coreSize, coreSize)
 end
 
 local function build()
@@ -97,28 +114,62 @@ local function build()
 	end)
 	f:SetScript("OnMouseUp", function(_, button) if button == "RightButton" then QL.ClearArrow() end end)
 
+	-- soft dark bands behind the two text lines (fading at both ends) keep them readable on bright ground
+	local function band()
+		local b = { left = f:CreateTexture(nil, "BACKGROUND", nil, -2), right = f:CreateTexture(nil, "BACKGROUND", nil, -2) }
+		for _, t in pairs(b) do t:SetTexture(T.WHITE) end
+		T.Gradient(b.left, "HORIZONTAL", { 0.03, 0.04, 0.06, 0 }, { 0.03, 0.04, 0.06, 0.62 })
+		T.Gradient(b.right, "HORIZONTAL", { 0.03, 0.04, 0.06, 0.62 }, { 0.03, 0.04, 0.06, 0 })
+		return b
+	end
+	f.titleBand, f.labelBand = band(), band()
 	f.title = T.Text(f, 13, C.text, nil, true)
 	f.title:SetPoint("TOP", 0, 0)
 	f.title:SetJustifyH("CENTER")
 	f.title:SetWidth(240)
 	f.title:SetShadowOffset(1, -1)
 
+	-- the arrow's footprint: the text lines hang below it
+	f.core = f:CreateTexture(nil, "BACKGROUND")
+	f.core:SetSize(ARROW_SIZE, ARROW_SIZE)
+	f.core:SetPoint("CENTER", 0, 6)
 	f.glow = f:CreateTexture(nil, "BACKGROUND")
 	f.glow:SetTexture(MEDIA .. "arrow_glow")
 	f.glow:SetSize(104, 104)
 	f.glow:SetPoint("CENTER", 0, 6)
+	-- the theme look: a dark round plate and a thin ring in the arrow's colour
+	f.plate = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+	f.plate:SetTexture(MEDIA .. "disc")
+	f.plate:SetVertexColor(0.055, 0.063, 0.082, 0.9)
+	f.plate:SetPoint("CENTER", f.core, "CENTER", 0, 0)
+	f.rim = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+	f.rim:SetTexture(MEDIA .. "ring")
+	f.rim:SetPoint("CENTER", f.core, "CENTER", 0, 0)
 	f.arrow = f:CreateTexture(nil, "ARTWORK")
 	f.arrow:SetTexture(MEDIA .. "arrow")
-	f.arrow:SetSize(62, 62)
-	f.arrow:SetPoint("CENTER", 0, 6)
+	f.arrow:SetSize(ARROW_SIZE, ARROW_SIZE)
+	f.arrow:SetPoint("CENTER", f.core, "CENTER", 0, 0)
+	-- the arrival ring (the quest-marker ring texture), grown and faded once on arrival
+	f.ring = f:CreateTexture(nil, "ARTWORK", nil, -1)
+	f.ring:SetTexture(MEDIA .. "ring")
+	f.ring:SetSize(ARROW_SIZE, ARROW_SIZE)
+	f.ring:SetPoint("CENTER", f.arrow, "CENTER", 0, 0)
+	f.ring:Hide()
 	f.shade = f:CreateTexture(nil, "ARTWORK", nil, 1)
 	f.shade:SetTexture(MEDIA .. "arrow_shade")
 	f.shade:SetAllPoints(f.arrow)
 
-	f.dist = T.Text(f, 17, C.text, nil, true)
+	f.dist = T.Text(f, 19, C.text, nil, true)
 	f.dist:SetPoint("TOP", f.arrow, "BOTTOM", 0, -6)
 	f.dist:SetJustifyH("CENTER")
 	f.dist:SetShadowOffset(1, -1)
+	-- the unit ("yd") small and muted beside the number
+	f.unit = T.Text(f, 10, C.muted, nil, true)
+	f.unit:SetShadowOffset(1, -1)
+	f.unit:Hide()
+	f.eta = T.Text(f, 10, C.muted, nil, true)
+	f.eta:SetShadowOffset(1, -1)
+	f.eta:Hide()
 	f.label = T.Text(f, 11, C.muted)
 	f.label:SetPoint("TOP", f.dist, "BOTTOM", 0, -3)
 	f.label:SetJustifyH("CENTER")
@@ -140,6 +191,7 @@ local function build()
 	f:SetScript("OnLeave", function() QL.Tip():Hide() end)
 	QL.ApplyArrowSettings()
 	f:SetScript("OnUpdate", function(_, elapsed)
+		pcall(QL.StepArrow, elapsed or 0)
 		elapsedSince = elapsedSince + (elapsed or 0)
 		if elapsedSince < UPDATE then return end
 		elapsedSince = 0
@@ -149,24 +201,172 @@ local function build()
 	f:Hide()
 end
 
-local function setRotation(r)
+-- Motion ----------------------------------------------------------------------------------------------
+-- UpdateArrow (every 0.03 s) decides where the arrow should point (goalRot), what it is doing
+-- (mode) and the numbers; StepArrow (every frame) eases the turn, pulses the arrow when you are
+-- close and plays the arrival flourish. Without a frame loop (tests) the goal is applied at once.
+local PULSE_NEAR = 60      -- yards: the arrow starts to breathe
+local curRot, goalRot = 0, 0
+local mode = "idle"        -- idle | go | arrived
+local nearness = 0         -- 0 far .. 1 on top of it
+local arrivedAt            -- GetTime() when the arrow arrived
+local animClock = 0
+
+-- the arrow's colour, and the theme ring's with it
+local function paint(r, g, b, a)
+	frame.arrow:SetVertexColor(r, g, b, a)
+	if frame.rim then frame.rim:SetVertexColor(r, g, b, math.min(a or 1, 0.85)) end
+end
+
+local function applyRotation(r)
 	frame.arrow:SetRotation(r)
 	frame.shade:SetRotation(r)
+end
+
+local function setRotation(r, snap)
+	goalRot = r
+	if snap or not frame.stepped then
+		curRot = r
+		applyRotation(r)
+	end
+end
+
+local function angleDiff(a, b) -- shortest way from b to a
+	return ((a - b + math.pi) % (2 * math.pi)) - math.pi
+end
+
+-- Estimated time to the target: yards over the speed you move at now (else your run speed, or your
+-- flying speed while flying). nil when the client gives no speed.
+local avgSpeed
+function QL.TravelSeconds(yards)
+	if not GetUnitSpeed or type(yards) ~= "number" then return nil end
+	local ok, cur, run, fly, swim = pcall(GetUnitSpeed, "player")
+	if not ok then return nil end
+	for _, v in ipairs({ cur or 0, run or 0, fly or 0, swim or 0 }) do
+		if type(v) ~= "number" or (issecretvalue and issecretvalue(v)) then return nil end
+	end
+	-- your own speed, smoothed so the estimate does not jump (mount, flying, swimming and speed buffs
+	-- all show up in it); standing still: your run speed
+	local speed
+	if (cur or 0) > 0 then
+		avgSpeed = avgSpeed and (avgSpeed + (cur - avgSpeed) * 0.08) or cur
+		speed = avgSpeed
+	else
+		avgSpeed = nil -- standing still: your top speed now (it follows the mount you sit on)
+		speed = run or 0
+		if IsFlying and IsFlying() and (fly or 0) > 0 then speed = fly end
+		if IsSwimming and IsSwimming() and (swim or 0) > 0 then speed = swim end
+	end
+	if speed <= 0 then return nil end
+	return yards / speed
+end
+
+function QL.TravelText(secs)
+	if not secs or secs < 3 then return nil end
+	secs = math.floor(secs + 0.5)
+	if secs < 60 then return "~" .. secs .. " " .. QL.L("sec") end
+	if secs >= 3600 then return "~" .. math.floor(secs / 3600) .. ":" .. ("%02d"):format(math.floor(secs % 3600 / 60)) .. " " .. QL.L("h") end
+	return ("~%d:%02d"):format(math.floor(secs / 60), secs % 60)
+end
+
+local function setDistance(num, unit, eta)
+	local f = frame
+	f.dist:SetText(num)
+	f.dist:ClearAllPoints()
+	if eta then f.eta:SetText("· " .. eta); f.eta:Show() else f.eta:Hide() end
+	if unit then
+		f.unit:SetText(unit)
+		f.unit:Show()
+		local total = (f.dist:GetStringWidth() or 0) + 3 + (f.unit:GetStringWidth() or 0)
+		if eta then total = total + 6 + (f.eta:GetStringWidth() or 0) end
+		f.dist:SetPoint("TOPLEFT", f.core, "BOTTOM", -total / 2, -6)
+		f.unit:ClearAllPoints()
+		f.unit:SetPoint("BOTTOMLEFT", f.dist, "BOTTOMRIGHT", 3, 2)
+		f.eta:ClearAllPoints()
+		f.eta:SetPoint("BOTTOMLEFT", f.unit, "BOTTOMRIGHT", 6, 0)
+	else
+		f.unit:Hide()
+		f.dist:SetPoint("TOP", f.core, "BOTTOM", 0, -6)
+	end
+end
+
+-- a soft band behind a text line, sized to it (hidden while the line is empty)
+local function fitBand(b, fs)
+	local w = fs:GetStringWidth() or 0
+	local show = (fs:GetText() or "") ~= "" and w > 0
+	for _, t in pairs(b) do t:SetShown(show) end
+	if not show then return end
+	local pad = 22
+	b.left:ClearAllPoints(); b.right:ClearAllPoints()
+	b.left:SetPoint("TOPLEFT", fs, "TOPLEFT", -pad, 3); b.left:SetPoint("BOTTOMRIGHT", fs, "BOTTOM", 0, -3)
+	b.right:SetPoint("TOPLEFT", fs, "TOP", 0, 3); b.right:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", pad, -3)
+end
+
+function QL.StepArrow(dt)
+	local f = frame
+	if not f or not f:IsShown() then return end
+	f.stepped = true
+	animClock = animClock + dt
+	-- ease the turn: a fast, damped approach, no snapping on every position update
+	local d = angleDiff(goalRot, curRot)
+	if math.abs(d) < 0.002 then curRot = goalRot else curRot = curRot + d * (1 - math.exp(-dt * 12)) end
+	applyRotation(curRot)
+	-- size: a slow breath when close, a pop on arrival
+	local scale = 1
+	if mode == "go" and nearness > 0 then
+		scale = scale + 0.035 * nearness * (0.5 + 0.5 * math.sin(animClock * (3 + 3 * nearness)))
+	elseif mode == "arrived" and arrivedAt then
+		local t = (GetTime and GetTime() or 0) - arrivedAt
+		if t < 0.7 then
+			local k = 1 - t / 0.7
+			scale = scale + 0.32 * k * k * (0.5 + 0.5 * math.cos(t * 14))
+			f.glow:SetAlpha(0.55 + 0.45 * k)
+		else
+			scale = scale + 0.025 * math.sin(animClock * 2.4)
+		end
+	end
+	f.arrow:SetSize(arrowPx * scale, arrowPx * scale)
+	if f.plate:IsShown() then
+		f.plate:SetSize(PLATE * scale, PLATE * scale)
+		f.rim:SetSize(PLATE * scale, PLATE * scale)
+	end
+	-- the glow breathes with it when close
+	if mode == "go" and nearness > 0 and f.glow:IsShown() then
+		f.glow:SetAlpha(0.32 + 0.18 * nearness * (0.5 + 0.5 * math.sin(animClock * (3 + 3 * nearness))))
+	end
+	-- the arrival ring: grows and fades once
+	if f.ring then
+		if mode == "arrived" and arrivedAt then
+			local t = (GetTime and GetTime() or 0) - arrivedAt
+			if t < 0.9 then
+				local k = t / 0.9
+				f.ring:SetSize(coreSize * (0.9 + 1.7 * k), coreSize * (0.9 + 1.7 * k))
+				f.ring:SetAlpha((1 - k) * 0.85)
+				f.ring:Show()
+			else
+				f.ring:Hide()
+			end
+		else
+			f.ring:Hide()
+		end
+	end
 end
 
 -- A slowly turning sample for the settings page.
 local function drawPreview()
 	local t = GetTime and GetTime() or 0
 	local rot = (t * 0.9) % (2 * math.pi)
-	frame.arrow:SetRotation(rot)
-	frame.shade:SetRotation(rot)
+	mode, nearness = "idle", 0
+	setRotation(rot, true)
 	local r, g, b = QL.ArrowTint(rot)
-	frame.arrow:SetVertexColor(r, g, b, 1)
+	paint(r, g, b, 1)
 	frame.glow:SetVertexColor(r, g, b, 1)
 	frame.glow:SetAlpha(0.32)
 	frame.title:SetText(L("Arrow preview"))
-	frame.dist:SetText(L("%d yd"):format(120))
+	setDistance("120", L("yd"))
 	frame.label:SetText(L("Drag: move · Right-click: stop"))
+	fitBand(frame.titleBand, frame.title)
+	fitBand(frame.labelBand, frame.label)
 end
 
 function QL.UpdateArrow()
@@ -183,30 +383,45 @@ function QL.UpdateArrow()
 	else
 		frame.label:SetText(target.label or "")
 	end
+	local function bands()
+		fitBand(frame.titleBand, frame.title)
+		fitBand(frame.labelBand, frame.label)
+	end
 	if not loc then
+		mode, nearness, arrivedAt = "idle", 0, nil
 		setRotation(0)
-		frame.arrow:SetVertexColor(0.5, 0.5, 0.5, 0.5)
+		paint(0.5, 0.5, 0.5, 0.5)
 		frame.glow:SetAlpha(0)
-		frame.dist:SetText(#target.points == 0 and L("No location data") or L("No position here"))
+		setDistance(#target.points == 0 and L("No location data") or L("No position here"))
+		bands()
 		return
 	end
 	if loc.otherMap then
+		mode, nearness, arrivedAt = "idle", 0, nil
 		setRotation(0)
-		frame.arrow:SetVertexColor(0.6, 0.6, 0.65, 0.45)
+		paint(0.6, 0.6, 0.65, 0.45)
 		frame.glow:SetAlpha(0)
-		frame.dist:SetText(L("Head to %s"):format(QL.MapName(loc.otherMap.map) or "?"))
+		setDistance(L("Head to %s"):format(QL.MapName(loc.otherMap.map) or "?"))
+		bands()
 		return
 	end
 	local C = QL.Theme.C
 	if loc.dist < ARRIVED then
+		if mode ~= "arrived" then arrivedAt = GetTime and GetTime() or 0 end
+		mode, nearness = "arrived", 1
 		setRotation(0)
 		local g = QL.Theme.STATUS.done
-		frame.arrow:SetVertexColor(g[1], g[2], g[3], 0.9)
+		paint(g[1], g[2], g[3], 0.9)
 		frame.glow:SetVertexColor(g[1], g[2], g[3], 1)
-		frame.glow:SetAlpha(0.55)
-		frame.dist:SetText(target.kind == "objective" and L("You are there: look around") or L("Arrived"))
+		if frame.ring then frame.ring:SetVertexColor(g[1], g[2], g[3], 1) end
+		if not frame.stepped then frame.glow:SetAlpha(0.55) end
+		setDistance(target.kind == "objective" and L("You are there: look around") or L("Arrived"))
+		bands()
 		return
 	end
+	mode = "go"
+	arrivedAt = nil
+	nearness = math.max(0, math.min(1, 1 - (loc.dist - ARRIVED) / (PULSE_NEAR - ARRIVED)))
 	local facing = GetPlayerFacing and GetPlayerFacing()
 	if facing ~= nil and issecretvalue and issecretvalue(facing) then facing = nil end
 	local r, g, b = QL.ArrowTint(0)
@@ -215,10 +430,11 @@ function QL.UpdateArrow()
 		setRotation(rot)
 		r, g, b = QL.ArrowTint(rot)
 	end
-	frame.arrow:SetVertexColor(r, g, b, 1)
+	paint(r, g, b, 1)
 	frame.glow:SetVertexColor(r, g, b, 1)
-	frame.glow:SetAlpha(0.32)
-	frame.dist:SetText(L("%d yd"):format(math.floor(loc.dist + 0.5)))
+	if nearness == 0 or not frame.stepped then frame.glow:SetAlpha(0.32) end
+	setDistance(tostring(math.floor(loc.dist + 0.5)), L("yd"), QL.TravelText(QL.TravelSeconds(loc.dist)))
+	bands()
 end
 
 -- Rebuild the target from the quest's state (pick up -> objectives -> hand in).

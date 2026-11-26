@@ -28,12 +28,23 @@ QL.defaults = {
 	minimapAngle = 215,   -- where on the rim, in degrees
 	arrowColorMode = "direction", -- "direction" (by facing), "accent" (the theme's), "custom"
 	arrowColor = { 0.239, 0.839, 0.776 }, -- the custom colour
+	arrowStyle = "theme", -- "theme" (round plate and ring, like the windows) | "classic" (the bare arrow)
 	arrowScale = 1,       -- the arrow's size
 	arrowGlow = true,     -- the soft glow behind it
+	mapPaths = true,      -- your own routes: the "My route" panel on the world map
 	mapRoute = true,      -- the route (or the arrow's quest) drawn on the world map
+	quickBarLocked = false, -- the "Where?" bar pinned where it stands
+	quickBarVertical = false, -- the "Where?" bar laid out as a column
 	quickBar = true,      -- the "Where?" quick bar under the arrow
 	toasts = true,        -- results and errors as notification cards (off: in the chat)
+	fontFace = "inter",   -- the text font: "inter" | "arial" | "friz" | "skurri" (Theme.FONT_FACES)
+	currentScale = 100,   -- the current quest window's size in percent (60-160)
+	cardScale = 100,      -- the quest card's size in percent (60-160)
+	currentZoneTab = true, -- the zone and its level band on a tab above the current quest window
+	nextQuestOffer = true, -- a card offering the next quest when the current one is handed in
+	flightTimer = true,   -- the flight timer window while you ride a flight path
 	currentQuest = true,  -- the current quest window
+	currentMinimized = false, -- the whole window folded down to its title and progress line
 	currentCollapsed = false, -- its objectives folded
 	currentLogCollapsed = false, -- the "Quests" list under it folded
 	currentLogMax = 15,   -- how many quests that list shows (1-30)
@@ -41,6 +52,7 @@ QL.defaults = {
 	nearbyTarget = true,  -- a card when the creature you target counts for another quest
 	nearbyPlates = true,  -- ... when such a creature's nameplate comes into view
 	nearbyAreas = true,   -- ... when you walk into another quest's objective area
+	nearbyCurrent = true, -- ... and a reminder when you walk into the current quest's own area
 	nearbyCooldown = 3,   -- minutes before the same quest's card can come again (1-15)
 	logObjectives = true, -- the list's rows show their objectives (each row can be minimised: logFolded)
 	questsHideChains = true, -- the main window's Quests tab leaves chain quests to the Chains tab
@@ -191,6 +203,8 @@ function QL.Command(msg)
 		if QL.ObjectiveDebug then QL.ObjectiveDebug(rest) end
 	elseif cmd == "kart" or cmd == "card" then
 		if QL.CardDebug then QL.CardDebug() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
+	elseif cmd == "flight" or cmd == "ucus" then
+		if QL.FlightDemo then QL.FlightDemo() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
 	elseif cmd == "help" then
 		QL.Chat("/ql  " .. L("open or close the chain window"))
 		QL.Chat("/ql <id|name>  " .. L("show the chain of a quest"))
@@ -199,6 +213,7 @@ function QL.Command(msg)
 		QL.Chat("/ql lang en|tr  " .. L("interface language"))
 		QL.Chat("/ql kart  " .. L("what the open quest card holds"))
 		QL.Chat("/ql hedef [id]  " .. L("where a quest's objectives come from"))
+		QL.Chat("/ql flight  " .. L("a sample flight to see the flight timer"))
 		QL.Chat("/ql options  " .. L("settings"))
 	else
 		if QL.Open then QL.Open(msg) end

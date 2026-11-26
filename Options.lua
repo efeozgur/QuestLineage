@@ -23,7 +23,7 @@ local NAV_W, CONTENT_W = 150, 470
 
 local panel, root, category
 local checks = {}
-local arrowUI, plateUI = {}, {}
+local arrowUI, plateUI, fontUI = {}, {}, {}
 local pages, navButtons = {}, {}
 local texts = {} -- { fontString, englishText, size, bold } re-labelled on refresh
 
@@ -82,8 +82,24 @@ local ROWS = {
 		slider = { min = 1, max = 15, text = "The same quest's card again after %d min" }, note = "However it came up: target, nameplate or area." },
 	{ key = "questAreasOthers", page = "maps", group = "Quests", parent = "questAreas",
 		label = "Other quests' areas too", note = "Softer rings, one colour per quest; the current quest's stay bright on top." },
+	{ key = "currentScale", page = "tracking", group = "Text and size", parent = "currentQuest",
+		slider = { min = 60, max = 160, step = 5, text = "Current quest window size: %d%%" }, note = "Makes the whole window, its text included, smaller or larger." },
+	{ key = "cardScale", page = "tracking", group = "Text and size", parent = "questCard",
+		slider = { min = 60, max = 160, step = 5, text = "Quest card size: %d%%" }, note = "The window that opens at quest givers." },
+	{ key = "flightTimer", page = "tracking", group = "Flights",
+		label = "Flight timer", note = "On a flight path a window counts the time left down. A route is timed on its first flight; later ones count down." },
+	{ key = "currentZoneTab", page = "tracking", group = "Current quest window", parent = "currentQuest",
+		label = "Zone and its level range above the window", note = "A small tab with the zone you are in and the levels of its quests, coloured by how they suit your level." },
 	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
+	{ key = "nearbyCurrent", page = "tracking", group = "Other quests nearby", parent = "nearbyAreas",
+		label = "Remind me when I reach the current quest's area", note = "A card when you walk into the area where the current quest's objectives are." },
+	{ key = "quickBarVertical", page = "arrow", group = "\"Where?\" bar", parent = "quickBar",
+		label = "Vertical bar", note = "Lay the icons out in a column instead of a row. The bar's turn button does the same." },
+	{ key = "mapPaths", page = "maps", group = "Your own routes",
+		label = "\"My route\" panel on the world map", note = "Put stops on the world map yourself (Shift+click while editing), save the route by name and let the arrow follow it." },
+	{ key = "nextQuestOffer", page = "tracking", group = "Other quests nearby",
+		label = "Offer the next quest when the current one is handed in", note = "A small card for five seconds; a click switches to that quest, otherwise nothing changes." },
 }
 
 local PAGES = {
@@ -94,6 +110,10 @@ local PAGES = {
 	{ id = "plates", title = "Nameplates", hint = "A quest badge and counter beside the creatures your quests need." },
 }
 
+local ARROW_STYLES = {
+	{ mode = "theme", label = "Theme: on a round plate, like the windows" },
+	{ mode = "classic", label = "Classic: the bare arrow" },
+}
 local ARROW_COLORS = {
 	{ mode = "direction", label = "By direction (ahead, to the side, behind)" },
 	{ mode = "accent", label = "The theme's colour" },
@@ -301,7 +321,9 @@ local function showPage(id)
 	end
 	local page = pages[id]
 	if page and panel and panel.scroll then
-		panel.scroll:SetVerticalScroll(0)
+		-- back to the top only when the page changes: a refresh (a slider moving) keeps the place
+		if panel.shownPage ~= id then panel.scroll:SetVerticalScroll(0) end
+		panel.shownPage = id
 		panel.scroll:SetContentHeight(page.contentHeight or 400)
 	end
 end
@@ -345,9 +367,21 @@ local function refresh()
 		end
 	end
 
+	-- font
+	if fontUI.radios then
+		for i, m in ipairs(fontUI.list) do
+			setLabel(fontUI.radios[i], L(m.label))
+			fontUI.radios[i]:SetChecked((db.fontFace or "inter") == m.mode)
+		end
+	end
+
 	-- arrow
 	local a = arrowUI
 	if a.colorLabel then
+		for i, m in ipairs(ARROW_STYLES) do
+			setLabel(a.styles[i], L(m.label))
+			a.styles[i]:SetChecked((db.arrowStyle or "theme") == m.mode)
+		end
 		for i, m in ipairs(ARROW_COLORS) do
 			setLabel(a.modes[i], L(m.label))
 			a.modes[i]:SetChecked((db.arrowColorMode or "direction") == m.mode)
@@ -427,7 +461,7 @@ local function buildRows(pageId, y)
 				local lbl = label(y)
 				lbl:SetPoint("TOPLEFT", x + 4, y)
 				local s = slider("QuestLineageOption" .. i, row.key, sl.min, sl.max, y - 22, lbl,
-					{ step = 1, text = function(v) return L(sl.text):format(math.floor(v + 0.5)) end, ends = function(v) return tostring(v) end })
+					{ step = sl.step or 1, text = function(v) return L(sl.text):format(math.floor(v + 0.5)) end, ends = function(v) return tostring(v) end })
 				s:ClearAllPoints()
 				s:SetPoint("TOPLEFT", x + 10, y - 22)
 				s.label = lbl
@@ -452,11 +486,26 @@ local function buildRows(pageId, y)
 	return y
 end
 
+-- The text font: one radio per face (the theme's list), under the "Text and size" group.
+local function buildFontBlock(y)
+	y = groupHeading(y - 4, "Text font")
+	local list = {}
+	for i, f in ipairs(QL.Theme.FONT_FACES) do list[i] = { mode = f.id, label = f.label } end
+	fontUI.list = list
+	fontUI.radios, y = radios("QuestLineageFont", list, "fontFace", y)
+	fontUI.note = text(y - 2, "Inter has every Turkish letter; the game's own fonts may show broken letters in Turkish.", 11, QL.Theme.C.muted, 20)
+	return y - 40
+end
+
 local function buildArrowPage(y)
 	local a = arrowUI
 	y = groupHeading(y, "Look")
 	text(y, "The arrow turns here as a preview while the settings are open. Drag it to move it.", 11, QL.Theme.C.muted, 20)
 	y = y - 30
+	a.styleLabel = text(y, "Style", 12, QL.Theme.C.text, 20)
+	y = y - 20
+	a.styles, y = radios("QuestLineageArrowStyle", ARROW_STYLES, "arrowStyle", y)
+	y = y - 8
 	a.colorLabel = text(y, "Colour", 12, QL.Theme.C.text, 20)
 	y = y - 20
 	a.modes, y = radios("QuestLineageArrowMode", ARROW_COLORS, "arrowColorMode", y)

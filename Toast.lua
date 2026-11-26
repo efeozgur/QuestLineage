@@ -8,7 +8,8 @@
 -- side bar and the dot says the kind: info (accent), success (green), warn (orange), error (red).
 -- Drag any card to move the stack (toastPoint). Setting toasts: off sends messages to the chat.
 --
---   QL.Toast(text, kind, opts)   opts = { head = "header text", onClick = function, life = seconds }
+--   QL.Toast(text, kind, opts)   opts = { head = "header text", onClick = function, life = seconds,
+--                                         icon = texture path or id, crop = true (an item icon) }
 --   kind "quest" (violet) is for the other-quest hints (Nearby.lua): a click runs onClick.
 
 local _, QL = ...
@@ -92,6 +93,10 @@ local function newCard()
 	card.text = T.Text(card, 12, C.text)
 	card.text:SetPoint("TOPLEFT", 14, -28)
 	card.text:SetWidth(W - 28)
+	card.icon = card:CreateTexture(nil, "ARTWORK")
+	card.icon:SetSize(34, 34)
+	card.icon:SetPoint("TOPLEFT", 14, -28)
+	card.icon:Hide()
 	if card.text.SetWordWrap then card.text:SetWordWrap(true) end
 	card:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	card:SetScript("OnClick", function(self, button)
@@ -119,8 +124,21 @@ function QL.Toast(text, kind, opts)
 	local c = kindColor(kind)
 	card.bar:SetVertexColor(c[1], c[2], c[3], 1)
 	card.dot:SetVertexColor(c[1], c[2], c[3], 1)
+	local hasIcon = opts.icon ~= nil
+	card.text:ClearAllPoints()
+	if hasIcon then
+		card.icon:SetTexture(opts.icon)
+		if opts.crop then card.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) else card.icon:SetTexCoord(0, 1, 0, 1) end
+		card.icon:Show()
+		card.text:SetPoint("TOPLEFT", 56, -28)
+		card.text:SetWidth(W - 70)
+	else
+		card.icon:Hide()
+		card.text:SetPoint("TOPLEFT", 14, -28)
+		card.text:SetWidth(W - 28)
+	end
 	card.text:SetText(text)
-	card:SetHeight(math.max(48, (card.text:GetStringHeight() or 14) + 40))
+	card:SetHeight(math.max(hasIcon and 74 or 48, (card.text:GetStringHeight() or 14) + 40))
 	card.life, card.age, card.hold = opts.life or LIFE[kind], 0, false
 	table.insert(cards, 1, card)
 	while #cards > MAX do remove(cards[#cards]) end

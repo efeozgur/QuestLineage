@@ -29,6 +29,11 @@ local function L(s) return QL.L(s) end
 -- Data -----------------------------------------------------------------------------------------------
 
 function QL.MapRouteStops()
+	-- your own route (Paths.lua) while it is edited, followed or looked at
+	if QL.PathStops then
+		local ps, pinfo = QL.PathStops()
+		if ps then return ps, pinfo end
+	end
 	local stops = {}
 	local info = QL.RouteInfo and QL.RouteInfo()
 	if info then
@@ -49,16 +54,18 @@ end
 
 function QL.MapRoutePoints(mapID, w, h)
 	local out = { stops = {} }
-	local stops = QL.MapRouteStops()
+	local stops, info = QL.MapRouteStops()
+	out.info = info
 	if #stops == 0 then return out end
 	local map, px, py = QL.PlayerPosition()
-	if map and px then
+	-- a route only looked at or edited starts at its first stop, not at you
+	if map and px and not (info and info.custom and not info.following) then
 		local x, y = QL.ProjectToMap(map, px, py, mapID)
 		if x then out.player = { x * w, -y * h } end
 	end
 	for _, s in ipairs(stops) do
 		local x, y = QL.ProjectToMap(s.spot.map, s.spot.x, s.spot.y, mapID)
-		if x then out.stops[#out.stops + 1] = { x * w, -y * h, id = s.id, n = s.n, title = s.title } end
+		if x then out.stops[#out.stops + 1] = { x * w, -y * h, id = s.id, n = s.n, title = s.title, custom = s.custom } end
 	end
 	return out
 end
@@ -148,13 +155,27 @@ local function badge()
 		b:SetScript("OnEnter", function(self)
 			local tip = QL.Tip()
 			tip:SetOwner(self, "ANCHOR_RIGHT")
-			if self.title then tip:AddLine(self.title, 1, 1, 1) end
+			if self.title then tip:AddLine(self.pathIndex and (self.title .. "  ·  " .. L("stop %d"):format(self.pathIndex)) or self.title, 1, 1, 1) end
 			if self.questId then QL.FillQuestTooltip(tip, self.questId) end
-			tip:AddLine(L("Click: open in QuestLineage"), 0.5, 0.5, 0.5)
+			if self.pathIndex then
+				if QL.PathEditing and QL.PathEditing() then tip:AddLine(L("Drag: move · Right-click: remove"), 0.5, 0.5, 0.5) end
+			else
+				tip:AddLine(L("Click: open in QuestLineage"), 0.5, 0.5, 0.5)
+			end
 			tip:Show()
 		end)
 		b:SetScript("OnLeave", function() QL.Tip():Hide() end)
-		b:SetScript("OnClick", function(self) if self.questId then QL.Open(self.questId) end end)
+		b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+		b:SetScript("OnClick", function(self, button)
+			if self.pathIndex then
+				if button == "RightButton" and QL.PathBadgeRemove then QL.PathBadgeRemove(self.pathIndex) end
+			elseif self.questId then
+				QL.Open(self.questId)
+			end
+		end)
+		b:SetScript("OnMouseDown", function(self, button)
+			if self.pathIndex and button == "LeftButton" and QL.PathBadgeDown then QL.PathBadgeDown(self.pathIndex) end
+		end)
 		badges[used.badge] = b
 	end
 	b:Show()
@@ -210,12 +231,15 @@ function QL.RefreshMapRoute()
 		place(b, s[1], s[2])
 		b.questId = s.id
 		b.title = s.title
+		b.pathIndex = s.custom and s.n or nil
 		b.num:SetText(tostring(s.n))
-		local c = k == 1 and C.accent or C.accent2
+		-- the next stop leads (accent, pulsing); a route only looked at or edited has no "next"
+		local lead = k == 1 and not (pts.info and pts.info.custom and not pts.info.following)
+		local c = lead and C.accent or C.accent2
 		b.ring:SetVertexColor(c[1], c[2], c[3], 1)
 		b.halo:SetVertexColor(c[1], c[2], c[3], 1)
-		b.halo:SetShown(k == 1)
-		b.pulse = k == 1
+		b.halo:SetShown(lead)
+		b.pulse = lead
 	end
 
 	-- you
@@ -234,16 +258,21 @@ function QL.RefreshMapRoute()
 	end
 
 	-- caption
-	local _, info = QL.MapRouteStops()
+	local info = pts.info
 	local first = pts.stops[1]
 	local text
-	if info then
+	if info and info.custom then
+		text = QL.Theme.Hex(C.accent) .. "QuestLineage|r  ·  " .. info.name
+		if info.following then text = text .. "  ·  " .. L("Stop %d/%d"):format(info.index, info.total) end
+		if info.length and info.length > 0 and QL.DistanceTextYards then text = text .. "  ·  " .. L("about %s in all"):format(QL.DistanceTextYards(info.length)) end
+		if info.editing then text = text .. "  ·  " .. L("Shift+click: add a stop") end
+	elseif info then
 		text = QL.Theme.Hex(C.accent) .. "QuestLineage|r  ·  " .. L("Route %d/%d"):format(info.index, info.total) .. "  ·  " .. QL.QuestTitle(info.next)
 		if info.length and info.length > 0 then text = text .. "  ·  " .. L("about %s in all"):format(QL.DistanceTextYards(info.length)) end
 	elseif first then
 		text = QL.Theme.Hex(C.accent) .. "QuestLineage|r  ·  " .. (first.title or QL.QuestTitle(first.id))
 	end
-	local d = first and not first.title and QL.DistanceText and QL.DistanceText(first.id)
+	local d = first and not first.title and first.id and QL.DistanceText and QL.DistanceText(first.id)
 	if d and text then text = text .. "  ·  " .. d end
 	if caption and text then
 		caption:SetText(text)
@@ -349,6 +378,6 @@ end
 QL.Event("PLAYER_LOGIN", function() pcall(hook) end)
 -- the world map may load later on some clients
 QL.Event("ADDON_LOADED", function(_, name) if name == "Blizzard_WorldMap" then pcall(hook) end end)
-for _, m in ipairs({ "ROUTE_CHANGED", "ARROW_CHANGED", "SETTING_CHANGED" }) do
+for _, m in ipairs({ "ROUTE_CHANGED", "ARROW_CHANGED", "SETTING_CHANGED", "PATH_CHANGED" }) do
 	QL.On(m, function() if overlay then pcall(QL.RefreshMapRoute) end end)
 end

@@ -120,6 +120,38 @@ function QL.ZoneQuests(area)
 	return index and index.byZone[area] or {}
 end
 
+-- A zone's level band, from the quests that belong to it (QuestieDB has no level range of its own):
+-- the 10th to the 90th percentile of the quest levels the character could take (a few odd high or
+-- low quests do not stretch it). nil with fewer than 3 quests. Cached per zone.
+--   QL.ZoneLevels(area, ctx) -> min, max, count
+QL.zoneLevelCache = {}
+QL.On("INDEX_READY", function() QL.zoneLevelCache = {} end)
+QL.On("SETTING_CHANGED", function(key) if key == "hideOther" then QL.zoneLevelCache = {} end end)
+
+function QL.ZoneLevels(area, ctx)
+	if type(area) ~= "number" then return nil end
+	local hit = QL.zoneLevelCache[area]
+	if hit == nil then
+		ctx = ctx or QL.Context()
+		local hide = QL.DB().hideOther
+		local levels = {}
+		for _, id in ipairs(QL.ZoneQuests(area)) do
+			local lvl = QL.QuestLevel(id)
+			if lvl and (not hide or QL.Eligible(id, ctx)) then levels[#levels + 1] = lvl end
+		end
+		table.sort(levels)
+		local n = #levels
+		if n >= 3 then
+			hit = { levels[math.max(1, math.ceil(n * 0.1))], levels[math.min(n, math.ceil(n * 0.9))], n }
+		else
+			hit = false
+		end
+		if QL.IndexReady and QL.IndexReady() then QL.zoneLevelCache[area] = hit end
+	end
+	if not hit then return nil end
+	return hit[1], hit[2], hit[3]
+end
+
 -- The chains with at least one quest in the zone, each once. The grouping is cached per zone
 -- (it only depends on the data and the character's race/class); progress is computed apart.
 -- Group quests into chains, each once: the first quest not yet placed starts a chain and every
