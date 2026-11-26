@@ -67,6 +67,17 @@ function QL.MapRoutePoints(mapID, w, h)
 		local x, y = QL.ProjectToMap(s.spot.map, s.spot.x, s.spot.y, mapID)
 		if x then out.stops[#out.stops + 1] = { x * w, -y * h, id = s.id, n = s.n, title = s.title, custom = s.custom } end
 	end
+	-- the stop-over points of a detour drawn to the arrow's spot (Paths.lua), for the first leg
+	if QL.DetourVias and not (info and info.custom) then
+		local spot = QL.DetourSpot and QL.DetourSpot()
+		if spot then
+			out.vias = {}
+			for _, v in ipairs(QL.DetourVias(spot, QL.DetourEditing and QL.DetourEditing())) do
+				local x, y = QL.ProjectToMap(v.map, v.x, v.y, mapID)
+				if x then out.vias[#out.vias + 1] = { x * w, -y * h, i = v.i } end
+			end
+		end
+	end
 	return out
 end
 
@@ -182,7 +193,70 @@ local function badge()
 	return b
 end
 
+local viaBadges, handles = {}, {}
+
+-- a small round badge for a stop-over point (draggable while a detour is edited)
+local function viaBadge(n)
+	local T, C = QL.Theme, QL.Theme.C
+	local b = viaBadges[n]
+	if not b then
+		b = CreateFrame("Button", nil, overlay)
+		b:SetSize(18, 18)
+		b.disc = b:CreateTexture(nil, "ARTWORK")
+		b.disc:SetTexture(MEDIA .. "disc")
+		b.disc:SetAllPoints()
+		b.disc:SetVertexColor(0.055, 0.063, 0.082, 0.95)
+		b.ring = b:CreateTexture(nil, "ARTWORK", nil, 1)
+		b.ring:SetTexture(MEDIA .. "ring")
+		b.ring:SetAllPoints()
+		b.ring:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+		b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+		b:SetScript("OnEnter", function(self)
+			local tip = QL.Tip()
+			tip:SetOwner(self, "ANCHOR_RIGHT")
+			tip:AddLine(L("Detour point %d"):format(self.viaIndex or 0), 1, 1, 1)
+			if QL.DetourEditing and QL.DetourEditing() then tip:AddLine(L("Drag: move · Right-click: remove"), 0.5, 0.5, 0.5) end
+			tip:Show()
+		end)
+		b:SetScript("OnLeave", function() QL.Tip():Hide() end)
+		b:SetScript("OnMouseDown", function(self, button)
+			if button == "LeftButton" and QL.DetourViaDown then QL.DetourViaDown(self.viaIndex) end
+		end)
+		b:SetScript("OnClick", function(self, button)
+			if button == "RightButton" and QL.DetourViaRemove then QL.DetourViaRemove(self.viaIndex) end
+		end)
+		viaBadges[n] = b
+	end
+	b:Show()
+	return b
+end
+
+-- a faint handle in the middle of a line piece: drag it to bend the line there
+local function handle(n)
+	local C = QL.Theme.C
+	local h = handles[n]
+	if not h then
+		h = CreateFrame("Button", nil, overlay)
+		h:SetSize(16, 16)
+		h.ring = h:CreateTexture(nil, "ARTWORK")
+		h.ring:SetTexture(MEDIA .. "ring")
+		h.ring:SetAllPoints()
+		h.ring:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+		h.ring:SetAlpha(0.55)
+		h:SetScript("OnEnter", function(self) self.ring:SetAlpha(1) end)
+		h:SetScript("OnLeave", function(self) self.ring:SetAlpha(0.55) end)
+		h:SetScript("OnMouseDown", function(self, button)
+			if button == "LeftButton" and QL.DetourHandleDown then QL.DetourHandleDown(self.at) end
+		end)
+		handles[n] = h
+	end
+	h:Show()
+	return h
+end
+
 local function hideAll()
+	for _, b in ipairs(viaBadges) do b:Hide() end
+	for _, h in ipairs(handles) do h:Hide() end
 	for _, l in ipairs(glows) do l:Hide() end
 	for _, l in ipairs(cores) do l:Hide() end
 	for _, d in ipairs(dots) do d:Hide() end
@@ -215,10 +289,45 @@ function QL.RefreshMapRoute()
 
 	-- the path: you -> stop 1 -> stop 2 ...
 	local prev = pts.player
+	local editingDetour = QL.DetourEditing and QL.DetourEditing()
+	local piece = 0
 	for k, s in ipairs(pts.stops) do
+		if k == 1 and pts.vias then
+			-- the first leg bends through the detour's points
+			for vn, v in ipairs(pts.vias) do
+				if prev then
+					local c, alpha = legColor(1)
+					segment(prev[1], prev[2], v[1], v[2], c, alpha, zoom)
+					piece = piece + 1
+					if editingDetour then
+						local hd = handle(piece)
+						hd:SetScale(1 / zoom)
+						hd:SetFrameLevel(overlay:GetFrameLevel() + 12)
+						hd.at = (pts.vias[vn - 1] and pts.vias[vn - 1].i or (v.i - 1)) + 1
+						place(hd, (prev[1] + v[1]) / 2, (prev[2] + v[2]) / 2)
+					end
+				end
+				local b = viaBadge(vn)
+				b:SetScale(1 / zoom)
+				b:SetFrameLevel(overlay:GetFrameLevel() + 14)
+				b.viaIndex = v.i
+				b:EnableMouse(editingDetour and true or false)
+				place(b, v[1], v[2])
+				prev = v
+			end
+		end
 		if prev then
 			local c, alpha = legColor(k)
 			segment(prev[1], prev[2], s[1], s[2], c, alpha, zoom)
+			if k == 1 and editingDetour then
+				piece = piece + 1
+				local hd = handle(piece)
+				hd:SetScale(1 / zoom)
+				hd:SetFrameLevel(overlay:GetFrameLevel() + 12)
+				local last = pts.vias and pts.vias[#pts.vias]
+				hd.at = (last and last.i or 0) + 1
+				place(hd, (prev[1] + s[1]) / 2, (prev[2] + s[2]) / 2)
+			end
 		end
 		prev = s
 	end
@@ -274,6 +383,9 @@ function QL.RefreshMapRoute()
 	end
 	local d = first and not first.title and first.id and QL.DistanceText and QL.DistanceText(first.id)
 	if d and text then text = text .. "  ·  " .. d end
+	if editingDetour then
+		text = QL.Theme.Hex(C.accent) .. "QuestLineage|r  ·  " .. L("Detour") .. "  ·  " .. L("%d points"):format(pts.vias and #pts.vias or 0) .. "  ·  " .. L("Shift+click: add a point · drag the line: bend it")
+	end
 	if caption and text then
 		caption:SetText(text)
 		caption.bg:SetWidth((caption:GetStringWidth() or 200) + 28)

@@ -137,6 +137,19 @@ function QL.PathRename(old, new)
 	return true
 end
 
+-- yards between two points (each {map, x, y}); nil when the client cannot say
+function QL.PathGap(a, b)
+	local w, h = nil, nil
+	if C_Map and C_Map.GetMapWorldSize and a and b then
+		local ok, ww, hh = pcall(C_Map.GetMapWorldSize, a.map)
+		if ok and type(ww) == "number" and type(hh) == "number" and ww > 0 and hh > 0 then w, h = ww, hh end
+	end
+	if not w then return nil end
+	local x, y = QL.ProjectToMap(b.map, b.x, b.y, a.map)
+	if not x then return nil end
+	return math.sqrt(((x - a.x) * w) ^ 2 + ((y - a.y) * h) ^ 2)
+end
+
 -- yards between two points of a route: both go to the first one's map when they differ
 local function worldSize(map)
 	if not (C_Map and C_Map.GetMapWorldSize) then return nil end
@@ -167,7 +180,7 @@ end
 function QL.PathStops()
 	if QL.DB().mapPaths == false then return nil end
 	local name = follow and follow.name or QL.PathActive()
-	if not name or not (editing or follow or viewing) then return nil end
+	if detourEdit or not name or not (editing or follow or viewing) then return nil end
 	local pts = QL.PathPoints(name)
 	if #pts == 0 and not editing then return nil end
 	local first = follow and follow.index or 1
@@ -271,9 +284,157 @@ QL.On("ARROW_CHANGED", function()
 	end
 end)
 
+-- Detours -------------------------------------------------------------------------------------------
+-- A line to a spot goes straight; where a mountain is in the way, you bend it with stop-over points
+-- (QuestLineageDB.detours[key] = { dest, points }, key = the destination spot rounded to 0.001 of its
+-- map, so every arrow that goes to that spot uses them, whatever quest it is). The arrow then leads
+-- you through them in order (QL.DetourNext) and the map draws the bent line (MapRoute.lua). A point
+-- you have walked through is deleted (the detour is for one trip); nothing is deleted while it is edited.
+
+local ADVANCE_VIA = 15 -- yards: close enough to a stop-over point to move on
+local detourEdit = false
+local det             -- { key, n, idx, targets } progress along the detour being followed
+
+local function detours()
+	local db = QL.DB()
+	if type(db.detours) ~= "table" then db.detours = {} end
+	return db.detours
+end
+
+local function round3(v) return math.floor(v * 1000 + 0.5) end
+
+function QL.DetourKey(spot)
+	if type(spot) ~= "table" or not spot.map then return nil end
+	return tostring(spot.map) .. ":" .. round3(spot.x or 0) .. ":" .. round3(spot.y or 0)
+end
+
+function QL.DetourPoints(spot)
+	local key = QL.DetourKey(spot)
+	local d = key and detours()[key]
+	return d and d.points or {}
+end
+
+local function detourOf(spot)
+	local key = QL.DetourKey(spot)
+	if not key then return nil end
+	local d = detours()[key]
+	if not d then
+		d = { dest = { map = spot.map, x = spot.x, y = spot.y }, points = {} }
+		detours()[key] = d
+	end
+	return d, key
+end
+
+-- A point at place i (1 = the first stop-over; #points + 1 = the last).
+function QL.DetourInsert(spot, i, map, x, y)
+	local d = detourOf(spot)
+	if not d or type(map) ~= "number" or type(x) ~= "number" or type(y) ~= "number" then return nil end
+	i = math.max(1, math.min(#d.points + 1, math.floor(tonumber(i) or (#d.points + 1))))
+	table.insert(d.points, i, { map = map, x = x, y = y })
+	changed()
+	return i
+end
+
+function QL.DetourMove(spot, i, map, x, y)
+	local pts = QL.DetourPoints(spot)
+	if not pts[i] then return false end
+	pts[i] = { map = map, x = x, y = y }
+	changed()
+	return true
+end
+
+function QL.DetourRemove(spot, i)
+	local pts = QL.DetourPoints(spot)
+	if not pts[i] then return false end
+	table.remove(pts, i)
+	if #pts == 0 then detours()[QL.DetourKey(spot)] = nil end
+	changed()
+	return true
+end
+
+function QL.DetourClear(spot)
+	local key = QL.DetourKey(spot)
+	if not key or not detours()[key] then return end
+	detours()[key] = nil
+	changed()
+end
+
+-- The spot the arrow is going to now (the nearest of its target's spots), or nil.
+function QL.DetourSpot()
+	local t = QL.ArrowTarget and QL.ArrowTarget()
+	if not t then return nil end
+	local loc = QL.Locate(t)
+	return loc and loc.point or nil
+end
+
+function QL.DetourEditing() return detourEdit end
+
+-- The stop-over points still ahead (all of them while editing, or when nothing is followed yet):
+-- { {map, x, y, i}, ... }, i = the place in the full list.
+function QL.DetourVias(spot, all)
+	local pts = QL.DetourPoints(spot)
+	local first = 1
+	if not all and det and det.key == QL.DetourKey(spot) and det.idx then first = det.idx end
+	local out = {}
+	for i = first, #pts do out[#out + 1] = { map = pts[i].map, x = pts[i].x, y = pts[i].y, i = i } end
+	return out
+end
+
+-- The arrow's next stop-over point for a located target (loc from QL.Locate): returns the measure of
+-- that point (like QL.Locate's result), its place and the count, or nil when the line is straight (no
+-- detour, passed it, or it cannot be measured). It starts at the point nearest to you, unless you are
+-- nearer to the destination than to any point (then the detour is behind you).
+function QL.DetourNext(loc)
+	if not loc or loc.otherMap or not loc.point then return nil end
+	local pts = QL.DetourPoints(loc.point)
+	if #pts == 0 then det = nil; return nil end
+	local key = QL.DetourKey(loc.point)
+	if not det or det.key ~= key or det.n ~= #pts then det = { key = key, n = #pts, targets = {} } end
+	local function target(i)
+		local t = det.targets[i]
+		if not t then t = { kind = "place", fixed = true, points = { pts[i] } }; det.targets[i] = t end
+		return t
+	end
+	if not det.idx then
+		local best, bestD
+		for i = 1, #pts do
+			local l = QL.Locate(target(i))
+			if l and not l.otherMap and (not bestD or l.dist < bestD) then best, bestD = i, l.dist end
+		end
+		det.idx = (best and bestD < loc.dist) and best or (#pts + 1)
+	end
+	while det.idx <= #pts do
+		local l = QL.Locate(target(det.idx))
+		if not l or l.otherMap then return nil end
+		-- reached it, or left it behind: nearer to the next point than to this one, and between them
+		local passed = l.dist < ADVANCE_VIA
+		if not passed and pts[det.idx + 1] then
+			local nl = QL.Locate(target(det.idx + 1))
+			local gap = QL.PathGap and QL.PathGap(pts[det.idx], pts[det.idx + 1])
+			passed = nl and not nl.otherMap and nl.dist < l.dist and (not gap or nl.dist < gap)
+		end
+		if not passed then return l, det.idx, #pts end
+		if detourEdit then
+			det.idx = det.idx + 1 -- being edited: nothing is thrown away
+		else
+			-- walked through: that point and the ones before it are deleted, so the line does not
+			-- lead you back to an old detour next time
+			for _ = 1, det.idx do table.remove(pts, 1) end
+			if #pts == 0 then detours()[key] = nil end
+			changed() -- (clears det)
+			if #pts == 0 then return nil end
+			det = { key = key, n = #pts, idx = 1, targets = {} }
+		end
+	end
+	return nil
+end
+
+-- an edit or another route: the progress is worked out again
+QL.On("PATH_CHANGED", function() det = nil end)
+
 -- Map panel and editing -----------------------------------------------------------------------------
 
-local panel, dragIndex
+local panel, dragIndex, dragKind
 
 local function worldCursor()
 	local sc = WorldMapFrame and WorldMapFrame.ScrollContainer
@@ -293,22 +454,80 @@ local function shownMap()
 end
 
 -- Called by a stop's badge (MapRoute.lua) while editing.
-function QL.PathBadgeDown(i) if editing then dragIndex = i end end
+function QL.PathBadgeDown(i) if editing then dragIndex, dragKind = i, "path" end end
 function QL.PathBadgeRemove(i)
 	if editing then QL.PathRemove(QL.PathActive(), i) end
 end
+
+-- Detour editing: a stop-over point's badge or a line's handle was pressed (MapRoute.lua).
+function QL.DetourViaDown(i)
+	if detourEdit then dragIndex, dragKind = i, "detour" end
+end
+function QL.DetourViaRemove(i)
+	if not detourEdit then return end
+	local spot = QL.DetourSpot()
+	if spot then QL.DetourRemove(spot, i) end
+end
+-- a handle on a line: a new point at the cursor, picked up at once (insert place i)
+function QL.DetourHandleDown(i)
+	if not detourEdit then return end
+	local spot, map, x, y = QL.DetourSpot(), shownMap(), worldCursor()
+	if spot and map and x then
+		local at = QL.DetourInsert(spot, i, map, x, y)
+		if at then dragIndex, dragKind = at, "detour" end
+	end
+end
+-- Shift+click on the map: a new point on the line piece nearest to the cursor
+local function nearestPiece(map, cx, cy)
+	local spot = QL.DetourSpot()
+	if not spot then return nil end
+	local chain = {}
+	local pm, px, py = QL.PlayerPosition()
+	if pm and px then
+		local x, y = QL.ProjectToMap(pm, px, py, map)
+		if x then chain[#chain + 1] = { x = x, y = y, v = 0 } end
+	end
+	for _, v in ipairs(QL.DetourVias(spot, true)) do
+		local x, y = QL.ProjectToMap(v.map, v.x, v.y, map)
+		if x then chain[#chain + 1] = { x = x, y = y, v = v.i } end
+	end
+	local dx, dy = QL.ProjectToMap(spot.map, spot.x, spot.y, map)
+	if dx then chain[#chain + 1] = { x = dx, y = dy } end
+	if #chain < 2 then return nil end
+	local best, bestD
+	for k = 1, #chain - 1 do
+		local a, b = chain[k], chain[k + 1]
+		-- distances in a 3:2 plane (the map is wider than tall)
+		local ax, ay, bx, by, qx, qy = a.x * 1.5, a.y, b.x * 1.5, b.y, cx * 1.5, cy
+		local vx, vy = bx - ax, by - ay
+		local len2 = vx * vx + vy * vy
+		local t = len2 > 0 and math.max(0, math.min(1, ((qx - ax) * vx + (qy - ay) * vy) / len2)) or 0
+		local ex, ey = ax + vx * t - qx, ay + vy * t - qy
+		local d = ex * ex + ey * ey
+		if not bestD or d < bestD then best, bestD = (a.v or 0) + 1, d end
+	end
+	return best, spot
+end
+QL.DetourNearestPiece = nearestPiece
 
 local function refreshPanel()
 	if not panel then return end
 	local name = QL.PathActive()
 	panel.name:SetText(name or "")
 	panel.edit:SetActive(editing)
+	panel.detour:SetActive(detourEdit)
+	local dspot = QL.DetourSpot()
+	local dn = dspot and #QL.DetourPoints(dspot) or 0
 	panel.go:SetLabel(follow and L("Stop") or L("Follow"))
 	panel.go:SetActive(follow ~= nil)
 	local n = name and #QL.PathPoints(name) or 0
 	local len = name and QL.PathLength(name)
+	if detourEdit then
+		panel.info:SetText(L("Detour"):gsub("^%l", string.upper) .. "  ·  " .. L("%d points"):format(dn))
+	else
 	panel.info:SetText(name and (L("%d stops"):format(n) .. ((len and len > 0 and QL.DistanceTextYards) and ("  ·  " .. QL.DistanceTextYards(len)) or "")) or L("No route yet: press New"))
-	for _, b in ipairs({ panel.prev, panel.next, panel.edit, panel.undo, panel.go, panel.del }) do b:SetShown(panel.open) end
+	end
+	for _, b in ipairs({ panel.prev, panel.next, panel.edit, panel.undo, panel.go, panel.del, panel.detour, panel.reset }) do b:SetShown(panel.open) end
 	panel.nameBox:SetShown(panel.open)
 	panel.info:SetShown(panel.open)
 	panel.toggle:SetActive(panel.open)
@@ -344,7 +563,8 @@ local function buildPanel()
 	panel.toggle = button(86, L("My route"), 0, 0, function()
 		panel.open = not panel.open
 		if panel.open then viewing = true else editing = false end
-		panel:SetHeight(panel.open and 92 or 26)
+		if not panel.open then detourEdit = false end
+		panel:SetHeight(panel.open and 118 or 26)
 		refreshPanel(); changed()
 	end)
 	-- row 1: previous, name (editable), next, new
@@ -364,6 +584,7 @@ local function buildPanel()
 	panel.edit = button(60, L("Edit"), 0, -58, function()
 		if not QL.PathActive() then QL.PathNew() end
 		editing = not editing
+		if editing then detourEdit = false end
 		viewing = true
 		refreshPanel(); changed()
 	end)
@@ -381,23 +602,55 @@ local function buildPanel()
 			QL.PathDelete(name)
 		end
 	end)
+	-- row 3: detour of the arrow's line (bend it round an obstacle), and its reset
+	panel.detour = button(120, L("Detour"), 0, -86, function()
+		if not detourEdit and not QL.DetourSpot() then
+			QL.Print(L("Point the arrow at something first."), "warn")
+			return
+		end
+		detourEdit = not detourEdit
+		if detourEdit then editing = false end
+		refreshPanel(); changed()
+	end)
+	panel.reset = button(120, L("Reset detour"), 124, -86, function()
+		local spot = QL.DetourSpot()
+		if not spot or #QL.DetourPoints(spot) == 0 then return end
+		if QL.Theme.Confirm then
+			QL.Theme.Confirm(L("Reset detour"), L("Remove this detour and go straight again?"), L("Reset detour"), function() QL.DetourClear(spot) end)
+		else
+			QL.DetourClear(spot)
+		end
+	end)
 	panel.info = T.Text(panel, 10, C.muted)
-	panel.info:SetPoint("TOPLEFT", 4, -86)
+	panel.info:SetPoint("TOPLEFT", 4, -114)
 	panel:SetHeight(26)
 	-- Shift + left click on the map puts a stop there (a plain click keeps its job: moving the map)
 	holder:HookScript("OnMouseUp", function(_, button)
-		if not (editing and button == "LeftButton" and IsShiftKeyDown and IsShiftKeyDown()) then return end
-		local name = QL.PathActive()
+		if not (button == "LeftButton" and IsShiftKeyDown and IsShiftKeyDown()) then return end
 		local map, x, y = shownMap(), worldCursor()
-		if name and map and x then QL.PathAdd(name, map, x, y) end
+		if not (map and x) then return end
+		if detourEdit then
+			local at, spot = nearestPiece(map, x, y)
+			if at then QL.DetourInsert(spot, at, map, x, y) end
+		elseif editing then
+			local name = QL.PathActive()
+			if name then QL.PathAdd(name, map, x, y) end
+		end
 	end)
-	WorldMapFrame:HookScript("OnHide", function() editing = false; viewing = false; dragIndex = nil; refreshPanel(); changed() end)
+	WorldMapFrame:HookScript("OnHide", function() editing = false; viewing = false; detourEdit = false; dragIndex = nil; refreshPanel(); changed() end)
 	-- dragging a stop's badge
 	panel:SetScript("OnUpdate", function()
 		if not dragIndex then return end
 		if IsMouseButtonDown and IsMouseButtonDown("LeftButton") then
 			local map, x, y = shownMap(), worldCursor()
-			if map and x then QL.PathMove(QL.PathActive(), dragIndex, map, x, y) end
+			if map and x then
+				if dragKind == "detour" then
+					local spot = QL.DetourSpot()
+					if spot then QL.DetourMove(spot, dragIndex, map, x, y) end
+				else
+					QL.PathMove(QL.PathActive(), dragIndex, map, x, y)
+				end
+			end
 		else
 			dragIndex = nil
 		end

@@ -406,8 +406,21 @@ function QL.UpdateArrow()
 		return
 	end
 	local C = QL.Theme.C
-	if loc.dist < ARRIVED then
-		if mode ~= "arrived" then arrivedAt = GetTime and GetTime() or 0 end
+	-- a detour drawn on the map (Paths.lua): the arrow leads through its points before the target
+	local via = false
+	if QL.DetourNext then
+		local ok, vl, vi, vn = pcall(QL.DetourNext, loc)
+		if ok and vl then
+			via, loc = true, vl
+			frame.label:SetText(L("Detour %d/%d"):format(vi, vn) .. "  ·  " .. (target.label or ""))
+		end
+	end
+	if loc.dist < ARRIVED and not via then
+		if mode ~= "arrived" then
+			arrivedAt = GetTime and GetTime() or 0
+			-- arrived: the detour drawn to this spot has done its job, whatever is left of it
+			if QL.DetourClear and loc.point then pcall(QL.DetourClear, loc.point) end
+		end
 		mode, nearness = "arrived", 1
 		setRotation(0)
 		local g = QL.Theme.STATUS.done

@@ -88,4 +88,72 @@ Check(QL.PathLength(name) == nil or QL.PathLength(name) >= 0, "length is a numbe
 QL.PathFollow(name)
 QL.PathDelete(name)
 Eq(QL.PathFollowing(), nil, "a deleted route is not followed")
+
+-- Detours: stop-over points bent into the line to a spot -------------------------------------------
+local spot = { map = 1, x = 0.9, y = 0.9 }
+Eq(QL.DetourKey(spot), QL.DetourKey({ map = 1, x = 0.9004, y = 0.8996 }), "the key is the spot rounded to 0.001")
+Check(QL.DetourKey({ map = 2, x = 0.9, y = 0.9 }) ~= QL.DetourKey(spot), "another map, another key")
+Eq(#QL.DetourPoints(spot), 0, "no detour at first")
+Eq(QL.DetourInsert(spot, 1, 1, 0.5, 0.5), 1, "the first point")
+Eq(QL.DetourInsert(spot, 1, 1, 0.2, 0.2), 1, "a point put in front")
+Eq(QL.DetourPoints(spot)[1].x, 0.2, "it is first now")
+Eq(QL.DetourPoints(spot)[2].x, 0.5, "the other follows")
+Eq(QL.DetourInsert(spot, 99, 1, 0.7, 0.7), 3, "a far place means the end")
+Check(QL.DetourMove(spot, 3, 1, 0.75, 0.75), "a point moves")
+Eq(QL.DetourPoints(spot)[3].x, 0.75, "it moved")
+Check(QL.DetourRemove(spot, 3), "a point goes")
+Eq(#QL.DetourPoints(spot), 2, "two left")
+Eq(QL.DetourInsert(spot, 1, "x", 0.1, 0.1), nil, "a bad map is refused")
+
+-- the arrow's next point: a stand-in Locate that measures by the point's x (the spot has its own)
+local dists = {}
+QL.Locate = function(t)
+	local p = t.points[1]
+	return { dist = dists[p.x] or 999, point = p }
+end
+local loc = { dist = 300, point = spot }
+dists[0.2], dists[0.5] = 100, 200
+local vl, i, n = QL.DetourNext(loc)
+Eq(i, 1, "starts at the nearest point")
+Eq(n, 2, "of two")
+Eq(vl.dist, 100, "and measures it")
+Eq(#QL.DetourVias(spot), 2, "both still ahead")
+dists[0.2] = 10
+vl, i, n = QL.DetourNext(loc)
+Eq(i, 1, "close to the first: the second is now the first")
+Eq(n, 1, "one point left")
+Eq(#QL.DetourPoints(spot), 1, "the walked-through point is deleted")
+Eq(QL.DetourPoints(spot)[1].x, 0.5, "the other one stays")
+dists[0.5] = 5
+Eq(QL.DetourNext(loc), nil, "past the last: straight to the target")
+Eq(#QL.DetourPoints(spot), 0, "the whole detour is gone")
+
+-- standing nearer the destination than any point: the detour is behind you
+QL.DetourInsert(spot, 1, 1, 0.2, 0.2)
+QL.DetourInsert(spot, 2, 1, 0.5, 0.5)
+dists[0.2], dists[0.5] = 100, 200
+Eq(QL.DetourNext({ dist = 50, point = spot }), nil, "nearer the target than any point: no detour")
+
+-- an edit starts the progress over
+QL.Fire("PATH_CHANGED")
+vl, i = QL.DetourNext(loc)
+Eq(i, 1, "after an edit it starts over at the nearest")
+Eq(#QL.DetourVias(spot, true), 2, "all of them while editing")
+
+-- left behind: nearer to the next point than to the current one (no need to come within 15 yd)
+QL.DetourClear(spot)
+QL.DetourInsert(spot, 1, 1, 0.2, 0.2)
+QL.DetourInsert(spot, 2, 1, 0.5, 0.5)
+dists[0.2], dists[0.5] = 100, 200
+Eq(select(2, QL.DetourNext(loc)), 1, "it starts at the first")
+dists[0.2], dists[0.5] = 40, 25
+vl, i, n = QL.DetourNext(loc)
+Eq(n, 1, "past the first point toward the second: the first is deleted")
+Eq(i, 1, "the second leads now")
+Eq(QL.DetourPoints(spot)[1].x, 0.5, "only the second is left")
+
+-- the whole detour goes with one call
+QL.DetourClear(spot)
+Eq(#QL.DetourPoints(spot), 0, "cleared")
+Eq(QL.DetourNext(loc), nil, "no detour, no point")
 print("paths: ok")

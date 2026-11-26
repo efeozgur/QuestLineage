@@ -1,3 +1,5 @@
+<p align="center"><img src="logo.png" alt="QuestLineage" width="160"></p>
+
 # QuestLineage
 
 Quest chain trees for **World of Warcraft: Forever** (client 1.60.1, Interface 16001).
