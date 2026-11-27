@@ -363,6 +363,10 @@ end
 function QL.DetourSpot()
 	local t = QL.ArrowTarget and QL.ArrowTarget()
 	if not t then return nil end
+	-- on the way to a far quest the arrow leads to a flight master, dock or tram first (Arrow.lua):
+	-- a detour drawn now bends the line to that place
+	local hop = QL.ArrowHop and QL.ArrowHop()
+	if hop then return hop end
 	local loc = QL.Locate(t)
 	return loc and loc.point or nil
 end

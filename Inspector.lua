@@ -102,6 +102,9 @@ local function setCreature(model, npcId, zoom, frozen)
 	return true
 end
 
+-- shared with other panels (QuestActions.lua's target portraits)
+QL.NewCreatureModel, QL.SetCreatureModel = newModel, setCreature
+
 -- Building blocks ---------------------------------------------------------------------------------
 
 function Inspector.New(parent)

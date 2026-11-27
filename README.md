@@ -28,9 +28,10 @@ for your character.
 | Maps | The route on the world map and minimap, objective areas of your quests, quest pins of a zone, the way back to your corpse. |
 | Current quest window | The quest you are doing with live objective counters and bars, the way there, and every other quest in your log with filters. Can replace the game's quest tracker. |
 | Quest card | QuestLineage's own window when an NPC offers or takes a quest: chain, warnings, objectives, rewards, voice-over (with WoWTR). |
+| Quest actions | A small panel for the current quest: item buttons for what it has you use and the creatures it still needs (click to target); both can be bound to keys. |
+| Quest items | Item tooltips name the quests that need the item, with your count; bag slots holding quest items get a mark. |
 | Nameplates | A quest badge and counter beside every creature an unfinished objective needs (droppers included). |
 | "Where?" bar | Repair, inn, flight master, trainers, food, mail and more: one click points the arrow at the nearest. |
-| Flight timer | Times your flights and counts down on the next ride of the same route; estimates routes you have not flown yet. |
 | Hints | A note when another quest of yours is right here, and the next quest offered when you hand one in. |
 
 ## Commands
@@ -41,8 +42,8 @@ for your character.
 /ql find <name>     where a creature stands, on the map
 /ql arrow [id]      arrow status, or point it at a quest
 /ql travel [id]     how to get to a quest in another zone
-/ql flight          a sample flight to see the flight timer
 /ql lang en|tr      interface language (tr needs WoWTR)
+/ql here            where you stand (map and coordinates)
 /ql options         settings
 /ql status          database and language status
 /ql errors          errors caught so far
@@ -57,8 +58,8 @@ and restart the game.
 
 QuestLineage bir görevin tüm zincirini (ön koşullar, yönlendirme görevleri, takip görevleri ve
 alınca kalıcı olarak kapanan görevler) ağaç olarak gösterir; yön oku, rotalar, başka bölgedeki
-görevler için yol tarifi (uçuş, zeplin, gemi, tram, hearthstone), güncel görev penceresi ve uçuş
-sayacı içerir. Arayüz İngilizcedir; **WoWTR** kuruluysa ayarlardan (`/ql options` veya `/ql lang tr`)
+görevler için yol tarifi (uçuş, zeplin, gemi, tram, hearthstone) ve güncel görev penceresi
+içerir. Arayüz İngilizcedir; **WoWTR** kuruluysa ayarlardan (`/ql options` veya `/ql lang tr`)
 Türkçe seçilebilir.
 
 ## Development

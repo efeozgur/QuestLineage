@@ -906,7 +906,7 @@ end
 
 local HUD_ROOTS = {
 	QuestLineageArrow = true, QuestLineageCurrent = true, QuestLineageQuickBar = true,
-	QuestLineageFlight = true, QuestLineageToasts = true, QuestLineageTooltip = true,
+	QuestLineageToasts = true, QuestLineageTooltip = true, QuestLineageQuestActions = true,
 }
 local LOW_ALPHA = { wash = true, rowHover = true, rowActive = true, track = true, lineSoft = false }
 

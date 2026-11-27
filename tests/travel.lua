@@ -59,14 +59,39 @@ local text, sub = QL.TripStepText(plan.steps[1])
 Eq(text, "Use your hearthstone", "hearth text")
 Eq(sub, "Tarren Mill", "where it takes you")
 
+-- a quest down the road: ride, even when the hearthstone or a flight lands right beside it
+-- (in game the arrow went to "use your hearthstone" and stopped pointing at the quest giver)
+local nearHearth = at(KALIMDOR, 1200, 0, { label = "Inn" })
+plan = QL.PlanTrip(at(KALIMDOR, 0, 0), { at(KALIMDOR, 1190, 0) }, { speed = 7, hearth = nearHearth })
+Eq(kinds(plan), "ride", "near: no hearthstone for a few hundred yards")
+Check(plan.simple, "and the plan is a plain ride")
+plan = QL.PlanTrip(at(KALIMDOR, 0, 0), { at(KALIMDOR, 1500, 0) },
+	{ speed = 7, near = 1500, flights = { at(KALIMDOR, 10, 0, { known = true }), at(KALIMDOR, 1490, 0, { known = true }) } })
+Eq(kinds(plan), "ride", "near (opts.near): ride straight, no flight")
+plan = QL.PlanTrip(at(KALIMDOR, 0, 0), { at(KALIMDOR, 1500, 0) },
+	{ speed = 7, flights = { at(KALIMDOR, 10, 0, { known = true }), at(KALIMDOR, 1490, 0, { known = true }) } })
+Eq(kinds(plan), "fly,ride", "without opts.near the flight may win")
+plan = QL.PlanTrip(at(KALIMDOR, 0, 0), { at(KALIMDOR, 9100, 0) }, { speed = 7, hearth = at(KALIMDOR, 9000, 0, { label = "Far inn" }) })
+Eq(kinds(plan), "hearth,ride", "far: the hearthstone still wins when it saves real time")
+
 -- texts
-plan = QL.PlanTrip(at(KALIMDOR, 0, 0), { at(EK, 500, 0) }, { speed = 7, transports = { zep } })
+plan =QL.PlanTrip(at(KALIMDOR, 0, 0), { at(EK, 500, 0) }, { speed = 7, transports = { zep } })
 Eq((QL.TripStepText(plan.steps[2])), "Take the zeppelin to Undercity", "zeppelin text")
 Eq(QL.TripSummary(plan), "Zeppelin → Undercity", "summary skips the rides")
 local fly = QL.PlanTrip(at(KALIMDOR, 0, 0), { at(KALIMDOR, 9100, 0) }, { speed = 7, flights = { fmHere, fmUnknown } })
 local ft, fs = QL.TripStepText(fly.steps[2])
 Check(fs and fs:find("if you have that flight point", 1, true), "an unknown flight point says so")
 Check(ft:find("Fly to", 1, true) == 1, "fly text")
+
+-- a one-way boat: only from a to b
+do
+	local loop = { kind = "boat", time = 100, oneway = true, a = at(EK, 0, 0), b = at(KALIMDOR, 0, 0) }
+	loop.a.city, loop.b.city = "Menethil Harbor", "Auberdine"
+	local there = QL.PlanTrip(at(EK, 0, 0), { at(KALIMDOR, 50, 0) }, { speed = 7, transports = { loop } })
+	Check(there and kinds(there):find("boat", 1, true), "a one-way boat takes you from a to b")
+	local back = QL.PlanTrip(at(KALIMDOR, 0, 0), { at(EK, 50, 0) }, { speed = 7, transports = { loop } })
+	Check(back == nil, "a one-way boat never takes you back")
+end
 
 -- the transport table: every line has both ends on a map
 for i, t in ipairs(QL.TRANSPORTS) do

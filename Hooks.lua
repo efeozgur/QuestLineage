@@ -132,6 +132,8 @@ local function styleLastLine(tooltip)
 	QL.SetFont(fs, 12)
 end
 
+QL.StyleTooltipLine = styleLastLine -- Items.lua's item lines use it too
+
 local function addNpcLines(tooltip, guid)
 	if not QL.DB().tooltip then return 0 end
 	local npcId = npcIdFromGuid(guid)

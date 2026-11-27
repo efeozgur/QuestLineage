@@ -30,6 +30,10 @@ local coreSize = ARROW_SIZE -- the visual size of the arrow with its plate (the 
 local frame, target, questId
 local hopTarget -- the travel step the arrow leads to (Travel.lua), kept so its projection is cached
 local HOP_AT = 25
+local hopSpot -- where the arrow leads now on the way (a travel step's place), nil otherwise
+
+-- The place the arrow leads to on the way (flight master, dock, tram), for detours drawn to it.
+function QL.ArrowHop() return hopSpot end
 local elapsedSince = 0
 
 local function L(s) return QL.L(s) end
@@ -392,7 +396,8 @@ function QL.UpdateArrow()
 	end
 	-- getting there (Travel.lua): the quest is in another zone or on another continent and a
 	-- flight, a boat, a zeppelin or the hearthstone is quicker; the arrow leads to that step first
-	local hopped = false
+	local hopped, hopText = false, nil
+	hopSpot = nil
 	if QL.TripNext and questId and not target.corpse and not (QL.RouteActive and QL.RouteActive()) then
 		local ok, hop = pcall(QL.TripNext, questId)
 		if ok and hop then
@@ -403,7 +408,8 @@ function QL.UpdateArrow()
 				if not hopTarget or hopTarget.points[1] ~= hop.point then hopTarget = { points = { hop.point } } end
 				hl = QL.Locate(hopTarget)
 			end
-			if hop.kind == "hearth" or (hl and not hl.otherMap and hl.dist < HOP_AT) then
+			-- the hearthstone is only a hint on the label: the arrow keeps pointing at the quest
+			if hop.kind ~= "hearth" and hl and not hl.otherMap and hl.dist < HOP_AT then
 				-- here: what to do (use the hearthstone, talk to the flight master, board)
 				mode, nearness, arrivedAt = "idle", 0, nil
 				setRotation(0)
@@ -411,9 +417,11 @@ function QL.UpdateArrow()
 				frame.glow:SetAlpha(0)
 				setDistance(hop.text)
 				bands()
+				-- there: a detour drawn to this place has done its job
+				if QL.DetourClear and hl.point then pcall(QL.DetourClear, hl.point) end
 				return
 			end
-			if hl and not hl.otherMap then loc, hopped = hl, true end
+			if hl and not hl.otherMap then loc, hopped, hopText, hopSpot = hl, true, hop.text, hl.point end
 		end
 	end
 	if not loc then
@@ -436,12 +444,13 @@ function QL.UpdateArrow()
 	end
 	local C = QL.Theme.HUD
 	-- a detour drawn on the map (Paths.lua): the arrow leads through its points before the target
+	-- (on the way to a travel step, the detour drawn to that step's place)
 	local via = hopped
-	if QL.DetourNext and not hopped then
+	if QL.DetourNext then
 		local ok, vl, vi, vn = pcall(QL.DetourNext, loc)
 		if ok and vl then
 			via, loc = true, vl
-			frame.label:SetText(L("Detour %d/%d"):format(vi, vn) .. "  ·  " .. (target.label or ""))
+			frame.label:SetText(L("Detour %d/%d"):format(vi, vn) .. "  ·  " .. (hopText or target.label or ""))
 		end
 	end
 	if loc.dist < ARRIVED and not via then

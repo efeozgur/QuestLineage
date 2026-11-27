@@ -40,6 +40,8 @@ local function mock(kind, name)
 	function mt.SetTextColor(self, ...) numbers("SetTextColor", ...) end
 	function mt.SetColorTexture(self, ...) numbers("SetColorTexture", ...) end
 	function mt.SetScript(self, s, fn) self.scripts[s] = fn end
+	function mt.SetAttribute(self, k, v) self.attrs = self.attrs or {}; self.attrs[k] = v end
+	function mt.GetAttribute(self, k) return self.attrs and self.attrs[k] end
 	-- as in the client, hooks run after the script already there
 	function mt.HookScript(self, s, fn)
 		local prev = self.scripts[s]
@@ -144,7 +146,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Brand.lua", "Tree.lua", "Inspector.lua", "ZoneMap.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "Travel.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Paths.lua", "Flight.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Brand.lua", "Tree.lua", "Inspector.lua", "ZoneMap.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "Travel.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "QuestActions.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Paths.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Items.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -1202,10 +1204,17 @@ do
 	Check(d, "the route drawn on the minimap")
 	Eq(d.legs, 2, "both legs (the far one clipped to the rim)")
 	Eq(d.badges, 1, "a badge on the stop inside the rim only")
-	-- without a route (only the arrow's quest), the minimap is left to the arrow
+	-- without a route: the arrow's own target is drawn too, one badge without a number
 	QL.MapRouteStops = function() return { { id = 5, n = 1, spot = { map = 1411, x = 0.52, y = 0.4 } } }, nil end
 	QL.DrawMinimapRoute()
-	Eq(QL.minimapRouteDrawn, nil, "no route, nothing drawn")
+	d = QL.minimapRouteDrawn
+	Check(d and d.legs == 1 and d.badges == 1, "the arrow's target on the minimap")
+	Eq(QL.MinimapRoutePoints(half)[1].single, true, "a single target")
+	-- but not the corpse: Corpse.lua draws that way
+	local targetOf = QL.ArrowTarget
+	QL.ArrowTarget = function() return { corpse = true, points = {} } end
+	Eq(QL.MinimapRoutePoints(half), nil, "the corpse is left to Corpse.lua")
+	QL.ArrowTarget = targetOf
 	-- the setting turns it off
 	QL.MapRouteStops = stopsOf
 	QL.Set("minimapRoute", false)
@@ -2081,26 +2090,6 @@ f.langTR.scripts.OnClick(f.langTR)
 Eq(QL.DB().lang, "en", "without WoWTR, TR is refused")
 QTR_QuestData = saved
 
--- The flight timer: a sample flight shows its window, counts down, lands and leaves
-do
-	local t = 5000
-	GetTime = function() return t end
-	QL.Command("flight")
-	local watcher = QL.flightWatcher
-	Check(watcher and watcher.scripts.OnUpdate, "the flight watcher runs every frame")
-	local function tick(secs) t = t + secs; watcher.scripts.OnUpdate(watcher, secs) end
-	tick(0.5)
-	Eq(QuestLineageFlight.shown, true, "the flight window shows")
-	Eq(QuestLineageFlight.big.text, "0:20", "20 s flight, half a second in (rounded up)")
-	tick(10)
-	Eq(QuestLineageFlight.big.text, "0:10", "counting down")
-	tick(10.5)
-	Eq(QuestLineageFlight.big.text, "Arrived", "landed")
-	tick(5)
-	Eq(QuestLineageFlight.shown, false, "the window leaves after the landing")
-	GetTime = nil
-end
-
 -- The zone tab above the current quest window
 do
 	local cur = QuestLineageCurrent
@@ -2225,6 +2214,22 @@ do
 	QL.RefreshCurrent()
 	Eq(QuestLineageCurrent.way.shown, true, "the current quest window shows the way line")
 	Eq(QuestLineageCurrent.way.text.text, "Way: Zeppelin → Undercity", "its text")
+	-- the map's line goes to the next step only (the zeppelin tower), not straight to the quest
+	local wstops = QL.MapRouteStops()
+	Eq(#wstops, 1, "map route: the next step only")
+	Eq(wstops[1].title, "Go to the zeppelin tower outside Orgrimmar", "the zeppelin tower")
+	Eq(wstops[1].spot.map, 1411, "on Durotar")
+	Eq(wstops[1].id, nil, "a place, not the quest")
+	-- a detour drawn now bends the way to the tower, and the arrow follows it
+	-- (in game the arrow went straight to the step and ignored the detour)
+	local hs = QL.DetourSpot()
+	Check(hs and hs.map == 1411 and math.abs(hs.x - 0.508) < 1e-6, "the detour belongs to the tower, not the quest")
+	QL.DetourInsert(hs, 1, 1411, 0.503, 0.30)
+	QL.UpdateArrow()
+	Check(QuestLineageArrow.label.text:find("Detour 1/1", 1, true), "the arrow follows the detour on the way: " .. tostring(QuestLineageArrow.label.text))
+	Check(QuestLineageArrow.label.text:find("zeppelin tower", 1, true), "and still names the step")
+	QL.DetourClear(hs)
+	QL.UpdateArrow()
 	-- the setting turns it all off
 	QL.Set("travelHints", false)
 	Eq(QL.TripFor(3), nil, "off: no plan")
@@ -2235,6 +2240,89 @@ do
 	QL.QuestTarget = realTarget
 	C_Map.GetWorldPosFromMapPos = nil
 	QL.Fire("TRIP_CHANGED")
+end
+
+-- quest actions: item buttons and creatures to target for the current quest (The Gathering, logged:
+-- question Bob, bring Boar Ribs that only boars drop)
+do
+	local bags = { [501] = 3, [777] = 1 }
+	GetItemCount = function(item) return bags[item] or 0 end
+	GetItemSpell = function(item) if item == 777 then return "Use", 1 end return nil end
+	local realIcon = GetItemIcon
+	GetItemIcon = function() return "Interface\Icons\INV_Misc_Food_14" end
+	local realContext, realCurrent = QL.Context, QL.CurrentQuest
+	local ctx3 = QL0.TestContext({ log = { [3] = true } })
+	QL.Context = function() return ctx3 end
+	QL.CurrentQuest = function() return 3 end
+	QL.RefreshQuestActions()
+	local shown = QL.questActionsShown
+	Eq(shown.quest, 3, "the panel is for the current quest")
+	Eq(#shown.items, 0, "ribs have no Use: spell, so no item button")
+	Eq(#shown.targets, 2, "two creatures to target")
+	Eq(shown.targets[1].name, "Bob", "the creature to talk to")
+	Eq(shown.targets[2].name, "Boar", "the only dropper of the ribs")
+	Eq(QuestLineageTargetButton1:GetAttribute("macrotext"), "/targetexact Bob", "a click targets Bob")
+	Eq(QuestLineageQuestActions.shown, true, "panel shown")
+	QL.Command("actions")
+	Eq(QuestLineageTargetButton1.model and QuestLineageTargetButton1.model.npcId, 100, "Bob's face in the first row")
+	Eq(QuestLineageTargetButton2.itemIcon.shown, true, "the ribs' icon on the boar's row")
+	-- the client's quest item wins and needs no Use: check; an item not in the bags never shows
+	local special = GetQuestLogSpecialItemInfo
+	GetQuestLogSpecialItemInfo = function() return "|cffffffff|Hitem:777::|h[Torch]|h|r" end
+	local realIndex = QL.QuestLogIndex
+	QL.QuestLogIndex = function() return 1 end
+	Eq(table.concat(QL.QuestUseItems(3), ","), "777", "the client's quest item")
+	bags[777] = 0
+	Eq(#QL.QuestUseItems(3), 0, "not in the bags: no button")
+	-- in combat nothing secure changes until combat ends
+	bags[777] = 1
+	InCombatLockdown = function() return true end
+	QL.RefreshQuestActions()
+	Eq(#QL.questActionsShown.items, 0, "in combat: waits")
+	InCombatLockdown = function() return false end
+	for _, fn in ipairs(QL.events.PLAYER_REGEN_ENABLED or {}) do fn("PLAYER_REGEN_ENABLED") end
+	Eq(#QL.questActionsShown.items, 1, "after combat: the item button")
+	Eq(QuestLineageItemButton1.shown, true, "item button shown")
+	-- the setting hides it
+	QL.Set("questActions", false)
+	Eq(QuestLineageQuestActions.shown, false, "off: hidden")
+	QL.Set("questActions", true)
+	GetQuestLogSpecialItemInfo, QL.QuestLogIndex = special, realIndex
+	GetItemCount, GetItemSpell, InCombatLockdown = nil, nil, nil
+	GetItemIcon = realIcon
+	QL.Context, QL.CurrentQuest = realContext, realCurrent
+	QL.RefreshQuestActions()
+end
+
+-- quest items: tooltip lines and bag marks (The Gathering needs Boar Ribs, 1 of 5 so far)
+do
+	local ctx3 = QL0.TestContext({ log = { [3] = true } })
+	local realContext, realLive = QL.Context, QL.LiveObjectives
+	QL.Context = function() return ctx3 end
+	QL.LiveObjectives = function(id)
+		if id == 3 then return { { text = "Bob questioned: 1/1", have = 1, need = 1, done = true }, { text = "Boar Ribs: 1/5", have = 1, need = 5, done = false } } end
+	end
+	local e = QL.ItemQuests(501)
+	Eq(#e, 1, "one quest needs the ribs")
+	Eq(e[1].quest, 3, "The Gathering")
+	Eq(e[1].have, 1, "count from the quest log")
+	local lines = QL.ItemTooltipLines(501)
+	Check(lines[1] and lines[1]:find("The Gathering", 1, true) and lines[1]:find("1/5", 1, true), "tooltip line: " .. tostring(lines[1]))
+	Eq(#QL.ItemTooltipLines(500), 0, "an item no quest needs gets no line")
+	-- bags: slot 1 holds ribs, slot 2 a sword
+	local bag = CreateFrame("Frame", "ContainerFrame1")
+	bag.GetID = function() return 0 end
+	local s1, s2 = CreateFrame("Button", "ContainerFrame1Item1"), CreateFrame("Button", "ContainerFrame1Item2")
+	s1.GetID = function() return 1 end
+	s2.GetID = function() return 2 end
+	GetContainerItemID = function(b, slot) return b == 0 and ({ 501, 500 })[slot] or nil end
+	Eq(QL.RefreshBagMarks(), 1, "one slot marked")
+	QL.Set("bagMarks", false)
+	Eq(QL.RefreshBagMarks(), 0, "off: no marks")
+	QL.Set("bagMarks", true)
+	GetContainerItemID, ContainerFrame1, ContainerFrame1Item1, ContainerFrame1Item2 = nil, nil, nil, nil
+	bag:Hide()
+	QL.Context, QL.LiveObjectives = realContext, realLive
 end
 
 Eq(#QL.errors, 0, "no captured errors: " .. table.concat(QL.errors, " | "))

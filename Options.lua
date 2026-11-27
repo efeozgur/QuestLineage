@@ -89,8 +89,6 @@ local ROWS = {
 		slider = { min = 60, max = 160, step = 5, text = "Current quest window size: %d%%" }, note = "Makes the whole window, its text included, smaller or larger." },
 	{ key = "cardScale", page = "tracking", group = "Text and size", parent = "questCard",
 		slider = { min = 60, max = 160, step = 5, text = "Quest card size: %d%%" }, note = "The window that opens at quest givers." },
-	{ key = "flightTimer", page = "tracking", group = "Flights",
-		label = "Flight timer", note = "On a flight path a window counts the time left down. A route is timed on its first flight; later ones count down." },
 	{ key = "currentZoneTab", page = "tracking", group = "Current quest window", parent = "currentQuest",
 		label = "Zone and its level range above the window", note = "A small tab with the zone you are in and the levels of its quests, coloured by how they suit your level." },
 	{ key = "quickBar", page = "where", group = "The bar",
@@ -103,7 +101,7 @@ local ROWS = {
 		label = "\"My route\" panel on the world map", note = "Put stops on the world map yourself (Shift+click while editing), save the route by name and let the arrow follow it." },
 	{ key = "nextQuestOffer", page = "tracking", group = "Other quests nearby",
 		label = "Offer the next quest when the current one is handed in", note = "A small card for five seconds; a click switches to that quest, otherwise nothing changes." },	{ key = "minimapRoute", page = "maps", group = "Quests",
-		label = "Route on the minimap", note = "The way to the next stop and the stops after it, on the minimap too; the next stop waits on the rim when it is further away." },
+		label = "Route on the minimap", note = "The way to the arrow's target, or to a route's next stop and the stops after it, on the minimap too; a target further away waits on the rim." },
 	{ key = "worldMapPins", page = "maps", group = "Quests",
 		label = "The picked zone's quests on the world map", note = "The zone open on the Zones tab: its quest pins also on the game's world map, on that zone and on its continent." },
 	{ key = "currentLocked", parent = "currentQuest", page = "tracking", group = "Current quest window",
@@ -128,6 +126,12 @@ local ROWS = {
 		label = "The arrow leads through the way", note = "It points at the flight master or the dock first and says what to take there." },
 	{ key = "travelHearth", parent = "travelHints", page = "tracking", group = "Getting there",
 		label = "Count the hearthstone", note = "When it is ready and the inn it is bound to is nearer to the quest. Bind it again once so the spot is known." },
+	{ key = "questActions", page = "tracking", group = "Current quest window",
+		label = "Quest item buttons and creatures to target", note = "A small panel: click to use the current quest's item or to target a creature it still needs. Both can be bound to keys (Key Bindings > AddOns). Shift+drag moves it." },
+	{ key = "itemTooltip", page = "tracking", group = "Quest items",
+		label = "Name the quests that need an item in its tooltip", note = "Each logged quest that needs it, with your count, so it is not sold by mistake." },
+	{ key = "bagMarks", page = "tracking", group = "Quest items",
+		label = "Mark quest items in the bags", note = "A small quest mark on the slot: amber while the quest still needs it, green when that objective is done." },
 }
 
 local PAGES = {

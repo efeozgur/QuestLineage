@@ -26,7 +26,7 @@ if "--skip-tests" not in sys.argv:
     if subprocess.call([sys.executable, os.path.join("tests", "run.py")]) != 0:
         sys.exit("tests failed: no package")
 
-files = [NAME + ".toc", "LICENSE", "README.md"] + lua
+files = [NAME + ".toc", "Bindings.xml", "LICENSE", "README.md", "CHANGELOG.md"] + lua
 for base, dirs, names in os.walk("Media"):
     dirs[:] = [d for d in dirs if not d.startswith((".", "__"))]
     for n in names:

@@ -27,10 +27,14 @@ local FLY_FACTOR = 1.3     -- flight paths go round
 local FLY_SPEED = 32       -- yd/s on a flight path
 local FLY_OVERHEAD = 20    -- talking to the flight master, take-off and landing
 local AT_SPOT = 25         -- yards: you are already at a dock or a flight master
+local HEARTH_WORTH = 240   -- seconds: what spending the hearthstone (an hour's cooldown) is worth
+local NEAR = 1500          -- yards: a quest this close by riding needs no directions
 
 -- The lines between continents and cities (Classic). Docks are spots on their zone's uiMap,
 -- read off the map by hand: close, not exact (/ql travel lists them to check in game).
--- faction: "H" Horde, "A" Alliance, "AH" both.
+-- faction: "H" Horde, "A" Alliance, "AH" both. oneway: the boat only goes from a to b (WoW Forever's
+-- Menethil boat runs a loop: Menethil -> Southshore -> Auberdine -> Menethil). Stand on a dock and
+-- type /ql here to read its spot.
 QL.TRANSPORTS = {
 	{ kind = "zeppelin", faction = "H", time = 240,
 		a = { map = 1411, x = 0.508, y = 0.136, city = "Orgrimmar", place = "the zeppelin tower outside Orgrimmar" },
@@ -44,9 +48,16 @@ QL.TRANSPORTS = {
 	{ kind = "boat", faction = "A", time = 240,
 		a = { map = 1437, x = 0.048, y = 0.636, city = "Menethil Harbor", place = "the docks of Menethil Harbor" },
 		b = { map = 1445, x = 0.716, y = 0.564, city = "Theramore", place = "the docks of Theramore" } },
-	{ kind = "boat", faction = "A", time = 240,
+	-- the loop (Forever); Southshore's dock is a guess until measured in game
+	{ kind = "boat", faction = "A", time = 330, oneway = true,
 		a = { map = 1437, x = 0.046, y = 0.572, city = "Menethil Harbor", place = "the docks of Menethil Harbor" },
+		b = { map = 1424, x = 0.470, y = 0.510, city = "Southshore", place = "the docks of Southshore" } },
+	{ kind = "boat", faction = "A", time = 300, oneway = true,
+		a = { map = 1424, x = 0.470, y = 0.510, city = "Southshore", place = "the docks of Southshore" },
 		b = { map = 1439, x = 0.324, y = 0.438, city = "Auberdine", place = "the docks of Auberdine" } },
+	{ kind = "boat", faction = "A", time = 260, oneway = true,
+		a = { map = 1439, x = 0.324, y = 0.438, city = "Auberdine", place = "the docks of Auberdine" },
+		b = { map = 1437, x = 0.046, y = 0.572, city = "Menethil Harbor", place = "the docks of Menethil Harbor" } },
 	{ kind = "boat", faction = "A", time = 180,
 		a = { map = 1439, x = 0.332, y = 0.402, city = "Auberdine", place = "the docks of Auberdine" },
 		b = { map = 1438, x = 0.550, y = 0.940, city = "Rut'theran Village", place = "the docks of Rut'theran Village" } },
@@ -85,6 +96,7 @@ function QL.PlanTrip(start, goals, opts)
 			local a = { inst = t.a.inst, x = t.a.x, y = t.a.y, dock = t, point = t.a.point, label = t.a.place, city = t.a.city }
 			local b = { inst = t.b.inst, x = t.b.x, y = t.b.y, dock = t, point = t.b.point, label = t.b.place, city = t.b.city }
 			a.other, b.other = b, a
+			a.side, b.side = "a", "b"
 			nodes[#nodes + 1] = a
 			nodes[#nodes + 1] = b
 		end
@@ -108,12 +120,12 @@ function QL.PlanTrip(start, goals, opts)
 			if not v.known then c = c + penalty end
 			if not best or c < best then best, kind = c, "fly" end
 		end
-		if u.other == v then
+		if u.other == v and not (v.dock.oneway and u.side ~= "a") then
 			local c = v.dock.time or 240
 			if not best or c < best then best, kind = c, v.dock.kind end
 		end
 		if u.start and v == hearthNode then
-			local c = opts.hearthTime or 25
+			local c = (opts.hearthTime or 25) + HEARTH_WORTH
 			if not best or c < best then best, kind = c, "hearth" end
 		end
 		return best, kind
@@ -143,10 +155,26 @@ function QL.PlanTrip(start, goals, opts)
 	end
 	if not reached then return nil end
 
+	-- riding straight to a goal on this continent wins unless the other way saves real time
+	-- (a flight or the hearthstone for a quest down the road sent the arrow away from it)
+	local direct, directGoal, directDist
+	for i = 2, n do
+		local g = nodes[i]
+		if g.goal and g.inst == start.inst then
+			local c = dist(nodes[1], g) * RIDE_FACTOR / speed
+			if not direct or c < direct then direct, directGoal, directDist = c, i, dist(nodes[1], g) end
+		end
+	end
+	-- (opts.near: within that many yards, always ride: the arrow leads straight to the quest)
+	if direct and (directDist <= (opts.near or -1) or cost[reached] > direct - (opts.directMargin or 60)) then
+		reached = directGoal
+		cost[reached], prev[reached], how[reached] = direct, 1, "ride"
+	end
+
 	local chain = {}
 	local v = reached
 	while prev[v] do
-		table.insert(chain, 1, { from = nodes[prev[v]], to = nodes[v], kind = how[v], secs = cost[v] - cost[prev[v]] })
+		table.insert(chain, 1, { from = nodes[prev[v]], to = nodes[v], kind = how[v], secs = cost[v] - cost[prev[v]] - (how[v] == "hearth" and HEARTH_WORTH or 0) })
 		v = prev[v]
 	end
 	local steps, simple = {}, true
@@ -159,7 +187,9 @@ function QL.PlanTrip(start, goals, opts)
 			steps[#steps + 1] = s
 		end
 	end
-	return { total = cost[reached], steps = steps, simple = simple, goal = nodes[reached] }
+	local total = 0
+	for _, s in ipairs(chain) do total = total + s.secs end
+	return { total = total, steps = steps, simple = simple, goal = nodes[reached] }
 end
 
 -- Texts -----------------------------------------------------------------------------------------
@@ -324,7 +354,7 @@ local function transports()
 			local a, b = world(t.a.map, t.a.x, t.a.y), world(t.b.map, t.b.x, t.b.y)
 			if a and b then
 				a.city, a.place, b.city, b.place = t.a.city, t.a.place, t.b.city, t.b.place
-				list[#list + 1] = { kind = t.kind, time = t.time, a = a, b = b }
+				list[#list + 1] = { kind = t.kind, time = t.time, a = a, b = b, oneway = t.oneway }
 			end
 		end
 	end
@@ -479,8 +509,10 @@ function QL.TripFor(id, ctx)
 			local hearth = QL.DB().travelHearth ~= false and hearthReady() and QL.HearthSpot() or nil
 			plan = QL.PlanTrip(start, goals, {
 				speed = groundSpeed(ctx), flights = flights, transports = transports(), hearth = hearth,
-				unknownPenalty = anyKnown and 300 or 45,
+				unknownPenalty = anyKnown and 300 or 45, near = NEAR,
 			})
+			-- just down the road (map borders, city maps): the arrow alone is enough
+			if plan and plan.simple and (plan.steps[#plan.steps].dist or 0) <= NEAR then plan = nil end
 		end
 	end
 	cache[id] = { at = now(), plan = plan or false }

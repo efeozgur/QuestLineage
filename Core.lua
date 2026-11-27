@@ -21,6 +21,8 @@ end
 QL.defaults = {
 	lang = "en",          -- "en" or "tr" (tr only takes effect while WoWTR is loaded)
 	tooltip = true,       -- chain line on NPC tooltips
+	itemTooltip = true,   -- item tooltips name the logged quests that need the item
+	bagMarks = true,      -- a quest mark on bag slots holding such an item
 	logButton = true,     -- Chain button in the quest log
 	detailButton = true,  -- Chain button and warnings on the quest offer window
 	hideOther = true,     -- leave out quests this race/class can never take
@@ -54,7 +56,6 @@ QL.defaults = {
 	travelHints = true,  -- "Getting there": the way to a quest in another zone or on another continent
 	travelHearth = true, -- the hearthstone counts as a way when it is ready
 	travelArrow = true,  -- the arrow leads through the way's steps (flight master, dock) first
-	flightTimer = true,   -- the flight timer window while you ride a flight path
 	currentQuest = true,  -- the current quest window
 	currentMinimized = false, -- the whole window folded down to its title and progress line
 	currentCollapsed = false, -- its objectives folded
@@ -74,6 +75,7 @@ QL.defaults = {
 	questAreas = true,    -- the current quest's objective areas on the minimap and world map
 	questAreasOthers = true, -- the other logged quests' areas too (soft, one colour per quest)
 	hideGameAreas = false, -- hide the game's own (blue) quest area on the minimap
+	questActions = true,  -- the current quest's item buttons and creatures to target
 	questCard = true,     -- QuestLineage's quest card when an NPC offers a quest
 	questCardStory = false, -- its story section open
 	hideGameQuestFrame = false, -- the game's quest window kept out of sight while the card shows
@@ -225,10 +227,17 @@ function QL.Command(msg)
 		if QL.FindCreatures then QL.FindCreatures(rest) end
 	elseif cmd == "plate" or cmd == "plaka" then
 		if QL.PlateDebug then QL.PlateDebug() end
-	elseif cmd == "flight" or cmd == "ucus" then
-		if QL.FlightDemo then QL.FlightDemo() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
 	elseif cmd == "travel" or cmd == "yol" then
 		if QL.TripDebug then QL.TripDebug(rest) else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
+	elseif cmd == "actions" or cmd == "eylem" then
+		if QL.QuestActionsDebug then QL.QuestActionsDebug() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
+	elseif cmd == "here" or cmd == "burasi" then
+		local map, x, y = QL.PlayerPosition and QL.PlayerPosition()
+		if map and x then
+			QL.Chat(("map = %d (%s), x = %.3f, y = %.3f"):format(map, tostring(QL.MapName and QL.MapName(map) or "?"), x, y))
+		else
+			QL.Chat(L("Your position is not known here."))
+		end
 	elseif cmd == "help" then
 		QL.Chat("/ql  " .. L("open or close the chain window"))
 		QL.Chat("/ql <id|name>  " .. L("show the chain of a quest"))
@@ -241,8 +250,9 @@ function QL.Command(msg)
 		QL.Chat("/ql hedef [id]  " .. L("where a quest's objectives come from"))
 		QL.Chat("/ql skill [id]  " .. L("what profession a quest needs, and what you have"))
 		QL.Chat("/ql map [area]  " .. L("what the client gives for a zone's map picture"))
-		QL.Chat("/ql flight  " .. L("a sample flight to see the flight timer"))
 		QL.Chat("/ql travel [id]  " .. L("how to get to a quest in another zone or on another continent"))
+		QL.Chat("/ql here  " .. L("where you stand: map id and coordinates"))
+		QL.Chat("/ql actions  " .. L("why the quest item and target panel shows what it shows"))
 		QL.Chat("/ql options  " .. L("settings"))
 	else
 		if QL.Open then QL.Open(msg) end
@@ -265,7 +275,11 @@ if SlashCmdList then
 	SlashCmdList.QUESTLINEAGE = function(msg) QL.Command(msg) end
 end
 
+-- Saved keys of removed features (the flight timer, removed in 0.1.1), dropped at login.
+local RETIRED = { "flightTimer", "flightPoint", "flightTimes", "flightRates" }
+
 QL.Event("PLAYER_LOGIN", function()
-	QL.DB()
+	local db = QL.DB()
+	for _, k in ipairs(RETIRED) do db[k] = nil end
 	QL.Fire("LOGIN")
 end)

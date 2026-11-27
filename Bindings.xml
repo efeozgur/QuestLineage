@@ -1,0 +1,4 @@
+<Bindings>
+	<Binding name="CLICK QuestLineageItemButton1:LeftButton" header="QUESTLINEAGE" category="ADDONS"/>
+	<Binding name="CLICK QuestLineageTargetButton1:LeftButton" category="ADDONS"/>
+</Bindings>

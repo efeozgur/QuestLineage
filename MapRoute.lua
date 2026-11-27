@@ -45,6 +45,20 @@ function QL.MapRouteStops()
 	end
 	local q = QL.ArrowQuest and QL.ArrowQuest()
 	local target = QL.ArrowTarget and QL.ArrowTarget()
+	-- getting there (Travel.lua): a quest far away goes through the flight master, the dock or the
+	-- tram first; the line shows only the next step (where it lands). The plan is made again from
+	-- where you stand, so once you get there the line moves on to the step after it.
+	if target and q and not target.corpse and QL.TripFor and QL.DB().travelArrow ~= false then
+		local ok, plan = pcall(QL.TripFor, q)
+		local s = ok and plan and not plan.simple and plan.steps[1]
+		local pt = s and s.to and s.to.point
+		if pt then
+			local last = #plan.steps == 1
+			stops[1] = { id = last and q or nil, title = (not last) and (QL.TripStepText(s)) or nil,
+				spot = { map = pt.map, x = pt.x, y = pt.y }, n = 1, way = true }
+			return stops, nil
+		end
+	end
 	if target then
 		local loc = QL.Locate(target)
 		if loc and loc.point then stops[1] = { id = q or target.questId, title = target.title, spot = loc.point, n = 1 } end
@@ -170,7 +184,7 @@ local function badge()
 			if self.questId then QL.FillQuestTooltip(tip, self.questId) end
 			if self.pathIndex then
 				if QL.PathEditing and QL.PathEditing() then tip:AddLine(L("Drag: move · Right-click: remove"), 0.5, 0.5, 0.5) end
-			else
+			elseif self.questId then
 				tip:AddLine(L("Click: open in QuestLineage"), 0.5, 0.5, 0.5)
 			end
 			tip:Show()
@@ -518,7 +532,14 @@ end
 function QL.MinimapRoutePoints(half)
 	if QL.DB().minimapRoute == false then return nil end
 	local stops, info = QL.MapRouteStops()
-	if not info or #stops == 0 then return nil end
+	if #stops == 0 then return nil end
+	-- no route: the arrow's own target (its quest, or the next step on the way there); the way to
+	-- your corpse has its own line (Corpse.lua)
+	local single = not info
+	if single then
+		local t = QL.ArrowTarget and QL.ArrowTarget()
+		if t and t.corpse then return nil end
+	end
 	local map, px, py = QL.PlayerPosition()
 	if not map or not px then return nil end
 	local w, h = worldSize(map)
@@ -535,7 +556,7 @@ function QL.MinimapRoutePoints(half)
 	end
 	local out = {}
 	-- a detour bends the first leg (only a quest route's first stop or the followed stop has one)
-	if QL.DetourVias and not info.editing then
+	if QL.DetourVias and not (info and info.editing) then
 		for _, v in ipairs(QL.DetourVias(stops[1].spot)) do
 			local x, y = offset(v)
 			if x then out[#out + 1] = { x = x, y = y, via = true } end
@@ -544,7 +565,7 @@ function QL.MinimapRoutePoints(half)
 	for i, s in ipairs(stops) do
 		local x, y = offset(s.spot)
 		if x then
-			out[#out + 1] = { x = x, y = y, n = s.n, id = s.id, title = s.title, next = (i == 1) }
+			out[#out + 1] = { x = x, y = y, n = s.n, id = s.id, title = s.title, next = (i == 1), single = single }
 		end
 	end
 	return out
@@ -659,7 +680,7 @@ local function drawMinimapRoute()
 				local b = mmBadge(drawn.badges)
 				local c = p.next and C.accent or C.accent2
 				b.ring:SetVertexColor(c[1], c[2], c[3], 1)
-				b.num:SetText(tostring(p.n))
+				b.num:SetText(p.single and "" or tostring(p.n)) -- one target: no number
 				b:SetAlpha(inside and 1 or 0.8)
 				b:ClearAllPoints()
 				b:SetPoint("CENTER", Minimap, "CENTER", bx, by)

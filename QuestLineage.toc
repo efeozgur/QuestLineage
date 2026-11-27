@@ -4,7 +4,7 @@
 ## Notes-trTR: World of Warcraft: Forever için görev zinciri ağaçları (QuestieDB verisiyle).
 ## Author: OzgurX
 ## X-Brand: OzgurX
-## Version: 0.1.0
+## Version: 0.1.1
 ## IconTexture: Interface\AddOns\QuestLineage\Media\icon
 ## X-License: MIT
 ## Dependencies: QuestieDB
@@ -34,12 +34,13 @@ Travel.lua
 QuickBar.lua
 Toast.lua
 Current.lua
+QuestActions.lua
 Plates.lua
 QuestAreas.lua
 Corpse.lua
-Flight.lua
 Nearby.lua
 QuestCard.lua
 MinimapButton.lua
 Hooks.lua
+Items.lua
 Options.lua
