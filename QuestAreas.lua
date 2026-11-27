@@ -36,7 +36,7 @@ local function mapSize(map)
 end
 
 local function palette()
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	return { C.accent, C.accent2, { 0.984, 0.749, 0.141 }, { 0.957, 0.447, 0.714 }, { 0.376, 0.647, 0.980 }, { 0.290, 0.871, 0.502 } }
 end
 
@@ -361,7 +361,7 @@ local function wmPart(i)
 	p.disc:SetTexture(MEDIA .. "area_soft")
 	p.ring = wm:CreateTexture(nil, "ARTWORK", nil, 1)
 	p.ring:SetTexture(MEDIA .. "area_ring")
-	p.label = T.Text(wm, 11, T.C.text, "OVERLAY", true)
+	p.label = T.Text(wm, 11, T.HUD.text, "OVERLAY", true)
 	p.label:SetJustifyH("CENTER")
 	p.label:SetShadowOffset(1, -1)
 	p.label:SetAlpha(0.85)
@@ -496,7 +496,7 @@ local hovered = { minimap = nil, world = nil } -- what each map's tooltip shows 
 -- The tooltip leads with the objective(s) under the cursor, each in its ring's colour with its
 -- counter; the quest they belong to follows.
 local function showAreaTip(owner, list)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local tip = QL.Tip()
 	tip:SetOwner(owner, "ANCHOR_CURSOR")
 	-- the current quest's rings first, then the smallest

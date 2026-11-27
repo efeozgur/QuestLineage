@@ -54,7 +54,7 @@ function QL.QuestPicture(questId, row)
 end
 
 local function show(h)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local title = QL.QuestTitle(h.questId)
 	local lines
 	if h.current then
@@ -252,7 +252,7 @@ function QL.OfferNextQuest(doneId)
 	if not nextId then return false end
 	local q = QL.ArrowQuest and QL.ArrowQuest()
 	if q and q ~= doneId and ctx.log[q] then return false end -- already pointing at another logged quest
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local ready = ctx.complete and ctx.complete[nextId]
 	local lines = T.Hex(C.text) .. QL.QuestTitle(nextId) .. "|r"
 	if ready then lines = lines .. "  " .. T.Hex(T.STATUS.done) .. L("ready to hand in") .. "|r" end
@@ -297,7 +297,7 @@ function QL.OfferChainQuest(doneId)
 	if ctx.log then ctx.log[doneId] = nil end
 	local id, state, need = QL.ChainFollowUp(doneId, ctx)
 	if not id then return false end
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local lines = T.Hex(C.text) .. QL.QuestTitle(id) .. "|r"
 	local icon, crop = QL.QuestPicture(id)
 	if state == "available" then

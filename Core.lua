@@ -37,10 +37,17 @@ QL.defaults = {
 	worldMapPins = true,  -- the Zones tab's picked zone: its quest pins on the world map too
 	quickBarLocked = false, -- the "Where?" bar pinned where it stands
 	quickBarVertical = false, -- the "Where?" bar laid out as a column
+	quickBarScale = 100,  -- the "Where?" bar's size in percent (60-160)
+	quickBarAlpha = 88,   -- its background opacity in percent (20-100)
+	quickBarTips = true,  -- the tip with the nearest places while hovering an icon
+	quickBarTipCount = 3, -- how many places the tip lists (1-5)
+	quickBarCycle = 10,   -- seconds in which a repeated click moves to the next nearest (3-30)
 	quickBar = true,      -- the "Where?" quick bar under the arrow
 	toasts = true,        -- results and errors as notification cards (off: in the chat)
+	theme = "night",      -- the window palette (Theme.lua THEMES); a change takes a reload
 	fontFace = "inter",   -- the text font: "inter" | "arial" | "friz" | "skurri" (Theme.FONT_FACES)
-	currentScale = 100,   -- the current quest window's size in percent (60-160)
+	distanceUnit = "yd",  -- length unit for distances: "yd" | "m" | "km"
+	currentScale = 100,  -- the current quest window's size in percent (60-160)
 	cardScale = 100,      -- the quest card's size in percent (60-160)
 	currentZoneTab = true, -- the zone and its level band on a tab above the current quest window
 	nextQuestOffer = true, -- a card offering the next quest when the current one is handed in
@@ -205,6 +212,8 @@ function QL.Command(msg)
 		end
 	elseif cmd == "hedef" or cmd == "objectives" then
 		if QL.ObjectiveDebug then QL.ObjectiveDebug(rest) end
+	elseif cmd == "skill" or cmd == "meslek" then
+		if QL.SkillDebug then QL.SkillDebug(rest) end
 	elseif cmd == "kart" or cmd == "card" then
 		if QL.CardDebug then QL.CardDebug() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
 	elseif cmd == "map" or cmd == "harita" then
@@ -225,6 +234,7 @@ function QL.Command(msg)
 		QL.Chat("/ql lang en|tr  " .. L("interface language"))
 		QL.Chat("/ql kart  " .. L("what the open quest card holds"))
 		QL.Chat("/ql hedef [id]  " .. L("where a quest's objectives come from"))
+		QL.Chat("/ql skill [id]  " .. L("what profession a quest needs, and what you have"))
 		QL.Chat("/ql map [area]  " .. L("what the client gives for a zone's map picture"))
 		QL.Chat("/ql flight  " .. L("a sample flight to see the flight timer"))
 		QL.Chat("/ql options  " .. L("settings"))

@@ -95,7 +95,7 @@ QL.PLATE_OTHER = { 1.00, 0.74, 0.26 }
 -- The badge's colour for an npc: by status (current quest or another; the default), the theme's
 -- accent, the difficulty of the quest it counts for, or the player's own.
 function QL.PlateColor(npcId)
-	local db, C = QL.DB(), QL.Theme.C
+	local db, C = QL.DB(), QL.Theme.HUD
 	if (db.plateColorMode or "status") == "status" then
 		local c = forCurrent(npcId) == false and QL.PLATE_OTHER or QL.PLATE_CURRENT
 		return c[1], c[2], c[3]
@@ -146,7 +146,7 @@ end
 local function badgeFor(plate)
 	local b = badges[plate]
 	if b then return b end
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	b = CreateFrame("Frame", nil, plate)
 	b:SetSize(16, 16)
 	b.icon = b:CreateTexture(nil, "OVERLAY")

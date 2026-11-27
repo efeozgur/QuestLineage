@@ -20,10 +20,13 @@ local _, QL = ...
 local function L(s) return QL.L(s) end
 
 local NAV_W, CONTENT_W = 150, 470
+local MEDIA = "Interface/AddOns/QuestLineage/Media/"
 
 local panel, root, category
 local checks = {}
-local arrowUI, plateUI, fontUI = {}, {}, {}
+local arrowUI, plateUI, fontUI, unitUI, barUI, themeUI = {}, {}, {}, {}, {}, {}
+local buildThemeBlock -- forward: the General page's theme group
+local buildUnitBlock -- forward: defined with the page builders, used by build()
 local pages, navButtons = {}, {}
 local texts = {} -- { fontString, englishText, size, bold } re-labelled on refresh
 
@@ -90,11 +93,11 @@ local ROWS = {
 		label = "Flight timer", note = "On a flight path a window counts the time left down. A route is timed on its first flight; later ones count down." },
 	{ key = "currentZoneTab", page = "tracking", group = "Current quest window", parent = "currentQuest",
 		label = "Zone and its level range above the window", note = "A small tab with the zone you are in and the levels of its quests, coloured by how they suit your level." },
-	{ key = "quickBar", page = "arrow", group = "\"Where?\" bar",
+	{ key = "quickBar", page = "where", group = "The bar",
 		label = "\"Where?\" bar", note = "Icons that point the arrow at the nearest trainer, vendor or service." },
 	{ key = "nearbyCurrent", page = "tracking", group = "Other quests nearby", parent = "nearbyAreas",
 		label = "Remind me when I reach the current quest's area", note = "A card when you walk into the area where the current quest's objectives are." },
-	{ key = "quickBarVertical", page = "arrow", group = "\"Where?\" bar", parent = "quickBar",
+	{ key = "quickBarVertical", page = "where", group = "The bar", parent = "quickBar",
 		label = "Vertical bar", note = "Lay the icons out in a column instead of a row. The bar's turn button does the same." },
 	{ key = "mapPaths", page = "maps", group = "Your own routes",
 		label = "\"My route\" panel on the world map", note = "Put stops on the world map yourself (Shift+click while editing), save the route by name and let the arrow follow it." },
@@ -107,16 +110,34 @@ local ROWS = {
 		label = "Lock the current quest window", note = "It stays where it stands; the lock in its corner does the same." },
 	{ key = "creatureSearch", page = "general", group = "Search",
 		label = "Creature search", note = "Creatures by name on the Search tab and /ql find, with their places on the map. Off saves the memory of the name list." },
+	{ key = "quickBarLocked", parent = "quickBar", page = "where", group = "The bar",
+		label = "Lock the bar in place", note = "It cannot be moved; the padlock on the bar does the same." },
+	{ key = "quickBarScale", page = "where", group = "Size and look", parent = "quickBar",
+		slider = { min = 60, max = 160, step = 5, text = "Bar size: %d%%" }, note = "Makes the whole bar, its icons included, smaller or larger." },
+	{ key = "quickBarAlpha", page = "where", group = "Size and look", parent = "quickBar",
+		slider = { min = 20, max = 100, step = 5, text = "Background opacity: %d%%" }, note = "Lower is more see-through; the icons stay clear." },
+	{ key = "quickBarTips", page = "where", group = "Tips and clicks", parent = "quickBar",
+		label = "List the nearest places when I hover an icon", note = "The tip names them with their distance. Off: icons show no tip." },
+	{ key = "quickBarTipCount", page = "where", group = "Tips and clicks", parent = "quickBarTips",
+		slider = { min = 1, max = 5, text = "Places listed in the tip: %d" }, note = "How many of the nearest ones the tip shows." },
+	{ key = "quickBarCycle", page = "where", group = "Tips and clicks", parent = "quickBar",
+		slider = { min = 3, max = 30, text = "Click again within %d s for the next nearest" }, note = "A second click on the same icon in this time points the arrow at the next nearest place." },
 }
 
 local PAGES = {
 	{ id = "general", title = "General", hint = "Language, notifications and the addon's buttons." },
 	{ id = "tracking", title = "Quest tracking", hint = "The current quest window, quests offered by NPCs, tooltips." },
 	{ id = "maps", title = "Maps", hint = "What QuestLineage draws on the minimap and the world map." },
-	{ id = "arrow", title = "Arrow", hint = "The arrow's look and the \"Where?\" bar under it." },
+	{ id = "arrow", title = "Arrow", hint = "The arrow's look, size and position." },
+	{ id = "where", title = "\"Where?\" bar", hint = "Icons that point the arrow at the nearest trainer, vendor or service." },
 	{ id = "plates", title = "Nameplates", hint = "A quest badge and counter beside the creatures your quests need." },
 }
 
+local UNITS = {
+	{ mode = "yd", label = "Yards (yd)" },
+	{ mode = "m", label = "Metres (m)" },
+	{ mode = "km", label = "Kilometres (km)" },
+}
 local ARROW_STYLES = {
 	{ mode = "theme", label = "Theme: on a round plate, like the windows" },
 	{ mode = "classic", label = "Classic: the bare arrow" },
@@ -187,16 +208,43 @@ local function text(y, english, size, color, x, bold)
 	return fs
 end
 
--- A group heading: small accent capitals with a thin line beside them.
+-- Groups sit on soft cards: a group heading closes the card before it and opens its own; a page
+-- builder calls endCard(y) after its last group. Textures on the page (below its widgets).
+local card
+local function endCard(y)
+	if not card then return end
+	local T, C = QL.Theme, QL.Theme.C
+	local bottom = y + 2
+	card.bg:SetPoint("BOTTOMRIGHT", root, "TOPLEFT", CONTENT_W - 8, bottom)
+	for _, e in ipairs(card.edges) do T.Color(e, C.lineSoft) end
+	card.edges[1]:SetPoint("TOPLEFT", card.bg, "TOPLEFT"); card.edges[1]:SetPoint("TOPRIGHT", card.bg, "TOPRIGHT"); card.edges[1]:SetHeight(1)
+	card.edges[2]:SetPoint("BOTTOMLEFT", card.bg, "BOTTOMLEFT"); card.edges[2]:SetPoint("BOTTOMRIGHT", card.bg, "BOTTOMRIGHT"); card.edges[2]:SetHeight(1)
+	card.edges[3]:SetPoint("TOPLEFT", card.bg, "TOPLEFT"); card.edges[3]:SetPoint("BOTTOMLEFT", card.bg, "BOTTOMLEFT"); card.edges[3]:SetWidth(1)
+	card.edges[4]:SetPoint("TOPRIGHT", card.bg, "TOPRIGHT"); card.edges[4]:SetPoint("BOTTOMRIGHT", card.bg, "BOTTOMRIGHT"); card.edges[4]:SetWidth(1)
+	card = nil
+end
+
+-- A group heading: small accent capitals with a thin line beside them, on a new card.
 local function groupHeading(y, english)
 	local T, C = QL.Theme, QL.Theme.C
-	local fs = text(y, english, 10, C.accent, 16, true)
+	endCard(y)
+	local top = y - 6
+	card = { bg = root:CreateTexture(nil, "BACKGROUND"), edges = {} }
+	card.bg:SetTexture(T.WHITE)
+	card.bg:SetVertexColor(QL.Theme.Wash(0.03))
+	card.bg:SetPoint("TOPLEFT", root, "TOPLEFT", 8, top)
+	for i = 1, 4 do
+		card.edges[i] = root:CreateTexture(nil, "BORDER")
+		card.edges[i]:SetTexture(T.WHITE)
+	end
+	y = y - 18
+	local fs = text(y, english, 10, C.accent, 20, true)
 	fs:SetPoint("RIGHT", root, "LEFT", 300, 0)
 	local line = root:CreateTexture(nil, "BORDER")
 	line:SetTexture(T.WHITE)
 	line:SetHeight(1)
-	line:SetPoint("TOPLEFT", 16, y - 16)
-	line:SetPoint("RIGHT", root, "RIGHT", -16, 0)
+	line:SetPoint("TOPLEFT", 20, y - 16)
+	line:SetPoint("RIGHT", root, "RIGHT", -20, 0)
 	T.Color(line, C.lineSoft)
 	return y - 26
 end
@@ -208,10 +256,82 @@ local function label(y)
 	return fs
 end
 
-local function check(name, x, y, onClick)
-	local c = CreateFrame("CheckButton", name, root, "UICheckButtonTemplate")
+-- A switch (kind nil) or a radio ("radio"): a CheckButton the whole row wide, with its own look.
+-- SetChecked / SetEnabled repaint it; the label is c.Text (setLabel finds it).
+local function paintCheck(c)
+	local C = QL.Theme.C
+	local on = c:GetChecked() and true or false
+	local alpha = c.qlDisabled and 0.4 or 1
+	local a = C.accent
+	if c.qlKind == "radio" then
+		local r = on and a or C.muted
+		c.ring:SetVertexColor(r[1], r[2], r[3], alpha)
+		c.dot:SetVertexColor(a[1], a[2], a[3], alpha)
+		c.dot:SetShown(on)
+	else
+		local t = on and a or { QL.Theme.Wash(0.16) }
+		for _, tex in ipairs(c.track) do tex:SetVertexColor(t[1], t[2], t[3], (t[4] or 1) * alpha) end
+		c.knob:ClearAllPoints()
+		c.knob:SetPoint("LEFT", c, "LEFT", on and 17 or 3, 0)
+		local k = on and 1 or 0.72
+		c.knob:SetVertexColor(k, k, k, alpha)
+	end
+end
+
+local function check(name, x, y, onClick, kind)
+	local T, C = QL.Theme, QL.Theme.C
+	local c = CreateFrame("CheckButton", name, root)
 	c:SetPoint("TOPLEFT", x, y)
-	c:SetScript("OnClick", onClick)
+	c:SetSize(CONTENT_W - x - 20, 24)
+	c:SetScript("OnClick", function(self, ...)
+		onClick(self, ...)
+		paintCheck(self)
+	end)
+	c.qlKind = kind
+	c.hover = c:CreateTexture(nil, "BACKGROUND")
+	c.hover:SetTexture(T.WHITE)
+	c.hover:SetAllPoints()
+	c.hover:SetVertexColor(QL.Theme.Wash(0))
+	if kind == "radio" then
+		c.ring = c:CreateTexture(nil, "ARTWORK")
+		c.ring:SetTexture(MEDIA .. "ring")
+		c.ring:SetSize(16, 16)
+		c.ring:SetPoint("LEFT", 4, 0)
+		c.dot = c:CreateTexture(nil, "OVERLAY")
+		c.dot:SetTexture(MEDIA .. "disc")
+		c.dot:SetSize(8, 8)
+		c.dot:SetPoint("CENTER", c.ring, "CENTER")
+		c.Text = T.Text(c, 12, C.text)
+		c.Text:SetPoint("LEFT", 28, 0)
+	else
+		local capL = c:CreateTexture(nil, "ARTWORK")
+		local capR = c:CreateTexture(nil, "ARTWORK")
+		local mid = c:CreateTexture(nil, "ARTWORK")
+		capL:SetTexture(MEDIA .. "disc")
+		capR:SetTexture(MEDIA .. "disc")
+		mid:SetTexture(T.WHITE)
+		capL:SetSize(16, 16); capR:SetSize(16, 16); mid:SetSize(14, 16)
+		capL:SetPoint("LEFT", 0, 0)
+		capR:SetPoint("LEFT", 16, 0)
+		mid:SetPoint("LEFT", 8, 0)
+		c.track = { capL, capR, mid }
+		c.knob = c:CreateTexture(nil, "OVERLAY")
+		c.knob:SetTexture(MEDIA .. "disc")
+		c.knob:SetSize(12, 12)
+		c.Text = T.Text(c, 12, C.text)
+		c.Text:SetPoint("LEFT", 42, 0)
+	end
+	c.Text:SetPoint("RIGHT", c, "RIGHT", -4, 0)
+	local setChecked, setEnabled = c.SetChecked, c.SetEnabled
+	c.SetChecked = function(self, v) setChecked(self, v); paintCheck(self) end
+	c.SetEnabled = function(self, v)
+		setEnabled(self, v)
+		self.qlDisabled = not v
+		paintCheck(self)
+	end
+	c:SetScript("OnEnter", function(self) if not self.qlDisabled then self.hover:SetVertexColor(QL.Theme.Wash(0.05)) end end)
+	c:SetScript("OnLeave", function(self) self.hover:SetVertexColor(QL.Theme.Wash(0)) end)
+	paintCheck(c)
 	return c
 end
 
@@ -219,7 +339,7 @@ end
 local function radios(prefix, list, key, y)
 	local out = {}
 	for i, m in ipairs(list) do
-		out[i] = check(prefix .. i, 26, y, function() QL.Set(key, m.mode); QL.RefreshOptions() end)
+		out[i] = check(prefix .. i, 26, y, function() QL.Set(key, m.mode); QL.RefreshOptions() end, "radio")
 		y = y - 26
 	end
 	return out, y
@@ -230,7 +350,7 @@ local function swatch(name, beside, colorKey, modeKey)
 	local T = QL.Theme
 	local sw = CreateFrame("Button", name, root)
 	sw:SetSize(22, 22)
-	sw:SetPoint("LEFT", beside, "RIGHT", 220, 0)
+	sw:SetPoint("LEFT", beside, "LEFT", 170, 0)
 	T.Fill(sw, { 0.8, 0.8, 0.8, 1 }, "BACKGROUND")
 	sw.fill = sw:CreateTexture(nil, "ARTWORK")
 	sw.fill:SetTexture(T.WHITE)
@@ -276,8 +396,25 @@ local function slider(name, key, min, max, y, sizeLabel, opts)
 	track:SetTexture(T.WHITE)
 	track:SetPoint("LEFT"); track:SetPoint("RIGHT")
 	track:SetHeight(4)
-	track:SetVertexColor(1, 1, 1, 0.18)
-	s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+	track:SetVertexColor(QL.Theme.Wash(0.18))
+	s.fill = s:CreateTexture(nil, "ARTWORK")
+	s.fill:SetTexture(T.WHITE)
+	s.fill:SetPoint("LEFT")
+	s.fill:SetSize(1, 4)
+	local ac = T.C.accent
+	s.fill:SetVertexColor(ac[1], ac[2], ac[3], 1)
+	s:SetThumbTexture("Interface\\AddOns\\QuestLineage\\Media\\disc")
+	local thumb = s.GetThumbTexture and s:GetThumbTexture()
+	if type(thumb) == "table" then
+		thumb:SetSize(14, 14)
+		thumb:SetVertexColor(0.95, 0.97, 1, 1)
+	end
+	if s.SetHitRectInsets then s:SetHitRectInsets(0, 0, -8, -8) end
+	local function paintFill(v)
+		local frac = (max > min) and math.max(0, math.min(1, (v - min) / (max - min))) or 0
+		s.fill:SetWidth(math.max(1, 240 * frac))
+	end
+	s.paintFill = paintFill
 	s.low = T.Text(root, 10, T.C.dim)
 	s.low:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
 	s.low:SetText(ends(min))
@@ -287,6 +424,7 @@ local function slider(name, key, min, max, y, sizeLabel, opts)
 	s:SetScript("OnValueChanged", function(self, v)
 		if self.updating then return end
 		v = math.floor(math.max(min, math.min(max, v or 1)) / step + 0.5) * step
+		paintFill(v)
 		if v ~= QL.DB()[key] then
 			QL.Set(key, v)
 			sizeLabel:SetText(textOf(v))
@@ -307,6 +445,7 @@ local function setSlider(s, value)
 	s.updating = true
 	s:SetValue(value)
 	s.updating = nil
+	if s.paintFill then s.paintFill(tonumber(value) or 0) end
 end
 
 -- Refresh ------------------------------------------------------------------------------------------
@@ -375,6 +514,37 @@ local function refresh()
 		end
 	end
 
+	-- theme
+	if themeUI.radios then
+		for i, th in ipairs(QL.Theme.THEMES) do
+			setLabel(themeUI.radios[i], L(th.label))
+			themeUI.radios[i]:SetChecked((db.theme or "night") == th.id)
+		end
+		themeUI.note:SetText(L("The colours of every QuestLineage window; they change as you click."))
+	end
+
+	-- the "Where?" bar's icons
+	if barUI.icons then
+		local active = QL.QuickBarActive()
+		local on = db.quickBar ~= false
+		for i, svc in ipairs(QL.SERVICES) do
+			local c = barUI.icons[i]
+			local fs = setLabel(c, L(svc.label))
+			c:SetChecked(active[svc.key] and true or false)
+			c:SetEnabled(on)
+			if fs then fs:SetTextColor(unpack(on and C.text or C.dim)) end
+		end
+		barUI.reset:SetLabel(L("Reset position"))
+	end
+
+	-- length unit
+	if unitUI.radios then
+		for i, m in ipairs(UNITS) do
+			setLabel(unitUI.radios[i], L(m.label))
+			unitUI.radios[i]:SetChecked(QL.DistanceUnit() == m.mode)
+		end
+	end
+
 	-- font
 	if fontUI.radios then
 		for i, m in ipairs(fontUI.list) do
@@ -434,6 +604,7 @@ local function refresh()
 		setLabel(p.droppers, L("Also on creatures that drop an item you collect"))
 		p.droppers:SetChecked(db.plateDroppers ~= false)
 		p.droppers:SetEnabled(on)
+		if p.previewUpdate then p.previewUpdate() end
 	end
 	showPage(db.optionsPage or "general")
 end
@@ -485,13 +656,51 @@ local function buildRows(pageId, y)
 				end
 				refresh()
 			end)
-			c.note = text(y - 24, row.note, 11, QL.Theme.C.muted, x + 30)
+			c.note = text(y - 24, row.note, 11, QL.Theme.C.muted, x + 42)
 			checks[i] = c
 			y = y - 52
 			end
 		end
 	end
 	return y
+end
+
+-- The theme: one radio per theme with a three-colour chip beside it; a click repaints every
+-- QuestLineage window at once (QL.Theme.Switch, from the SETTING_CHANGED handler in Theme.lua).
+buildThemeBlock = function(y)
+	local T, C = QL.Theme, QL.Theme.C
+	y = groupHeading(y - 8, "Theme")
+	themeUI.note = text(y, "The colours of every QuestLineage window; they change as you click.", 11, C.muted, 20)
+	y = y - 24
+	local list = {}
+	for i, th in ipairs(T.THEMES) do list[i] = { mode = th.id, label = th.label } end
+	themeUI.radios, y = radios("QuestLineageTheme", list, "theme", y)
+	-- a chip of three colours beside each radio
+	for i, th in ipairs(T.THEMES) do
+		local colors = T.ThemeColors(th.id)
+		local r = themeUI.radios[i]
+		local x = 210
+		for _, k in ipairs({ "card", "accent", "accent2" }) do
+			local chip = r:CreateTexture(nil, "ARTWORK")
+			chip:SetTexture(T.WHITE)
+			T.keepColor[chip] = true
+			chip:SetSize(14, 14)
+			chip:SetPoint("LEFT", r, "LEFT", x, 0)
+			local v = colors[k]
+			chip:SetVertexColor(v[1], v[2], v[3], 1)
+			x = x + 18
+		end
+	end
+	return y - 44
+end
+
+-- The length unit: yards, metres or kilometres (General page, last group).
+buildUnitBlock = function(y)
+	y = groupHeading(y - 8, "Length unit")
+	text(y, "Distances on the arrow, in lists and on the map; 1 yd is 0.91 m.", 11, QL.Theme.C.muted, 20)
+	y = y - 24
+	unitUI.radios, y = radios("QuestLineageUnit", UNITS, "distanceUnit", y)
+	return y - 8
 end
 
 -- The text font: one radio per face (the theme's list), under the "Text and size" group.
@@ -538,11 +747,124 @@ local function buildArrowPage(y)
 	return y - 44
 end
 
+-- A sample nameplate pair (the current quest's creature and another quest's) that follows the
+-- settings below it: side, shift, colour, size, counter. Positions as Plates.lua's placeBadge.
+local function buildBarExtras(y)
+	local T = QL.Theme
+	y = groupHeading(y, "Icons on the bar")
+	text(y, "Pick up to 12 icons. They keep this order; the \"...\" button always shows every category.", 11, T.C.muted, 20)
+	y = y - 34
+	barUI.icons = {}
+	for i, svc in ipairs(QL.SERVICES) do
+		barUI.icons[i] = check("QuestLineageBarIcon" .. i, 26, y, function(self)
+			QL.SetQuickBarIcon(svc.key, self:GetChecked() and true or false)
+			refresh()
+		end)
+		y = y - 26
+	end
+	y = groupHeading(y - 4, "Position")
+	text(y, "Puts the bar back at the top of the screen.", 11, T.C.muted, 20)
+	y = y - 24
+	local r = T.Button(root, 170, 26)
+	r:SetPoint("TOPLEFT", 20, y)
+	r:SetScript("OnClick", function() if QL.ResetQuickBarPosition then QL.ResetQuickBarPosition() end end)
+	barUI.reset = r
+	_G.QuestLineageBarReset = r
+	return y - 44
+end
+
+local function buildPlatePreview(y)
+	local T, C = QL.Theme, QL.Theme.C
+	y = groupHeading(y, "Preview")
+	local box = CreateFrame("Frame", nil, root)
+	box:SetSize(CONTENT_W - 40, 100)
+	box:SetPoint("TOPLEFT", 20, y)
+	T.Fill(box, C.canvas)
+	T.Border(box, C.line)
+	local samples = {}
+	local function sample(cx, name, counter, caption, current)
+		local sm = { current = current, counter = counter }
+		sm.name = box:CreateFontString(nil, "OVERLAY")
+		T.SetFont(sm.name, 11, false, "OUTLINE")
+		sm.name:SetTextColor(1, 0.35, 0.3, 1)
+		sm.name:SetPoint("CENTER", box, "TOPLEFT", cx, -30)
+		sm.name:SetText(name)
+		sm.bar = CreateFrame("Frame", nil, box)
+		sm.bar:SetSize(100, 10)
+		sm.bar:SetPoint("TOP", sm.name, "BOTTOM", 0, -3)
+		T.Fill(sm.bar, { 0.04, 0.04, 0.04, 1 })
+		local hp = sm.bar:CreateTexture(nil, "ARTWORK")
+		hp:SetTexture(T.WHITE)
+		hp:SetVertexColor(0.78, 0.16, 0.14, 1)
+		hp:SetPoint("TOPLEFT", 1, -1)
+		hp:SetSize(72, 8)
+		sm.badge = CreateFrame("Frame", nil, box)
+		sm.badge:SetSize(16, 16)
+		sm.badge.icon = sm.badge:CreateTexture(nil, "OVERLAY")
+		sm.badge.icon:SetTexture(MEDIA .. "quest_mark")
+		sm.badge.icon:SetAllPoints()
+		sm.badge.text = sm.badge:CreateFontString(nil, "OVERLAY")
+		T.SetFont(sm.badge.text, 11, true, "OUTLINE")
+		sm.badge.text:SetTextColor(1, 1, 1, 1)
+		local cap = T.Text(box, 10, C.dim)
+		cap:SetPoint("CENTER", box, "TOPLEFT", cx, -82)
+		cap:SetJustifyH("CENTER")
+		texts[#texts + 1] = { fs = cap, en = caption, size = 10 }
+		samples[#samples + 1] = sm
+	end
+	sample(110, "Murloc Tidehunter", "3/8", "Current quest", true)
+	sample(320, "Murloc Warrior", "1/4", "Another quest", false)
+	plateUI.previewUpdate = function()
+		local db = QL.DB()
+		local mode = db.plateColorMode or "status"
+		local side = db.plateSide or "left"
+		local dx = tonumber(db.plateOffsetX) or 0
+		local scale = tonumber(db.plateScale) or 1
+		box:SetAlpha(db.nameplates ~= false and 1 or 0.4)
+		for _, sm in ipairs(samples) do
+			local r, g, b, alpha = C.accent[1], C.accent[2], C.accent[3], 1
+			if mode == "status" then
+				local c = sm.current and QL.PLATE_CURRENT or QL.PLATE_OTHER
+				r, g, b = c[1], c[2], c[3]
+			else
+				if mode == "custom" and type(db.plateColor) == "table" then
+					r, g, b = db.plateColor[1] or 1, db.plateColor[2] or 1, db.plateColor[3] or 1
+				elseif mode == "difficulty" then
+					local lvl = (QL.Context() or {}).level or 10
+					local ok, _, dc = pcall(QL.QuestDifficulty, lvl + (sm.current and 0 or 4), lvl)
+					if ok and type(dc) == "table" then r, g, b = dc[1], dc[2], dc[3] end
+				end
+				if not sm.current then alpha = 0.4 end
+			end
+			local bd = sm.badge
+			bd.icon:SetVertexColor(r, g, b, 1)
+			bd:SetAlpha(alpha)
+			bd:SetScale(scale)
+			bd:ClearAllPoints()
+			bd.text:ClearAllPoints()
+			if side == "right" then
+				bd:SetPoint("LEFT", sm.bar, "RIGHT", 3 + dx, 0)
+				bd.text:SetPoint("LEFT", bd, "RIGHT", 2, 0)
+			elseif side == "top" then
+				bd:SetPoint("BOTTOM", sm.name, "TOP", -10 + dx, 2)
+				bd.text:SetPoint("LEFT", bd, "RIGHT", 2, 0)
+			else
+				bd:SetPoint("RIGHT", sm.bar, "LEFT", -3 + dx, 0)
+				bd.text:SetPoint("RIGHT", bd, "LEFT", -2, 0)
+			end
+			bd.text:SetText(db.plateCount ~= false and sm.counter or "")
+		end
+	end
+	plateUI.previewUpdate()
+	return y - 112
+end
+
 local function buildPlatePage(y)
 	local p = plateUI
 	local C = QL.Theme.C
 	p.on = check("QuestLineagePlatesOn", 16, y, function(self) QL.Set("nameplates", self:GetChecked() and true or false); refresh() end)
 	y = y - 40
+	y = buildPlatePreview(y)
 	y = groupHeading(y, "Position")
 	p.sides, y = radios("QuestLineagePlateSide", PLATE_SIDES, "plateSide", y)
 	y = y - 6
@@ -629,7 +951,10 @@ local function build()
 			y = buildPlatePage(y)
 		else
 			y = buildRows(def.id, y)
+			if def.id == "general" then y = buildUnitBlock(y); y = buildThemeBlock(y) end
+			if def.id == "where" then y = buildBarExtras(y) end
 		end
+		endCard(y)
 		page.contentHeight = -y + 20
 		page:SetHeight(page.contentHeight)
 		page:Hide()

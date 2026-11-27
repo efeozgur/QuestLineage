@@ -45,8 +45,9 @@ function QL.FillQuestTooltip(tip, id, ctx)
 	local level = QL.QuestLevel(id)
 	local r, g, b = levelColor(level)
 	tip:AddLine((level and ("[" .. level .. "] ") or "") .. QL.QuestTitle(id), r, g, b)
-	local s = T.STATUS[QL.NodeStatus(id, ctx)]
-	if s then tip:AddLine(L(s[4]), s[1], s[2], s[3]) end
+	local status = QL.NodeStatus(id, ctx)
+	local s = T.STATUS[status]
+	if s then tip:AddLine(QL.StatusLabel(id, status, ctx), s[1], s[2], s[3]) end
 	local dkey, dc = QL.QuestDifficulty(level, ctx.level)
 	if dc then tip:AddLine(L("Difficulty: ") .. L(dc[4]), dc[1], dc[2], dc[3]) end
 	local dungeon = QL.QuestDungeon(id)
@@ -323,7 +324,7 @@ function Tree:Draw(chain, focusId, animate, minW, minH)
 		card.title:SetText(QL.QuestTitle(id))
 		card.title:SetTextColor(unpack(faded and C.muted or (QL.TitleColor(id, ctx) or C.text)))
 		card.tag:SetText(QL.DungeonMarkup(id, true) or "")
-		card.status:SetText(L(s[4]))
+		card.status:SetText(QL.StatusLabel(id, node.status, ctx))
 		card.status:SetTextColor(s[1], s[2], s[3], 1)
 		local xp = QL.QuestXPAt(id, ctx and ctx.level)
 		local lv = node.level and (faded and L("Lv %d"):format(node.level) or QL.LevelMarkup(id, ctx)) or ""

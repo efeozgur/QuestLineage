@@ -143,7 +143,7 @@ local function dot()
 end
 
 local function badge()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	used.badge = used.badge + 1
 	local b = badges[used.badge]
 	if not b then
@@ -156,7 +156,7 @@ local function badge()
 		b.disc = b:CreateTexture(nil, "ARTWORK")
 		b.disc:SetTexture(MEDIA .. "disc")
 		b.disc:SetAllPoints()
-		b.disc:SetVertexColor(0.055, 0.063, 0.082, 0.95)
+		b.disc:SetVertexColor(QL.Theme.PanelA(0.95))
 		b.ring = b:CreateTexture(nil, "ARTWORK", nil, 1)
 		b.ring:SetTexture(MEDIA .. "ring")
 		b.ring:SetAllPoints()
@@ -197,7 +197,7 @@ local viaBadges, handles = {}, {}
 
 -- a small round badge for a stop-over point (draggable while a detour is edited)
 local function viaBadge(n)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local b = viaBadges[n]
 	if not b then
 		b = CreateFrame("Button", nil, overlay)
@@ -205,7 +205,7 @@ local function viaBadge(n)
 		b.disc = b:CreateTexture(nil, "ARTWORK")
 		b.disc:SetTexture(MEDIA .. "disc")
 		b.disc:SetAllPoints()
-		b.disc:SetVertexColor(0.055, 0.063, 0.082, 0.95)
+		b.disc:SetVertexColor(QL.Theme.PanelA(0.95))
 		b.ring = b:CreateTexture(nil, "ARTWORK", nil, 1)
 		b.ring:SetTexture(MEDIA .. "ring")
 		b.ring:SetAllPoints()
@@ -233,7 +233,7 @@ end
 
 -- a faint handle in the middle of a line piece: drag it to bend the line there
 local function handle(n)
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	local h = handles[n]
 	if not h then
 		h = CreateFrame("Button", nil, overlay)
@@ -269,7 +269,7 @@ end
 
 -- Lerp between the accent (the next leg) and violet (the legs after), fading with distance.
 local function legColor(k)
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	if k == 1 then return C.accent, 1 end
 	local fade = math.max(0.45, 1 - (k - 2) * 0.12)
 	return C.accent2, fade
@@ -285,7 +285,7 @@ function QL.RefreshMapRoute()
 	local pts = QL.MapRoutePoints(mapID, w, h)
 	if #pts.stops == 0 then return end
 	local zoom = canvasScale()
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 
 	-- the path: you -> stop 1 -> stop 2 ...
 	local prev = pts.player
@@ -427,7 +427,7 @@ local function ensureOverlay()
 	if overlay or not (WorldMapFrame and WorldMapFrame.GetCanvas) then return end
 	local canvas = WorldMapFrame:GetCanvas()
 	if not canvas then return end
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	overlay = CreateFrame("Frame", nil, canvas)
 	overlay:SetAllPoints(canvas)
 	local manager = WorldMapFrame.pinFrameLevelsManager
@@ -451,7 +451,7 @@ local function ensureOverlay()
 	caption:SetShadowOffset(1, -1)
 	caption.bg = holder:CreateTexture(nil, "ARTWORK")
 	caption.bg:SetTexture(T.WHITE)
-	caption.bg:SetVertexColor(0.055, 0.063, 0.082, 0.82)
+	caption.bg:SetVertexColor(QL.Theme.PanelA(0.82))
 	caption.bg:SetHeight(26)
 	caption.bg:SetPoint("CENTER", caption, "CENTER")
 
@@ -562,13 +562,13 @@ end
 local function mmBadge(i)
 	local b = mmr.badges[i]
 	if b then return b end
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	b = CreateFrame("Frame", nil, mmr.frame)
 	b:SetSize(14, 14)
 	b.disc = b:CreateTexture(nil, "ARTWORK")
 	b.disc:SetTexture(MEDIA .. "disc")
 	b.disc:SetAllPoints()
-	b.disc:SetVertexColor(0.055, 0.063, 0.082, 0.95)
+	b.disc:SetVertexColor(QL.Theme.PanelA(0.95))
 	b.ring = b:CreateTexture(nil, "ARTWORK", nil, 1)
 	b.ring:SetTexture(MEDIA .. "ring")
 	b.ring:SetAllPoints()
@@ -597,7 +597,7 @@ local function drawMinimapRoute()
 	local half = (Minimap:GetWidth() or 140) / 2
 	local pts = QL.MinimapRoutePoints(half)
 	if not pts or #pts == 0 then return end
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	local edge = half * 0.94
 	local drawn = { legs = 0, badges = 0, onRim = false }
 	local ax, ay = 0, 0

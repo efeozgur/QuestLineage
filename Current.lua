@@ -142,7 +142,7 @@ local function savePoint()
 end
 
 local function newRow()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local r = CreateFrame("Frame", nil, frame)
 	r:SetHeight(ROW_H)
 	r.flash = T.Fill(r, { C.accent[1], C.accent[2], C.accent[3], 0 })
@@ -164,7 +164,7 @@ local function newRow()
 end
 
 local function build()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	frame = CreateFrame("Button", "QuestLineageCurrent", UIParent)
 	frame:SetWidth(W)
 	frame:SetHeight(80)
@@ -194,7 +194,7 @@ local function build()
 			QL.Open(self.questId)
 		end
 	end)
-	T.Fill(frame, { 0.055, 0.063, 0.082, 0.92 })
+	T.Fill(frame, { QL.Theme.PanelA(0.92) })
 	T.Border(frame, C.line)
 	local top = frame:CreateTexture(nil, "ARTWORK")
 	top:SetTexture(T.WHITE)
@@ -254,23 +254,24 @@ local function build()
 	head.all:SetScript("OnClick", function() QL.ToggleLogObjectives() end)
 	head.all:SetScript("OnEnter", function(self) self.text:SetTextColor(unpack(C.text)) end)
 	head.all:SetScript("OnLeave", function(self) self.text:SetTextColor(unpack(C.muted)) end)
-	-- the interface language: a small EN | TR pill, the chosen half lit (TR needs WoWTR, dimmed without it)
-	local lang = CreateFrame("Frame", nil, head)
-	lang:SetSize(48, 16)
-	lang:SetFrameLevel((head:GetFrameLevel() or 1) + 3)
-	T.Fill(lang, { 1, 1, 1, 0.03 })
-	T.Border(lang, C.lineSoft)
+	-- the interface language: an EN | TR tab on the window's top edge, left of the lock (the zone tab's
+	-- and the lock's twin), the chosen half lit (TR needs WoWTR, dimmed without it); placed with the lock below
+	local lang = CreateFrame("Frame", nil, frame)
+	lang:SetSize(52, 22)
+	lang:SetFrameLevel((frame:GetFrameLevel() or 1) + 5)
+	T.Fill(lang, { QL.Theme.PanelA(0.94) })
+	T.Border(lang, C.line)
 	lang.lit = lang:CreateTexture(nil, "ARTWORK")
 	lang.lit:SetTexture(T.WHITE)
-	lang.lit:SetSize(23, 14)
+	lang.lit:SetSize(25, 20)
 	T.Color(lang.lit, { C.accent[1], C.accent[2], C.accent[3], 0.18 })
 	lang.halves = {}
 	for i, code in ipairs({ "en", "tr" }) do
 		local b = CreateFrame("Button", nil, lang)
-		b:SetSize(24, 16)
-		b:SetPoint("LEFT", (i - 1) * 24, 0)
+		b:SetSize(26, 22)
+		b:SetPoint("LEFT", (i - 1) * 26, 0)
 		b.code = code
-		b.text = T.Text(b, 9, C.muted, nil, true)
+		b.text = T.Text(b, 10, C.muted, nil, true)
 		b.text:SetPoint("CENTER", 0, 0)
 		b.text:SetText(code:upper())
 		b:SetScript("OnClick", function()
@@ -352,7 +353,7 @@ local function build()
 	lock:SetSize(26, 22)
 	lock:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, -1)
 	lock:SetFrameLevel((frame:GetFrameLevel() or 1) + 5)
-	T.Fill(lock, { 0.055, 0.063, 0.082, 0.94 })
+	T.Fill(lock, { QL.Theme.PanelA(0.94) })
 	T.Border(lock, C.line)
 	lock.bg = T.Fill(lock, { 0, 0, 0, 0 }, "ARTWORK")
 	lock.icon = lock:CreateTexture(nil, "OVERLAY")
@@ -379,6 +380,12 @@ local function build()
 		QL.Tip():Hide()
 	end)
 	frame.lock = lock
+	-- the EN | TR tab sits just left of the lock on the same edge
+	if frame.logHead and frame.logHead.lang then
+		frame.logHead.lang:ClearAllPoints()
+		frame.logHead.lang:SetPoint("BOTTOMRIGHT", lock, "BOTTOMLEFT", 2, 0)
+		QL.RefreshLangPill()
+	end
 	QL.BuildZoneTab()
 	local since = 0
 	frame:SetScript("OnUpdate", function(self, elapsed)
@@ -399,7 +406,7 @@ end
 -- A small "abandon" cross for a quest in the log: shown while the cursor is on its owner (and only
 -- for quests in the log); asks before dropping it.
 function QL.AbandonButton(owner, questOf)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local b = CreateFrame("Button", nil, owner)
 	b:SetSize(18, 18)
 	b:SetFrameLevel((owner:GetFrameLevel() or 1) + 5)
@@ -459,7 +466,7 @@ end
 -- Every objective of a logged quest as lines (open ones first in the list's colours, done ones in
 -- green with a tick) and the overall share of its counters.
 local function summary(id, ctx)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local g = T.STATUS.done
 	local rows = QL.ObjectiveRows(id, ctx)
 	local have, need = 0, 0
@@ -500,7 +507,7 @@ end
 
 -- A small "–" / "+" button (minimise / show) in the list's look.
 local function foldButton(parent, onClick)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(18, 16)
 	b:SetFrameLevel((parent:GetFrameLevel() or 1) + 5)
@@ -515,7 +522,7 @@ local function foldButton(parent, onClick)
 end
 
 local function logRow(i)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local r = frame.logRows[i]
 	if r then return r end
 	r = CreateFrame("Button", nil, frame)
@@ -594,7 +601,7 @@ function QL.FilterLogQuests(ids, ctx)
 end
 
 local function chip(i)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local b = frame.logChips[i]
 	if b then return b end
 	b = CreateFrame("Button", nil, frame)
@@ -619,7 +626,7 @@ local function chip(i)
 end
 
 local function drawChips(y, groups, filter)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local x = 10
 	for i, f in ipairs(LOG_FILTERS) do
 		local b = chip(i)
@@ -642,7 +649,7 @@ end
 function QL.RefreshLangPill()
 	local lang = frame and frame.logHead and frame.logHead.lang
 	if not lang then return end
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	local tr = QL.UseTurkish()
 	for i, b in ipairs(lang.halves) do
 		b.on = (b.code == "tr") == tr
@@ -650,13 +657,13 @@ function QL.RefreshLangPill()
 		b.text:SetTextColor(c[1], c[2], c[3], 1)
 		if b.on then
 			lang.lit:ClearAllPoints()
-			lang.lit:SetPoint("LEFT", (i - 1) * 24 + 1, 0)
+			lang.lit:SetPoint("LEFT", (i - 1) * 26 + 1, 0)
 		end
 	end
 end
 
 local function drawLog(y, ctx, currentId)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local ids = QL.LogQuests(ctx, currentId)
 	local head = frame.logHead
 	for _, r in ipairs(frame.logRows) do r:Hide() end
@@ -671,12 +678,6 @@ local function drawLog(y, ctx, currentId)
 	head.fold:SetText(folded and "+" or "–")
 	head.all:SetShown(not folded)
 	head.all.text:SetText((QL.DB().logObjectives ~= false) and L("– objectives") or L("+ objectives"))
-	head.lang:ClearAllPoints()
-	if folded then
-		head.lang:SetPoint("RIGHT", head.fold, "LEFT", -10, 0)
-	else
-		head.lang:SetPoint("RIGHT", head.all.text, "LEFT", -10, 0)
-	end
 	QL.RefreshLangPill()
 	head:Show()
 	y = y - 26
@@ -760,7 +761,7 @@ local STAGE = {
 function QL.RefreshCurrentLock()
 	local lock = frame and frame.lock
 	if not lock then return end
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	local locked = QL.DB().currentLocked == true
 	lock.icon:SetTexture("Interface\\AddOns\\QuestLineage\\Media\\" .. (locked and "lock" or "lock_open"))
 	local c = locked and C.accent or (lock.hover and C.text or C.dim)
@@ -774,7 +775,7 @@ function QL.RefreshCurrent(flashes)
 	if QL.DB().currentQuest == false then frame:Hide(); return end
 	local ctx = QL.Context()
 	local id = QL.CurrentQuest(ctx)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local currentParts = { frame.label, frame.meta, frame.title, frame.stateDot, frame.state, frame.progress, frame.bar }
 	frame.foldHint:Hide()
 	frame.mini:SetShown(id ~= nil)
@@ -904,10 +905,9 @@ end
 -- (from the zone's quests, QL.ZoneLevels). The band's colour says how it sits against your level:
 -- teal when you are inside it, the quests' difficulty colour when you are below (orange/red) or above
 -- (green/grey); a thin line along the bottom shows where you stand in it.
-local TAB_BG = { 0.055, 0.063, 0.082, 0.94 }
 
 function QL.BuildZoneTab()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local tab = CreateFrame("Frame", nil, frame)
 	tab:SetHeight(22)
 	tab:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, -1)
@@ -915,7 +915,7 @@ function QL.BuildZoneTab()
 	tab:RegisterForDrag("LeftButton")
 	tab:SetScript("OnDragStart", function() startMove() end)
 	tab:SetScript("OnDragStop", function() frame:StopMovingOrSizing(); savePoint() end)
-	T.Fill(tab, TAB_BG)
+	T.Fill(tab, { QL.Theme.PanelA(0.94) })
 	T.Border(tab, C.line)
 	tab.pin = tab:CreateTexture(nil, "ARTWORK")
 	tab.pin:SetTexture("Interface\\AddOns\\QuestLineage\\Media\\disc")
@@ -955,7 +955,7 @@ function QL.RefreshZoneTab(ctx)
 	local area, _, name = QL.PlayerZone()
 	if type(name) ~= "string" or name == "" then tab:Hide(); return end
 	ctx = ctx or QL.Context()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local lo, hi, count
 	if area then lo, hi, count = QL.ZoneLevels(area, ctx) end
 	tab.zoneName, tab.lo, tab.hi, tab.count = name, lo, hi, count
@@ -973,12 +973,22 @@ function QL.RefreshZoneTab(ctx)
 	end
 	tab.relation, tab.rr, tab.rg, tab.rb = relation, c[1], c[2], c[3]
 	tab.pin:SetVertexColor(c[1], c[2], c[3], 1)
-	local width = 10 + 7 + 6 + (tab.name:GetStringWidth() or 0) + 14
+	-- the language tab and the lock take the right end of the edge: the zone tab stays clear of them
+	local room = W - 82 - 4
+	local rangeW = 0
 	if lo then
 		tab.range:SetText(lo == hi and L("Lv %d"):format(lo) or L("Lv %d–%d"):format(lo, hi))
+		rangeW = 9 + (tab.range:GetStringWidth() or 0)
+	end
+	local nameW = tab.name:GetStringWidth() or 0
+	local nameMax = math.max(40, room - (10 + 7 + 6 + 14) - rangeW)
+	if nameW > nameMax then nameW = nameMax end
+	tab.name:SetWidth(nameW)
+	local width = 10 + 7 + 6 + nameW + 14
+	if lo then
 		tab.range:SetTextColor(c[1], c[2], c[3], 1)
 		tab.range:Show()
-		width = width + 9 + (tab.range:GetStringWidth() or 0)
+		width = width + rangeW
 		local f = (level and hi > lo) and math.max(0, math.min(1, (level - lo) / (hi - lo))) or (level and level >= lo and 1 or 0)
 		tab.line:SetVertexColor(c[1], c[2], c[3], 0.9)
 		tab.line:SetWidth(math.max(0.01, (width - 2) * f))

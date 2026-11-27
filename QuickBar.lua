@@ -7,7 +7,7 @@
 --
 -- Setting quickBar; the minimap button's Shift-click shows or hides it. The bar stands on its own:
 -- drag it by its grip, its edge or any icon to put it anywhere (quickBarPoint). A small turn button at
--- its end (three squares that glide between a row and a column) lays the bar out horizontally or
+-- its end (a bar and knob that swing between a row and a column) lays the bar out horizontally or
 -- vertically (setting quickBarVertical); tips and the "more" panel open on the side with room.
 -- A padlock beside it pins the bar where it stands (setting quickBarLocked): no drag moves it then.
 
@@ -21,7 +21,41 @@ local GROUPS = {
 	{ key = "vendors", label = "Vendors" },
 	{ key = "services", label = "Services" },
 }
-local CYCLE_TIME = 10
+local MAX_ICONS = 12
+local function cycleTime() return tonumber(QL.DB().quickBarCycle) or 10 end
+
+-- Which categories sit on the bar (setting quickBarIcons = { key = true }; none saved = PRIMARY).
+-- The bar keeps the order of QL.SERVICES. QL.QuickBarActive() -> set; QL.QuickBarKeys() -> list.
+function QL.QuickBarActive()
+	local saved = QL.DB().quickBarIcons
+	local set = {}
+	if type(saved) == "table" then
+		for k, v in pairs(saved) do if v == true then set[k] = true end end
+	else
+		for _, k in ipairs(PRIMARY) do set[k] = true end
+	end
+	return set
+end
+
+function QL.QuickBarKeys()
+	local set, keys = QL.QuickBarActive(), {}
+	for _, svc in ipairs(QL.SERVICES) do
+		if set[svc.key] and #keys < MAX_ICONS then keys[#keys + 1] = svc.key end
+	end
+	return keys
+end
+
+-- Put a category on the bar or take it off (always saves a new table). false when the bar is full.
+function QL.SetQuickBarIcon(key, on)
+	local set = QL.QuickBarActive()
+	if on and not set[key] and #QL.QuickBarKeys() >= MAX_ICONS then
+		QL.Print(QL.L("The bar holds up to 12 icons."), "warn")
+		return false
+	end
+	set[key] = on and true or nil
+	QL.Set("quickBarIcons", set)
+	return true
+end
 
 local bar, panel
 
@@ -67,7 +101,7 @@ function QL.GoToService(key)
 		return nil
 	end
 	local t = now()
-	if last.key == key and t - last.at < CYCLE_TIME then
+	if last.key == key and t - last.at < cycleTime() then
 		last.index = last.index % #list + 1
 	else
 		last.index = 1
@@ -83,10 +117,11 @@ end
 function QL.QuickBarVertical() return QL.DB().quickBarVertical == true end
 
 local function showTip(owner, key)
+	if QL.DB().quickBarTips == false then return end
 	local tip = QL.Tip()
 	if QL.QuickBarVertical() then tip:SetOwner(owner, "ANCHOR_SIDE", bar) else tip:SetOwner(owner, "ANCHOR_BOTTOM") end
 	tip:AddLine(labelOf(key), 1, 1, 1)
-	local list = QL.NearestServices(key, 3)
+	local list = QL.NearestServices(key, math.max(1, math.min(5, tonumber(QL.DB().quickBarTipCount) or 3)))
 	if #list == 0 then
 		tip:AddLine(L("None found near you."), 0.6, 0.6, 0.6)
 	else
@@ -118,11 +153,11 @@ end
 -- The "more" panel ---------------------------------------------------------------------------------
 
 local function buildPanel()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	panel = CreateFrame("Frame", "QuestLineageQuickPanel", bar)
 	panel:SetFrameStrata("DIALOG")
 	panel:SetFrameLevel(bar:GetFrameLevel() + 10)
-	T.Fill(panel, { 0.055, 0.063, 0.082, 0.96 })
+	T.Fill(panel, { QL.Theme.PanelA(0.96) })
 	T.Border(panel, C.line)
 	local top = panel:CreateTexture(nil, "ARTWORK")
 	top:SetTexture(T.WHITE)
@@ -144,7 +179,7 @@ local function professionKeys()
 end
 
 local function fillPanel()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	-- tiles and headings are made once and reused
 	panel.tiles = panel.tiles or {}
 	panel.heads = panel.heads or {}
@@ -220,19 +255,21 @@ end
 -- The bar ---------------------------------------------------------------------------------------------
 
 local function build()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	bar = CreateFrame("Frame", "QuestLineageQuickBar", UIParent)
 	bar:SetFrameStrata("DIALOG")
 	bar:SetClampedToScreen(true)
 	bar:SetMovable(true)
 	local SIZE, GAP, GRIP = 30, 2, 12
+	bar:SetScale((tonumber(QL.DB().quickBarScale) or 100) / 100)
 	local p = QL.DB().quickBarPoint
 	if type(p) == "table" and p[1] then
 		bar:SetPoint(p[1], UIParent, p[2], p[3], p[4])
 	else
 		bar:SetPoint("TOP", UIParent, "TOP", 0, -330)
 	end
-	T.Fill(bar, { 0.055, 0.063, 0.082, 0.88 })
+	bar.bg = T.Fill(bar, { QL.Theme.PanelA(0.88) })
+	QL.ApplyQuickBarLook()
 	T.Border(bar, C.line)
 	-- the grip: small dots at the start (two columns of three; turned with the bar)
 	bar.dots = {}
@@ -245,10 +282,7 @@ local function build()
 			bar.dots[#bar.dots + 1] = { tex = d, row = row, col = col }
 		end
 	end
-	bar.buttons = {}
-	for i, key in ipairs(PRIMARY) do
-		bar.buttons[i] = serviceButton(bar, key, SIZE)
-	end
+	bar.pool, bar.buttons = {}, {}
 	local more = QL.Theme.IconButton(bar, iconPath("more"), SIZE)
 	draggable(more)
 	more:SetScript("OnClick", function() QL.ToggleQuickPanel() end)
@@ -268,10 +302,12 @@ local function build()
 	turn:SetSize(18, 18)
 	turn.bg = T.Fill(turn, { 0, 0, 0, 0 })
 	turn.sq = {}
-	for i = 1, 3 do
+	-- a bar with a knob at one end that swings between lying and standing: reads as "turn", and
+	-- cannot be mistaken for the three dots of the "more" button
+	for i = 1, 2 do
 		local s = turn:CreateTexture(nil, "OVERLAY")
 		s:SetTexture(T.WHITE)
-		s:SetSize(4, 4)
+		if i == 1 then s:SetSize(14, 3) else s:SetSize(5, 5) end
 		s:SetVertexColor(C.muted[1], C.muted[2], C.muted[3], 1)
 		turn.sq[i] = s
 	end
@@ -348,7 +384,7 @@ end
 function QL.PaintQuickLock()
 	local lock = bar and bar.lock
 	if not lock then return end
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	local locked = QL.DB().quickBarLocked and true or false
 	local c = (locked or lock.hover) and C.accent or C.muted
 	for _, p in ipairs(lock.parts) do p:SetVertexColor(c[1], c[2], c[3], 1) end
@@ -366,19 +402,44 @@ end
 function QL.PlaceTurnSquares()
 	local turn = bar and bar.turn
 	if not turn then return end
-	for i, s in ipairs(turn.sq) do
-		local k = (i - 2) * 5
-		s:ClearAllPoints()
-		s:SetPoint("CENTER", turn, "CENTER", k * (1 - turn.t), -k * turn.t)
+	local a = turn.t * math.pi / 2
+	local bar1, knob = turn.sq[1], turn.sq[2]
+	bar1:ClearAllPoints()
+	bar1:SetPoint("CENTER", turn, "CENTER", 0, 0)
+	if bar1.SetRotation then bar1:SetRotation(-a) end
+	knob:ClearAllPoints()
+	knob:SetPoint("CENTER", turn, "CENTER", 7 * math.cos(a), -7 * math.sin(a))
+end
+
+-- The icons the setting asks for, made once per category and shown in order.
+local function rebuildIcons()
+	for _, b in pairs(bar.pool) do b:Hide() end
+	bar.buttons = {}
+	for _, key in ipairs(QL.QuickBarKeys()) do
+		local b = bar.pool[key]
+		if not b then
+			b = serviceButton(bar, key, 30)
+			bar.pool[key] = b
+		end
+		b:Show()
+		bar.buttons[#bar.buttons + 1] = b
 	end
+end
+
+-- Size and background opacity (settings quickBarScale, quickBarAlpha).
+function QL.ApplyQuickBarLook()
+	if not bar then return end
+	local a = math.max(0.2, math.min(1, (tonumber(QL.DB().quickBarAlpha) or 88) / 100))
+	if bar.bg then bar.bg:SetVertexColor(QL.Theme.PanelA(a)) end
 end
 
 -- Places the grip, icons and turn button in a row or a column (setting quickBarVertical).
 function QL.LayoutQuickBar()
 	if not bar then return end
+	rebuildIcons()
 	local SIZE, GAP, GRIP, TURN = 30, 2, 12, 44
 	local vertical = QL.QuickBarVertical()
-	local count = #PRIMARY + 1
+	local count = #bar.buttons + 1
 	local run = GRIP + 4 + count * (SIZE + GAP) -- along the bar, up to the turn button
 	if vertical then bar:SetSize(SIZE + 8, run + TURN + 4) else bar:SetSize(run + TURN + 4, SIZE + 8) end
 	for _, d in ipairs(bar.dots) do
@@ -395,9 +456,23 @@ function QL.LayoutQuickBar()
 		if vertical then frame:SetPoint("TOP", bar, "TOP", 0, -off) else frame:SetPoint("LEFT", bar, "LEFT", off, 0) end
 	end
 	for i, b in ipairs(bar.buttons) do put(b, i - 1) end
-	put(bar.more, #PRIMARY)
+	put(bar.more, #bar.buttons)
 	bar.turn:ClearAllPoints()
 	bar.lock:ClearAllPoints()
+	-- a hairline between the icons (with "more") and the bar's own buttons
+	if not bar.sep then
+		bar.sep = bar:CreateTexture(nil, "ARTWORK")
+		bar.sep:SetTexture(QL.Theme.WHITE)
+		bar.sep:SetVertexColor(1, 1, 1, 0.14)
+	end
+	bar.sep:ClearAllPoints()
+	if vertical then
+		bar.sep:SetSize(18, 1)
+		bar.sep:SetPoint("TOP", bar, "TOP", 0, -run)
+	else
+		bar.sep:SetSize(1, 18)
+		bar.sep:SetPoint("LEFT", bar, "LEFT", run, 0)
+	end
 	if vertical then
 		bar.turn:SetPoint("TOP", bar, "TOP", 0, -(run + 2))
 		bar.lock:SetPoint("TOP", bar, "TOP", 0, -(run + 22))
@@ -436,6 +511,24 @@ QL.On("SETTING_CHANGED", function(key)
 		if left and top then
 			bar:ClearAllPoints()
 			bar:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+			local point, _, relPoint, x, y = bar:GetPoint(1)
+			QL.DB().quickBarPoint = { point, relPoint, x, y }
+		end
+	end
+	if key == "quickBarIcons" and bar then
+		QL.LayoutQuickBar()
+		if panel and panel:IsShown() then panel:Hide() end
+	end
+	if key == "quickBarAlpha" and bar then QL.ApplyQuickBarLook() end
+	if key == "quickBarScale" and bar then
+		-- keep the top left corner where it was while the bar grows or shrinks
+		local old = bar:GetScale() or 1
+		local new = (tonumber(QL.DB().quickBarScale) or 100) / 100
+		local left, top = bar:GetLeft(), bar:GetTop()
+		bar:SetScale(new)
+		if left and top then
+			bar:ClearAllPoints()
+			bar:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * old / new, top * old / new)
 			local point, _, relPoint, x, y = bar:GetPoint(1)
 			QL.DB().quickBarPoint = { point, relPoint, x, y }
 		end

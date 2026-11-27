@@ -35,6 +35,7 @@ local QUESTS = {
 	[25] = { zoneOrSort = 1581, name = "Into the Mines", questLevel = 18, requiredLevel = 14 },
 	[26] = { zoneOrSort = 1637, name = "Captain's Orders", questLevel = 20, requiredLevel = 16, objectives = { { { 103 } } } },
 	[24] = { zoneOrSort = 1637, name = "Every Class", questLevel = 4, requiredLevel = 4, requiredClasses = 1535 },
+	[27] = { name = "Pelt Practice", questLevel = 8, requiredLevel = 5, requiredSkill = { 393, 20 } },
 	[15] = { zoneOrSort = 215, name = "Plains Feast", questLevel = 6, requiredLevel = 3, preQuestSingle = { 14 } },
 }
 local NPCS = {

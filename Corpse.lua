@@ -16,7 +16,7 @@ local MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
 local DOT_GAP = 14  -- pixels between flowing dots
 local DOT_SPEED = 22 -- pixels per second
 
-local function color() return QL.Theme.C.accent2 end
+local function color() return QL.Theme.HUD.accent2 end
 
 local function charKey()
 	local name = UnitName and UnitName("player") or "?"
@@ -243,7 +243,7 @@ local function drawWorld()
 		local qx, qy = QL.ProjectToMap(map, px, py, mapID)
 		if qx then
 			local d = math.sqrt(((x - qx) * w) ^ 2 + ((y - qy) * h) ^ 2)
-			text = text .. "  ·  " .. L("%d yd"):format(math.floor(d + 0.5))
+			text = text .. "  ·  " .. QL.FormatDistance(d)
 		end
 	end
 	lbl:SetText(text)
@@ -265,7 +265,7 @@ local function ensureWorld()
 	wmPath = newPath(canvas, ((level and level.startLevel) or (canvas:GetFrameLevel() + 2100)) + 40)
 	if not wmPath.glow then wmPath = nil; return end
 	local T = QL.Theme
-	wmPath.label = T.Text(wmPath, 12, T.C.text, "OVERLAY", true)
+	wmPath.label = T.Text(wmPath, 12, T.HUD.text, "OVERLAY", true)
 	wmPath.label:SetShadowOffset(1, -1)
 	local since = 0
 	wmPath:SetScript("OnUpdate", function(_, elapsed)

@@ -22,6 +22,23 @@ Check(not chain.nodes[10], "unrelated quest left out")
 Eq(chain.total, 8, "node count")
 Eq(chain.focus, 3, "focus")
 
+-- a quest that needs a profession: locked until the character has it with enough skill
+local skillCtx = QL.TestContext()
+QL.ProfessionRanks = function() return {} end
+skillCtx.level = 10
+Eq(QL.NodeStatus(27, skillCtx), "locked", "no Skinning: the quest is locked, not available")
+Eq(QL.StatusLabel(27, "locked", skillCtx), "Needs Skinning", "and says which profession")
+local lowCtx = QL.TestContext(); lowCtx.level = 10
+QL.ProfessionRanks = function() return { Skinning = 5 } end
+Eq(QL.StatusLabel(27, QL.NodeStatus(27, lowCtx), lowCtx), "Needs Skinning 20", "too little skill names the number")
+local okCtx = QL.TestContext(); okCtx.level = 10
+QL.ProfessionRanks = function() return { Skinning = 20 } end
+Eq(QL.NodeStatus(27, okCtx), "available", "enough Skinning: available")
+local blindCtx = QL.TestContext(); blindCtx.level = 10
+QL.ProfessionRanks = function() return nil end
+Eq(QL.NodeStatus(27, blindCtx), "available", "a client with no skill list never blocks a quest")
+QL.ProfessionRanks = nil
+
 -- the Orc quest shows when hiding is off
 local all = QL.BuildChain(3, ctx, { hideOther = false })
 Check(all.nodes[8], "Orc quest shown with hideOther = false")

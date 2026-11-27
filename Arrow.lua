@@ -51,7 +51,7 @@ end
 -- Facing accuracy -> colour: 1 ahead (accent), 0.5 to the side (amber), 0 behind (red).
 local AMBER = { 0.984, 0.749, 0.141 }
 function QL.ArrowColor(rotation)
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	local err = math.abs(((rotation + math.pi) % (2 * math.pi)) - math.pi)
 	local accuracy = 1 - err / math.pi
 	if accuracy >= 0.5 then return blend(AMBER, C.accent, (accuracy - 0.5) * 2) end
@@ -60,7 +60,7 @@ end
 
 -- The arrow's colour for a rotation, by the colour setting.
 function QL.ArrowTint(rotation)
-	local db, C = QL.DB(), QL.Theme.C
+	local db, C = QL.DB(), QL.Theme.HUD
 	if db.arrowColorMode == "accent" then return C.accent[1], C.accent[2], C.accent[3] end
 	if db.arrowColorMode == "custom" and type(db.arrowColor) == "table" then
 		return db.arrowColor[1] or 1, db.arrowColor[2] or 1, db.arrowColor[3] or 1
@@ -92,7 +92,7 @@ function QL.ApplyArrowSettings()
 end
 
 local function build()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local f = CreateFrame("Frame", "QuestLineageArrow", UIParent)
 	frame = f
 	f:SetSize(150, 150)
@@ -140,7 +140,7 @@ local function build()
 	-- the theme look: a dark round plate and a thin ring in the arrow's colour
 	f.plate = f:CreateTexture(nil, "BACKGROUND", nil, 1)
 	f.plate:SetTexture(MEDIA .. "disc")
-	f.plate:SetVertexColor(0.055, 0.063, 0.082, 0.9)
+	f.plate:SetVertexColor(QL.Theme.PanelA(0.9))
 	f.plate:SetPoint("CENTER", f.core, "CENTER", 0, 0)
 	f.rim = f:CreateTexture(nil, "BACKGROUND", nil, 2)
 	f.rim:SetTexture(MEDIA .. "ring")
@@ -363,7 +363,8 @@ local function drawPreview()
 	frame.glow:SetVertexColor(r, g, b, 1)
 	frame.glow:SetAlpha(0.32)
 	frame.title:SetText(L("Arrow preview"))
-	setDistance("120", L("yd"))
+	local pn, pu = QL.DistanceParts(120)
+	setDistance(pn, pu)
 	frame.label:SetText(L("Drag: move · Right-click: stop"))
 	fitBand(frame.titleBand, frame.title)
 	fitBand(frame.labelBand, frame.label)
@@ -379,7 +380,7 @@ function QL.UpdateArrow()
 	frame.title:SetText(target.title or QL.QuestTitle(questId))
 	local ri = QL.RouteInfo and QL.RouteInfo()
 	if ri and ri.next == questId then
-		frame.label:SetText(QL.Theme.Hex(QL.Theme.C.accent) .. L("Route %d/%d"):format(ri.index, ri.total) .. "|r  ·  " .. (target.label or ""))
+		frame.label:SetText(QL.Theme.Hex(QL.Theme.HUD.accent) .. L("Route %d/%d"):format(ri.index, ri.total) .. "|r  ·  " .. (target.label or ""))
 	else
 		frame.label:SetText(target.label or "")
 	end
@@ -405,7 +406,7 @@ function QL.UpdateArrow()
 		bands()
 		return
 	end
-	local C = QL.Theme.C
+	local C = QL.Theme.HUD
 	-- a detour drawn on the map (Paths.lua): the arrow leads through its points before the target
 	local via = false
 	if QL.DetourNext then
@@ -446,7 +447,8 @@ function QL.UpdateArrow()
 	paint(r, g, b, 1)
 	frame.glow:SetVertexColor(r, g, b, 1)
 	if nearness == 0 or not frame.stepped then frame.glow:SetAlpha(0.32) end
-	setDistance(tostring(math.floor(loc.dist + 0.5)), L("yd"), QL.TravelText(QL.TravelSeconds(loc.dist)))
+	local dn, du = QL.DistanceParts(loc.dist)
+	setDistance(dn, du, QL.TravelText(QL.TravelSeconds(loc.dist)))
 	bands()
 end
 

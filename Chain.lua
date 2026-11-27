@@ -27,6 +27,37 @@ local function hasFlag(mask, f)
 	return math.floor(mask / f) % 2 == 1
 end
 
+-- A quest that needs a profession (QuestieDB field requiredSkill = { skillId, minimum }): the skill
+-- ids of the professions, by their English names (the names the client's skill list uses here).
+local SKILL_NAMES = {
+	[171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting", [202] = "Engineering",
+	[182] = "Herbalism", [165] = "Leatherworking", [186] = "Mining", [393] = "Skinning",
+	[197] = "Tailoring", [755] = "Jewelcrafting", [773] = "Inscription", [185] = "Cooking",
+	[129] = "First Aid", [356] = "Fishing",
+}
+
+-- -> profession name, minimum skill | nil (no requirement, or one we do not know)
+function QL.SkillRequirement(id)
+	local raw = QL.Q(id, "requiredSkill")
+	if type(raw) ~= "table" then return nil end
+	if type(raw[1]) == "table" then raw = raw[1] end
+	local name = SKILL_NAMES[tonumber(raw[1])]
+	if not name then return nil end
+	return name, tonumber(raw[2]) or 0
+end
+
+-- The requirement the character does not meet: name, minimum, the skill it has (nil: not learnt).
+-- nil when it is met, there is none, or the client cannot tell (never blocks a quest on a guess).
+function QL.SkillGap(id, ctx)
+	local name, min = QL.SkillRequirement(id)
+	if not name or not QL.ProfessionRanks then return nil end
+	if ctx.skills == nil then ctx.skills = QL.ProfessionRanks() or false end
+	if ctx.skills == false then return nil end
+	local rank = ctx.skills[name]
+	if rank and rank >= min then return nil end
+	return name, min, rank
+end
+
 function QL.Eligible(id, ctx)
 	return hasFlag(QL.Q(id, "requiredRaces"), ctx.raceFlag) and hasFlag(QL.Q(id, "requiredClasses"), ctx.classFlag)
 end
@@ -74,6 +105,7 @@ function QL.NodeStatus(id, ctx)
 	end
 	local req = QL.Q(id, "requiredLevel")
 	if type(req) == "number" and req > (ctx.level or 1) then return "toolow" end
+	if QL.SkillGap(id, ctx) then return "locked" end -- needs a profession (or more skill in it)
 	return "available"
 end
 

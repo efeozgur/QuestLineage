@@ -23,7 +23,7 @@ local anchor
 local cards, pool = {}, {}
 
 local function kindColor(kind)
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	if kind == "success" then return T.STATUS.done end
 	if kind == "warn" then return QL.DIFFICULTY and QL.DIFFICULTY.hard or { 0.98, 0.57, 0.24 } end
 	if kind == "error" then return C.danger end
@@ -69,12 +69,12 @@ local function remove(card)
 end
 
 local function newCard()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	local card = table.remove(pool)
 	if card then return card end
 	card = CreateFrame("Button", nil, anchor)
 	card:SetWidth(W)
-	T.Fill(card, { 0.055, 0.063, 0.082, 0.95 })
+	T.Fill(card, { QL.Theme.PanelA(0.95) })
 	T.Border(card, C.line)
 	card.bar = card:CreateTexture(nil, "ARTWORK")
 	card.bar:SetTexture(T.WHITE)

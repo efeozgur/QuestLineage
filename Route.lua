@@ -255,13 +255,7 @@ function QL.RouteStop(id)
 end
 
 function QL.DistanceTextYards(y)
-	if not y or y <= 0 then return L("%d yd"):format(0) end
-	if y >= 1000 then
-		local s = ("%.1f"):format(y / 1000)
-		if QL.UseTurkish() then s = s:gsub("%.", ",") end
-		return L("%s k yd"):format(s)
-	end
-	return L("%d yd"):format(math.floor(y + 0.5))
+	return QL.FormatDistance((y and y > 0) and y or 0)
 end
 
 -- A quest's stage changed (taken, objectives done): plan the rest again from here.

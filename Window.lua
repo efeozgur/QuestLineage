@@ -40,7 +40,7 @@ local CHAIN_STATE = {
 	available = { "Available", "available" },
 	toolow    = { "Level too low", "toolow" },
 	locked    = { "Locked", "locked" },
-	done      = { "Completed", "done" },
+	done      = { "Already done", "done" },
 }
 
 -- Rows ---------------------------------------------------------------------------------
@@ -94,6 +94,8 @@ local function newRow(list, height)
 	ck:SetScript("OnLeave", function() QL.Tip():Hide() end)
 	ck:Hide()
 	r.check = ck
+	r.idTag = T.IdTag(r)
+	r.idTag:Hide()
 	r:SetScript("OnEnter", function(self)
 		if self.isHeader then return end
 		if not self.selected then T.Color(self.bg, C.rowHover) end
@@ -146,7 +148,32 @@ local function listRow(list, i, height)
 	return r
 end
 
+-- A quest row carries its id as a pill in a fixed slot before the right-hand column (a click copies it). Every list ends by
+-- calling hideRows, by which time the titles are set, so the pills are placed here.
+local function placeIdTag(r)
+	local tag = r.idTag
+	if not tag then return end
+	local id = r.questId
+	if not id or r.isHeader then
+		tag:Hide()
+		r.title:SetPoint("TOPRIGHT", r, "TOPRIGHT", -92, -11) -- the title has the whole width again
+		return
+	end
+	tag:SetId(id)
+	-- a fixed slot just left of the distance and XP column: the title gives way to it, so the two
+	-- can never overlap (nothing here depends on how wide a title turns out to be)
+	local tw = tag:GetWidth() or 44
+	r.title:SetPoint("TOPRIGHT", r, "TOPRIGHT", -(96 + tw + 6), -11)
+	tag:ClearAllPoints()
+	tag:SetPoint("TOPRIGHT", r, "TOPRIGHT", -96, -10)
+	tag:Show()
+end
+
 local function hideRows(list, from)
+	for i = 1, from - 1 do
+		local r = list.rows[i]
+		if r then placeIdTag(r) end
+	end
 	for i = from, #list.rows do list.rows[i]:Hide() end
 end
 
@@ -538,7 +565,7 @@ local function renderZoneQuests(page, ctx, area)
 		local chain = QL.ChainSummary(id, ctx)
 		local dungeon = QL.DungeonMarkup(id)
 		r.sub:SetText((row.level and (QL.LevelMarkup(id, ctx) .. "  ·  ") or "") .. (dungeon and (dungeon .. "  ·  ") or "")
-			.. T.Hex(s) .. L(s[4]) .. "|r"
+			.. T.Hex(s) .. QL.StatusLabel(id, st, ctx) .. "|r"
 			.. (chain and ("  ·  " .. L("Chain %d/%d"):format(chain.index, chain.total)) or ""))
 		local xp = (not faded) and QL.QuestXPAt(id, ctx.level) or nil
 		if xp then
@@ -798,14 +825,14 @@ local function renderSearch()
 		r.questId, r.openId = id, id
 		r.title:SetText(QL.QuestTitle(id))
 		r.title:SetTextColor(unpack(QL.TitleColor(id, ctx) or C.text))
-		local s = T.STATUS[QL.NodeStatus(id, ctx)] or T.STATUS.locked
+		local st = QL.NodeStatus(id, ctx)
+		local s = T.STATUS[st] or T.STATUS.locked
 		local level = QL.QuestLevel(id)
 		local xp = QL.QuestXPAt(id, ctx.level)
 		local dungeon = QL.DungeonMarkup(id, true)
-		r.sub:SetText((level and (QL.LevelMarkup(id, ctx) .. "  ·  ") or "") .. (dungeon and (dungeon .. "  ·  ") or "") .. T.Hex(s) .. L(s[4]) .. "|r"
+		r.sub:SetText((level and (QL.LevelMarkup(id, ctx) .. "  ·  ") or "") .. (dungeon and (dungeon .. "  ·  ") or "") .. T.Hex(s) .. QL.StatusLabel(id, st, ctx) .. "|r"
 			.. (xp and ("  ·  " .. T.Hex(C.accent) .. QL.XPText(xp) .. "|r") or ""))
-		r.chip:SetText("#" .. id)
-		r.chip:SetTextColor(unpack(C.dim))
+		r.chip:SetText("")
 		if r.bar then r.bar:Hide() end
 		selectRow(r, id == focusId)
 	end
@@ -1074,11 +1101,132 @@ local function savePoint(f)
 	QL.DB().point = { point, relPoint, x, y }
 end
 
+-- Resizing: the window's edges and corners are grips (StartSizing); the size is kept (windowSize)
+-- and a double-click on the bottom right corner puts the default size back. The layout is
+-- anchored (the list, the middle and the detail panel stretch), the lists and the tree draw again
+-- for the new size once the dragging pauses.
+local MIN_W, MIN_H = 1120, 600
+
+local function sizeBounds()
+	local sw = UIParent and UIParent:GetWidth() or W
+	local sh = UIParent and UIParent:GetHeight() or H
+	return MIN_W, MIN_H, math.max(MIN_W, sw or W), math.max(MIN_H, sh or H)
+end
+
+local function clampSize(w, h)
+	local minW, minH, maxW, maxH = sizeBounds()
+	return math.max(minW, math.min(maxW, w)), math.max(minH, math.min(maxH, h))
+end
+
+local function saveSize(f)
+	local w, h = f:GetWidth(), f:GetHeight()
+	if type(w) == "number" and type(h) == "number" then
+		QL.DB().windowSize = { math.floor(w + 0.5), math.floor(h + 0.5) }
+	end
+	savePoint(f)
+end
+
+local function addResizeGrips(f)
+	local T, C = QL.Theme, QL.Theme.C
+	local minW, minH, maxW, maxH = sizeBounds()
+	f:SetResizable(true)
+	if f.SetResizeBounds then
+		f:SetResizeBounds(minW, minH, maxW, maxH)
+	else
+		if f.SetMinResize then f:SetMinResize(minW, minH) end
+		if f.SetMaxResize then f:SetMaxResize(maxW, maxH) end
+	end
+	local EDGE, CORNER = 6, 18
+	local level = (f:GetFrameLevel() or 1) + 60
+	f.grips = {}
+	local function grip(point)
+		local b = CreateFrame("Button", nil, f)
+		b:SetFrameLevel(level)
+		b.point = point
+		b.glow = b:CreateTexture(nil, "OVERLAY")
+		b.glow:SetTexture(T.WHITE)
+		b.glow:SetAllPoints()
+		b.glow:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0)
+		b:SetScript("OnEnter", function(self) self.glow:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0.45) end)
+		b:SetScript("OnLeave", function(self)
+			if not self.sizing then self.glow:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0) end
+		end)
+		b:SetScript("OnMouseDown", function(self, button)
+			if button and button ~= "LeftButton" then return end
+			self.sizing = true
+			f:StartSizing(self.point)
+		end)
+		b:SetScript("OnMouseUp", function(self)
+			if not self.sizing then return end
+			self.sizing = false
+			f:StopMovingOrSizing()
+			self.glow:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0)
+			saveSize(f)
+			QL.RenderWindow(false)
+		end)
+		f.grips[point] = b
+		return b
+	end
+	local left, right, top, bottom = grip("LEFT"), grip("RIGHT"), grip("TOP"), grip("BOTTOM")
+	left:SetPoint("TOPLEFT", 0, -CORNER); left:SetPoint("BOTTOMLEFT", 0, CORNER); left:SetWidth(EDGE)
+	right:SetPoint("TOPRIGHT", 0, -CORNER); right:SetPoint("BOTTOMRIGHT", 0, CORNER); right:SetWidth(EDGE)
+	top:SetPoint("TOPLEFT", CORNER, 0); top:SetPoint("TOPRIGHT", -CORNER, 0); top:SetHeight(EDGE)
+	bottom:SetPoint("BOTTOMLEFT", CORNER, 0); bottom:SetPoint("BOTTOMRIGHT", -CORNER, 0); bottom:SetHeight(EDGE)
+	local tl, tr, bl, br = grip("TOPLEFT"), grip("TOPRIGHT"), grip("BOTTOMLEFT"), grip("BOTTOMRIGHT")
+	for _, c in ipairs({ tl, tr, bl, br }) do c:SetSize(CORNER, CORNER) end
+	tl:SetPoint("TOPLEFT"); tr:SetPoint("TOPRIGHT"); bl:SetPoint("BOTTOMLEFT"); br:SetPoint("BOTTOMRIGHT")
+	-- the bottom right corner shows a grabber (three small dots) and takes a double-click for the default size
+	br.glow:SetAllPoints()
+	br.dots = {}
+	for i = 1, 3 do
+		local d = br:CreateTexture(nil, "ARTWORK")
+		d:SetTexture(T.WHITE)
+		d:SetSize(2, 2)
+		d:SetVertexColor(C.dim[1], C.dim[2], C.dim[3], 0.9)
+		d:SetPoint("BOTTOMRIGHT", -4 - (3 - i) * 4, 4 + (i - 1) * 4)
+		br.dots[i] = d
+	end
+	br:SetScript("OnDoubleClick", function()
+		f:SetSize(W, H)
+		QL.DB().windowSize = nil
+		savePoint(f)
+		QL.RenderWindow(false)
+	end)
+	local enter = br:GetScript("OnEnter")
+	br:SetScript("OnEnter", function(self)
+		enter(self)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_TOPLEFT")
+		tip:AddLine(L("Drag the edges to resize"), 1, 1, 1)
+		tip:AddLine(L("Double-click here: default size"), 0.6, 0.6, 0.6)
+		tip:Show()
+	end)
+	local leave = br:GetScript("OnLeave")
+	br:SetScript("OnLeave", function(self) leave(self); QL.Tip():Hide() end)
+	-- draw again for the new size, once the dragging pauses
+	local waiting
+	f:SetScript("OnSizeChanged", function(self)
+		if waiting or not self:IsShown() then return end
+		if C_Timer and C_Timer.After then
+			waiting = true
+			C_Timer.After(0.12, function()
+				waiting = false
+				if win and win:IsShown() then QL.RenderWindow(false) end
+			end)
+		end
+	end)
+end
+
 local function createWindow()
 	local T, C = QL.Theme, QL.Theme.C
 	local f = CreateFrame("Frame", "QuestLineageFrame", UIParent)
 	win = f
-	f:SetSize(W, H)
+	local saved = QL.DB().windowSize
+	if type(saved) == "table" and tonumber(saved[1]) and tonumber(saved[2]) then
+		f:SetSize(clampSize(tonumber(saved[1]), tonumber(saved[2])))
+	else
+		f:SetSize(W, H)
+	end
 	local p = QL.DB().point
 	if type(p) == "table" and p[1] then f:SetPoint(p[1], UIParent, p[2], p[3], p[4]) else f:SetPoint("CENTER") end
 	f:SetFrameStrata("HIGH")
@@ -1089,6 +1237,7 @@ local function createWindow()
 	T.Fill(f, C.bg)
 	T.Border(f, C.line)
 	if UISpecialFrames then table.insert(UISpecialFrames, "QuestLineageFrame") end
+	addResizeGrips(f)
 
 	-- header
 	local header = CreateFrame("Frame", nil, f)

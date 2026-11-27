@@ -182,6 +182,41 @@ function QL.KnownProfessions()
 	return out
 end
 
+-- Skill of every profession the character has: { Mining = 75, ... } (English names); nil when the
+-- client gives no skill list at all (then nothing is judged by skill).
+function QL.ProfessionRanks()
+	local ranks, listed = {}, false
+	local function put(name, rank)
+		if type(name) ~= "string" or type(rank) ~= "number" then return end
+		for _, p in ipairs(QL.PROFESSIONS) do
+			if p == name and rank > (ranks[name] or -1) then ranks[name] = rank end
+		end
+	end
+	if GetProfessions and GetProfessionInfo then
+		local ok, a, b, c, d, e, f = pcall(GetProfessions)
+		if ok then
+			listed = true
+			for _, i in ipairs({ a, b, c, d, e, f }) do
+				if i then
+					local good, name, _, rank = pcall(GetProfessionInfo, i)
+					if good then put(name, rank) end
+				end
+			end
+		end
+	end
+	if GetNumSkillLines and GetSkillLineInfo then
+		local ok, n = pcall(GetNumSkillLines)
+		if ok and type(n) == "number" then
+			listed = true
+			for i = 1, n do
+				local good, name, isHeader, _, rank = pcall(GetSkillLineInfo, i)
+				if good and not isHeader then put(name, rank) end
+			end
+		end
+	end
+	return listed and ranks or nil
+end
+
 -- Nearest ------------------------------------------------------------------------------------------
 
 -- Projected positions per category, kept for the player's map until it changes.

@@ -121,7 +121,7 @@ local function savePoint()
 end
 
 local function build()
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	frame = CreateFrame("Frame", "QuestLineageFlight", UIParent)
 	frame:SetSize(W, H)
 	frame:SetFrameStrata("HIGH")
@@ -131,7 +131,7 @@ local function build()
 	frame:RegisterForDrag("LeftButton")
 	frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
 	frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); savePoint() end)
-	T.Fill(frame, { 0.055, 0.063, 0.082, 0.92 })
+	T.Fill(frame, { QL.Theme.PanelA(0.92) })
 	T.Border(frame, C.line)
 	frame.title = T.Text(frame, 11, C.muted)
 	frame.title:SetPoint("TOPLEFT", 16, -11)
@@ -171,7 +171,7 @@ local shownAt, clock, wasShown, settled, shownV = 0, 0, false, false, 1
 -- Draw the window for a moment: fade and slide in, tick, farewell and fade out.
 local function render(now, dt)
 	if not frame then return end
-	local T, C = QL.Theme, QL.Theme.C
+	local T, C = QL.Theme, QL.Theme.HUD
 	clock = clock + dt
 	local st = QL.FlightStatus(now)
 	local farewell = (not st) and lastDone and (now - lastDone.at) < LINGER + 0.6

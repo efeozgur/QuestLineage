@@ -96,11 +96,13 @@ T.C = {
 	heroTop   = { 0.100, 0.098, 0.165, 1 }, -- the detail panel's backdrop, deep muted indigo
 	danger    = { 0.973, 0.443, 0.443, 1 },
 	track     = { 1, 1, 1, 0.07 },
+	panel     = { 0.055, 0.063, 0.082, 1 }, -- the floating panels' ground
+	wash      = { 1, 1, 1, 1 },             -- the overlay colour for hovers, tracks and cards
 }
 
 -- A quest's state: colour and label.
 T.STATUS = {
-	done      = { 0.133, 0.773, 0.369, "Done" },
+	done      = { 0.133, 0.773, 0.369, "Already done" },
 	ready     = { 0.980, 0.800, 0.082, "Ready to turn in" },
 	active    = { 0.220, 0.741, 0.973, "In your log" },
 	available = { 0.898, 0.906, 0.922, "Available" },
@@ -217,7 +219,10 @@ end
 
 -- SetGradient writes the texture's vertex colours, so nothing may call SetVertexColor on it
 -- afterwards: a SetVertexColor(1, 1, 1, 1) here once painted every gradient plain white in game.
+local gradients = setmetatable({}, { __mode = "k" })
+T.gradients = gradients
 function T.Gradient(tex, direction, c1, c2)
+	gradients[tex] = { direction, c1, c2 }
 	local a1 = type(c1[4]) == "number" and c1[4] or 1
 	local a2 = type(c2[4]) == "number" and c2[4] or 1
 	if CreateColor and tex.SetGradient then
@@ -245,7 +250,7 @@ function T.Tooltip()
 	tip:SetFrameStrata("TOOLTIP")
 	tip:SetClampedToScreen(true)
 	tip:Hide()
-	T.Fill(tip, { 0.055, 0.063, 0.082, 0.97 })
+	T.Fill(tip, { T.PanelA(0.97) })
 	T.Border(tip, C.line)
 	local top = tip:CreateTexture(nil, "ARTWORK")
 	top:SetTexture(WHITE)
@@ -616,6 +621,109 @@ function T.Confirm(title, text, action, onYes)
 	return d
 end
 
+-- A small themed popup holding one text, selected, for Ctrl+C. The game's clipboard call
+-- (CopyToClipboard) is restricted to Blizzard's own UI: calling it from an addon raises the
+-- "blocked from an action only available to the Blizzard UI" dialog (pcall cannot stop that), so
+-- this popup is the only way.
+-- It closes by itself after the copy, on Escape or when the box loses focus. One frame, reused.
+function T.CopyText(text, owner, title)
+	local C = T.C
+	local d = T.copyBox
+	if not d then
+		d = CreateFrame("Frame", "QuestLineageCopy", UIParent)
+		d:SetSize(230, 78)
+		d:SetFrameStrata("FULLSCREEN_DIALOG")
+		d:SetToplevel(true)
+		d:SetClampedToScreen(true)
+		d:EnableMouse(true)
+		T.Fill(d, C.bg)
+		T.Border(d, C.line)
+		local top = d:CreateTexture(nil, "ARTWORK")
+		top:SetTexture(WHITE)
+		top:SetPoint("TOPLEFT", 1, -1); top:SetPoint("TOPRIGHT", -1, -1)
+		top:SetHeight(2)
+		T.Gradient(top, "HORIZONTAL", C.accent, C.accent2)
+		d.title = T.Text(d, 11, C.muted, nil, true)
+		d.title:SetPoint("TOPLEFT", 12, -12)
+		d.box = T.Input(d, 206, 28)
+		d.box:SetPoint("TOPLEFT", 12, -30)
+		d.hint = T.Text(d, 10, C.dim)
+		d.hint:SetPoint("TOPLEFT", d.box, "BOTTOMLEFT", 0, -6)
+		d.box:SetScript("OnKeyDown", function(_, key)
+			local ctrl = (IsControlKeyDown and IsControlKeyDown()) or (IsMetaKeyDown and IsMetaKeyDown())
+			if ctrl and (key == "C" or key == "X") then
+				local copied = d.text
+				if C_Timer and C_Timer.After then
+					C_Timer.After(0.12, function() d:Hide() end)
+				else
+					d:Hide()
+				end
+				QL.Print(QL.L("Copied: ") .. tostring(copied), "success")
+			end
+		end)
+		-- read only: whatever is typed goes back to the text
+		d.box:SetScript("OnTextChanged", function(self, user)
+			if user and d.text and self:GetText() ~= d.text then
+				self:SetText(d.text)
+				self:HighlightText()
+			end
+		end)
+		d.box:SetScript("OnEscapePressed", function() d:Hide() end)
+		d.box:SetScript("OnEditFocusLost", function() d:Hide() end)
+		d:Hide()
+		T.copyBox = d
+	end
+	d.text = tostring(text or "")
+	d.title:SetText(title or "")
+	d.hint:SetText(QL.L("Ctrl+C to copy, Esc to close"))
+	d.box:SetText(d.text)
+	d:ClearAllPoints()
+	if owner then d:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -6) else d:SetPoint("CENTER", 0, 120) end
+	d:Show()
+	d.box:SetFocus()
+	d.box:HighlightText()
+	return d
+end
+
+-- A quest id as a small pill ("#6306"): hover lights it, a click opens the copy popup.
+-- tag:SetId(id) fits the pill to the number.
+function T.IdTag(parent)
+	local C = T.C
+	local b = CreateFrame("Button", nil, parent)
+	b:SetHeight(15)
+	b.bg = b:CreateTexture(nil, "BACKGROUND")
+	b.bg:SetTexture(WHITE)
+	b.bg:SetAllPoints()
+	b.bg:SetVertexColor(T.Wash(0.07))
+	b.text = T.Text(b, 10, C.dim)
+	b.text:SetPoint("CENTER", 0, 0)
+	b.text:SetJustifyH("CENTER")
+	function b:SetId(id)
+		self.id = id
+		self.text:SetText("#" .. tostring(id))
+		self:SetWidth((self.text:GetStringWidth() or 30) + 12)
+	end
+	b:SetScript("OnEnter", function(self)
+		self.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
+		self.bg:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0.16)
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_TOP")
+		tip:AddLine(QL.L("Quest ID") .. ": " .. tostring(self.id), 1, 1, 1)
+		tip:AddLine(QL.L("Click to copy"), C.accent[1], C.accent[2], C.accent[3])
+		tip:Show()
+	end)
+	b:SetScript("OnLeave", function(self)
+		self.text:SetTextColor(C.dim[1], C.dim[2], C.dim[3], 1)
+		self.bg:SetVertexColor(T.Wash(0.07))
+		QL.Tip():Hide()
+	end)
+	b:SetScript("OnClick", function(self)
+		QL.Tip():Hide()
+		if self.id then T.CopyText(self.id, self, QL.L("Quest ID")) end
+	end)
+	return b
+end
+
 function T.Scroll(parent)
 	local C = T.C
 	local sf = CreateFrame("ScrollFrame", nil, parent)
@@ -662,4 +770,254 @@ end
 -- A change of font applies to every open window at once.
 QL.On("SETTING_CHANGED", function(key)
 	if key == "fontFace" then pcall(T.ReapplyFonts) end
+end)
+
+
+-- Themes ----------------------------------------------------------------------------------------------
+-- T.C is the palette of the windows; T.HUD holds the same colours for what floats over the world (arrow,
+-- current quest window, quick bar, toasts, flight timer, map overlays; kept apart so it can differ
+-- from the windows again). T.Apply(id) writes a theme's numbers INTO those tables (modules keep
+-- `local C = QL.Theme.C`, so the tables themselves never change) and runs before the windows are
+-- built (ADDON_LOADED); T.Switch(id) changes the theme live: it repaints every region of
+-- QuestLineage's frames by value (old palette colour -> the same key of the new palette). Setting: theme.
+-- T.PanelA(a) -> r, g, b, a of the floating panels; T.Wash(a) -> the hover/track overlay colour.
+
+local function rgb(r, g, b, a) return { r, g, b, a } end
+
+local function snapshot(src)
+	local out = {}
+	for k, v in pairs(src) do out[k] = { v[1], v[2], v[3], v[4] } end
+	return out
+end
+-- the night theme is the palette above: the base every other theme starts from
+local NIGHT = snapshot(T.C)
+
+local function extend(over)
+	local out = snapshot(NIGHT)
+	for k, v in pairs(over) do out[k] = v end
+	return out
+end
+
+T.THEMES = {
+	{ id = "night", label = "Night", group = "Dark", colors = extend({}) },
+	{ id = "graphite", label = "Graphite", group = "Dark", colors = extend({
+		bg = rgb(0.078, 0.078, 0.082, 0.97), header = rgb(0.094, 0.094, 0.098, 1), sidebar = rgb(0.086, 0.086, 0.09, 1),
+		canvas = rgb(0.059, 0.059, 0.063, 1), card = rgb(0.129, 0.129, 0.137, 1), cardHover = rgb(0.165, 0.165, 0.176, 1),
+		cardFocus = rgb(0.15, 0.157, 0.169, 1), line = rgb(0.2, 0.2, 0.212, 1), lineSoft = rgb(0.2, 0.2, 0.212, 0.6),
+		rowActive = rgb(0.62, 0.75, 0.95, 0.09), accent = rgb(0.62, 0.75, 0.95, 1), accent2 = rgb(0.78, 0.62, 0.95, 1),
+		heroTop = rgb(0.13, 0.13, 0.17, 1), panel = rgb(0.068, 0.068, 0.073, 1) }) },
+	{ id = "black", label = "Black", group = "Dark", colors = extend({
+		bg = rgb(0.0, 0.0, 0.0, 0.98), header = rgb(0.03, 0.03, 0.035, 1), sidebar = rgb(0.02, 0.02, 0.025, 1),
+		canvas = rgb(0.0, 0.0, 0.0, 1), card = rgb(0.07, 0.07, 0.08, 1), cardHover = rgb(0.1, 0.1, 0.115, 1),
+		cardFocus = rgb(0.09, 0.105, 0.115, 1), line = rgb(0.13, 0.13, 0.15, 1), lineSoft = rgb(0.13, 0.13, 0.15, 0.6),
+		heroTop = rgb(0.045, 0.045, 0.08, 1), panel = rgb(0.01, 0.01, 0.014, 1) }) },
+	{ id = "forest", label = "Forest", group = "Dark", colors = extend({
+		bg = rgb(0.047, 0.075, 0.063, 0.97), header = rgb(0.06, 0.092, 0.078, 1), sidebar = rgb(0.055, 0.085, 0.07, 1),
+		canvas = rgb(0.04, 0.065, 0.052, 1), card = rgb(0.085, 0.13, 0.108, 1), cardHover = rgb(0.115, 0.17, 0.14, 1),
+		cardFocus = rgb(0.1, 0.17, 0.13, 1), line = rgb(0.16, 0.23, 0.19, 1), lineSoft = rgb(0.16, 0.23, 0.19, 0.6),
+		rowActive = rgb(0.4, 0.85, 0.5, 0.09), accent = rgb(0.4, 0.85, 0.5, 1), accent2 = rgb(0.85, 0.8, 0.35, 1),
+		heroTop = rgb(0.06, 0.13, 0.1, 1), panel = rgb(0.04, 0.065, 0.052, 1) }) },
+	{ id = "sunset", label = "Sunset", group = "Dark", colors = extend({
+		bg = rgb(0.09, 0.059, 0.06, 0.97), header = rgb(0.11, 0.07, 0.072, 1), sidebar = rgb(0.1, 0.065, 0.067, 1),
+		canvas = rgb(0.075, 0.048, 0.05, 1), card = rgb(0.15, 0.1, 0.1, 1), cardHover = rgb(0.19, 0.125, 0.125, 1),
+		cardFocus = rgb(0.19, 0.12, 0.11, 1), line = rgb(0.26, 0.18, 0.18, 1), lineSoft = rgb(0.26, 0.18, 0.18, 0.6),
+		rowActive = rgb(1.0, 0.62, 0.3, 0.09), accent = rgb(1.0, 0.62, 0.3, 1), accent2 = rgb(0.96, 0.36, 0.42, 1),
+		heroTop = rgb(0.19, 0.09, 0.11, 1), panel = rgb(0.075, 0.05, 0.052, 1) }) },
+	{ id = "violet", label = "Violet", group = "Dark", colors = extend({
+		bg = rgb(0.067, 0.055, 0.098, 0.97), header = rgb(0.085, 0.07, 0.12, 1), sidebar = rgb(0.08, 0.065, 0.11, 1),
+		canvas = rgb(0.055, 0.045, 0.082, 1), card = rgb(0.12, 0.1, 0.17, 1), cardHover = rgb(0.155, 0.13, 0.215, 1),
+		cardFocus = rgb(0.15, 0.12, 0.22, 1), line = rgb(0.21, 0.18, 0.29, 1), lineSoft = rgb(0.21, 0.18, 0.29, 0.6),
+		rowActive = rgb(0.7, 0.55, 1.0, 0.09), accent = rgb(0.7, 0.55, 1.0, 1), accent2 = rgb(0.95, 0.5, 0.8, 1),
+		heroTop = rgb(0.14, 0.09, 0.24, 1), panel = rgb(0.06, 0.05, 0.09, 1) }) },
+	{ id = "alliance", label = "Alliance", group = "Faction", colors = extend({
+		bg = rgb(0.045, 0.06, 0.11, 0.97), header = rgb(0.06, 0.078, 0.14, 1), sidebar = rgb(0.055, 0.07, 0.13, 1),
+		canvas = rgb(0.04, 0.05, 0.095, 1), card = rgb(0.09, 0.12, 0.2, 1), cardHover = rgb(0.12, 0.16, 0.26, 1),
+		cardFocus = rgb(0.12, 0.17, 0.27, 1), line = rgb(0.17, 0.22, 0.36, 1), lineSoft = rgb(0.17, 0.22, 0.36, 0.6),
+		rowActive = rgb(0.95, 0.78, 0.3, 0.09), accent = rgb(0.95, 0.78, 0.3, 1), accent2 = rgb(0.35, 0.58, 1.0, 1),
+		heroTop = rgb(0.08, 0.12, 0.26, 1), panel = rgb(0.04, 0.055, 0.1, 1) }) },
+	{ id = "horde", label = "Horde", group = "Faction", colors = extend({
+		bg = rgb(0.075, 0.047, 0.047, 0.97), header = rgb(0.095, 0.058, 0.058, 1), sidebar = rgb(0.09, 0.055, 0.055, 1),
+		canvas = rgb(0.06, 0.038, 0.038, 1), card = rgb(0.14, 0.09, 0.09, 1), cardHover = rgb(0.18, 0.115, 0.115, 1),
+		cardFocus = rgb(0.18, 0.11, 0.1, 1), line = rgb(0.26, 0.17, 0.17, 1), lineSoft = rgb(0.26, 0.17, 0.17, 0.6),
+		rowActive = rgb(0.9, 0.25, 0.22, 0.09), accent = rgb(0.9, 0.25, 0.22, 1), accent2 = rgb(0.95, 0.62, 0.25, 1),
+		heroTop = rgb(0.19, 0.07, 0.07, 1), panel = rgb(0.065, 0.04, 0.04, 1) }) },
+	-- worked out when applied: your faction's palette, and the night palette in your class colour
+	{ id = "faction", label = "My faction", group = "Faction" },
+	{ id = "class", label = "Class colour", group = "Faction" },
+}
+T.THEME_BY_ID = {}
+for _, th in ipairs(T.THEMES) do T.THEME_BY_ID[th.id] = th end
+
+-- the same keys for what floats over the world: a copy of the palette
+T.HUD = snapshot(T.C)
+
+local function write(dst, src)
+	for k, v in pairs(src) do
+		local d = dst[k]
+		if type(d) ~= "table" then d = {}; dst[k] = d end
+		d[1], d[2], d[3], d[4] = v[1], v[2], v[3], v[4]
+	end
+end
+
+local function mix(a, b, t) return a + (b - a) * t end
+
+-- The colours of a theme id (the faction and class themes are worked out here) and its entry.
+function T.ThemeColors(id)
+	local th = T.THEME_BY_ID[id] or T.THEME_BY_ID.night
+	if th.id == "faction" then
+		local f = UnitFactionGroup and select(1, UnitFactionGroup("player"))
+		th = T.THEME_BY_ID[f == "Horde" and "horde" or "alliance"]
+	elseif th.id == "class" then
+		local c = QL.PlayerClass and QL.PlayerClass().color or { 1, 1, 1 }
+		local colors = snapshot(NIGHT)
+		local a = { mix(c[1], 1, 0.12), mix(c[2], 1, 0.12), mix(c[3], 1, 0.12), 1 }
+		colors.accent = a
+		colors.accent2 = { mix(a[1], 1, 0.3), mix(a[2], 1, 0.3), mix(a[3], 1, 0.3), 1 }
+		colors.rowActive = { a[1], a[2], a[3], 0.09 }
+		return colors, T.THEME_BY_ID.night
+	end
+	return th.colors, th
+end
+
+function T.Apply(id)
+	local colors, th = T.ThemeColors(id)
+	write(T.C, colors)
+	write(T.HUD, colors)
+	T.themeId = T.THEME_BY_ID[id] and id or "night"
+	T.applied = true
+end
+
+function T.PanelA(a)
+	local p = T.HUD.panel
+	return p[1], p[2], p[3], a or 1
+end
+
+function T.Wash(a)
+	local w = T.C.wash
+	return w[1], w[2], w[3], a or 1
+end
+
+-- Live switching ----------------------------------------------------------------------------------------
+-- Colours were baked into textures and font strings when the frames were built, so a switch walks
+-- every frame QuestLineage owns (named roots, then their children and regions) and maps each
+-- region's colour from the OLD palette to the same key of the NEW one. Washes (low alpha) only
+-- match the overlay keys, so a white icon never turns black. Gradients are painted again from the
+-- palette tables they were made with.
+
+local HUD_ROOTS = {
+	QuestLineageArrow = true, QuestLineageCurrent = true, QuestLineageQuickBar = true,
+	QuestLineageFlight = true, QuestLineageToasts = true, QuestLineageTooltip = true,
+}
+local LOW_ALPHA = { wash = true, rowHover = true, rowActive = true, track = true, lineSoft = false }
+
+local function entriesOf(pal)
+	local list = {}
+	for key, v in pairs(pal) do
+		list[#list + 1] = { key = key, r = v[1], g = v[2], b = v[3], a = type(v[4]) == "number" and v[4] or 1 }
+	end
+	return list
+end
+
+local TOL = 0.002
+local function find(list, r, g, b, a)
+	local best, bestD
+	for _, e in ipairs(list) do
+		if math.abs(e.r - r) <= TOL and math.abs(e.g - g) <= TOL and math.abs(e.b - b) <= TOL then
+			local ok = true
+			if e.key == "row" then ok = a < 0.01 end
+			if LOW_ALPHA[e.key] then ok = a < 0.35 end
+			if ok then
+				local d = math.abs(e.a - a)
+				if not bestD or d < bestD then best, bestD = e, d end
+			end
+		end
+	end
+	return best
+end
+
+local function remap(list, newPal, r, g, b, a)
+	local e = find(list, r, g, b, a)
+	if not e then return nil end
+	local n = newPal[e.key]
+	if not n then return nil end
+	local na = type(n[4]) == "number" and n[4] or 1
+	if math.abs(e.a - a) > 0.003 then na = a end -- the region has its own alpha: keep it
+	return n[1], n[2], n[3], na
+end
+
+-- regions that show a fixed colour on purpose (the theme chips in the settings)
+T.keepColor = setmetatable({}, { __mode = "k" })
+
+local function paintRegion(region, lists, pals, hud)
+	if T.keepColor[region] then return end
+	local kind = region.GetObjectType and region:GetObjectType()
+	local list, pal = lists[hud and 2 or 1], pals[hud and 2 or 1]
+	if kind == "FontString" then
+		local r, g, b, a = region:GetTextColor()
+		if type(r) ~= "number" then return end
+		local nr, ng, nb, na = remap(list, pal, r, g, b, a or 1)
+		if nr then region:SetTextColor(nr, ng, nb, na) end
+	elseif kind == "Texture" then
+		if gradients[region] then return end
+		local r, g, b, a = region:GetVertexColor()
+		if type(r) ~= "number" then return end
+		local nr, ng, nb, na = remap(list, pal, r, g, b, a or 1)
+		if nr then region:SetVertexColor(nr, ng, nb, na) end
+	end
+end
+
+local function walk(frame, lists, pals, hud, seen)
+	if seen[frame] then return end
+	seen[frame] = true
+	if frame.GetRegions then
+		for _, region in ipairs({ frame:GetRegions() }) do pcall(paintRegion, region, lists, pals, hud) end
+	end
+	if frame.GetChildren then
+		for _, child in ipairs({ frame:GetChildren() }) do
+			if type(child) == "table" then walk(child, lists, pals, hud, seen) end
+		end
+	end
+end
+
+-- Change the theme now: palette, every open (and hidden) QuestLineage frame, then a redraw.
+function T.Switch(id)
+	local oldC, oldH = snapshot(T.C), snapshot(T.HUD)
+	local lists = { entriesOf(oldC), entriesOf(oldH) }
+	T.Apply(id)
+	local pals = { T.C, T.HUD }
+	local seen = {}
+	local names = {}
+	for name, v in pairs(_G) do
+		if type(name) == "string" and name:sub(1, 12) == "QuestLineage" and type(v) == "table" and v.GetChildren and v.GetRegions then
+			names[#names + 1] = name
+		end
+	end
+	table.sort(names)
+	for _, name in ipairs(names) do
+		pcall(walk, _G[name], lists, pals, HUD_ROOTS[name] and true or false, seen)
+	end
+	for tex, g in pairs(gradients) do pcall(T.Gradient, tex, g[1], g[2], g[3]) end
+	if QL.Fire then QL.Fire("THEME_CHANGED", id) end
+end
+
+QL.Event("ADDON_LOADED", function(_, name)
+	if name ~= "QuestLineage" or T.applied then return end
+	local db = QL.DB()
+	if not T.THEME_BY_ID[db.theme] then db.theme = "night" end -- a theme that no longer exists
+	pcall(T.Apply, db.theme)
+end)
+QL.Event("PLAYER_LOGIN", function()
+	if not T.applied then pcall(T.Apply, QL.DB().theme or "night") end
+end)
+
+QL.On("SETTING_CHANGED", function(key, value)
+	if key == "theme" and T.applied and T.themeId ~= value then
+		pcall(T.Switch, value or "night")
+	end
+end)
+QL.On("THEME_CHANGED", function()
+	if QL.RenderWindow then pcall(QL.RenderWindow, false) end
+	if QL.RefreshCurrent then pcall(QL.RefreshCurrent) end
+	if QL.UpdateArrow then pcall(QL.UpdateArrow) end
+	if QL.RefreshOptions then pcall(QL.RefreshOptions) end
 end)

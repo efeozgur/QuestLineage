@@ -242,7 +242,7 @@ Eq(#rows, 2, "two chain rows")
 Eq(rows[1].chip.text, "In progress", "chain with a logged quest first")
 Eq(rows[1].openId, 2, "it opens at the quest in the log")
 Eq(rows[1].selected, true, "the open chain's row is selected")
-Eq(rows[2].chip.text, "Completed", "the finished loop chain comes last")
+Eq(rows[2].chip.text, "Already done", "the finished loop chain comes last")
 Check(zp.list.child:GetHeight() > 0 or true, "list height set")
 Check(rows[1].sub.text:find("1/8 done", 1, true), "row sub line: " .. rows[1].sub.text)
 Check(rows[1].sub.text:find("+670 XP", 1, true), "chain XP left on the row: " .. rows[1].sub.text)
@@ -484,7 +484,7 @@ do
 	end
 	Check(#qids >= 5, "Durotar's quests listed: " .. #qids)
 	Eq(qids[1], 2, "the quest in the log first")
-	Check(sts[#sts]:find("Done", 1, true), "done quests last: " .. sts[#sts])
+	Check(sts[#sts]:find("Already done", 1, true), "done quests last: " .. sts[#sts])
 	for _, r in ipairs(zs.list.rows) do if r.shown and r.questId == 5 then r.scripts.OnClick(r) end end
 	Eq(f.inspector.hero.title.text, "Rumours", "a quest row opens it")
 	Eq(QL.ArrowQuest(), 5, "and points the arrow")
@@ -516,7 +516,15 @@ local hits = {}
 for _, r in ipairs(sp.list.rows) do if r.shown then hits[#hits + 1] = r end end
 Eq(#hits, 2, "two result rows")
 Eq(hits[1].title.text, "Left Path", "first hit")
-Eq(hits[1].chip.text, "#6", "id chip")
+Eq(hits[1].idTag.shown, true, "the id pill is shown")
+Eq(hits[1].idTag.id, 6, "and carries the quest id")
+Eq(hits[1].idTag.text.text, "#6", "as #id")
+-- a click on the pill opens the copy popup with the id selected, and does not open the quest
+hits[1].idTag.scripts.OnClick(hits[1].idTag)
+Eq(QuestLineageCopy.shown, true, "the copy popup opens")
+Eq(QuestLineageCopy.box.text, "6", "holding the id")
+QuestLineageCopy.box.scripts.OnEscapePressed(QuestLineageCopy.box)
+Eq(QuestLineageCopy.shown, false, "Escape closes it")
 hits[1].scripts.OnClick(hits[1])
 Eq(f.inspector.hero.title.text, "Left Path", "result opens its tree and details")
 QL.Open("gathering")
@@ -1307,6 +1315,49 @@ QL.ToggleQuickBar()
 Eq(qb.shown, true, "Shift-click on the minimap button brings it back")
 QL.ClearArrow()
 Eq(#QL.errors, 0, "quick bar without errors: " .. table.concat(QL.errors, " | "))
+-- resizing: grips on every edge and corner; letting go saves the size; the corner resets it
+local win = QuestLineageFrame
+local gripCount = 0
+for _ in pairs(win.grips or {}) do gripCount = gripCount + 1 end
+Eq(gripCount, 8, "four edges and four corners can be dragged")
+local grip = win.grips.RIGHT
+grip.scripts.OnMouseDown(grip, "LeftButton")
+grip.scripts.OnMouseUp(grip)
+Check(type(QL.DB().windowSize) == "table" and QL.DB().windowSize[1] == 600, "letting go saves the size")
+win.grips.BOTTOMRIGHT.scripts.OnDoubleClick(win.grips.BOTTOMRIGHT)
+Eq(QL.DB().windowSize, nil, "a double-click on the corner restores the default size")
+Eq(#QL.errors, 0, "resizing without errors: " .. table.concat(QL.errors, " | "))
+
+-- the theme choice: stored, and the palette switches at once
+Check(QuestLineageTheme1, "the theme radios exist")
+QuestLineageTheme2.scripts.OnClick(QuestLineageTheme2)
+Eq(QL.DB().theme, "graphite", "a click chooses the theme")
+QuestLineageTheme1.scripts.OnClick(QuestLineageTheme1)
+Eq(QL.DB().theme, "night", "back to the default")
+-- the bar's own settings page: icons, size, tips
+Check(QuestLineageBarIcon1 and QuestLineageBarReset, "the bar page has its icon switches and reset button")
+Eq(QuestLineageBarIcon1.checked, true, "repair is on by default")
+Eq(QuestLineageBarIcon8.checked, false, "weapon master is off by default")
+QuestLineageBarIcon8.checked = true
+QuestLineageBarIcon8.scripts.OnClick(QuestLineageBarIcon8)
+Eq(#qb.buttons, 8, "switching an icon on adds it to the bar")
+Eq(qb.buttons[8].key, "weaponmaster", "in the order of the categories (weapon master follows mail)")
+QuestLineageBarIcon1.checked = false
+QuestLineageBarIcon1.scripts.OnClick(QuestLineageBarIcon1)
+Eq(#qb.buttons, 7, "and switching one off takes it away")
+Eq(qb.buttons[1].key, "inn", "inn is first now")
+QL.Set("quickBarIcons", nil)
+Eq(#qb.buttons, 7, "no saved choice: the default seven")
+QL.Set("quickBarTips", false)
+QuestLineageTooltip.lines = {}
+qb.buttons[1].scripts.OnEnter(qb.buttons[1])
+Eq(#QuestLineageTooltip.lines, 0, "tips off: nothing on hover")
+QL.Set("quickBarTips", true)
+QL.Set("quickBarScale", 140)
+Eq(qb.scale, 1.4, "the bar scales")
+QL.Set("quickBarScale", 100)
+QL.Set("quickBarAlpha", 40)
+QL.Set("quickBarAlpha", 88)
 
 -- Notifications instead of chat lines -------------------------------------------------------------
 local chat = {}

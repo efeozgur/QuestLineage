@@ -159,6 +159,6 @@ QL.Event("QUEST_LOG_UPDATE", function()
 		fireState()
 	end
 end)
-for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP" }) do
+for _, e in ipairs({ "QUEST_TURNED_IN", "QUEST_ACCEPTED", "QUEST_REMOVED", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED" }) do
 	QL.Event(e, function() cache = nil; QL.Fire("STATE_CHANGED") end)
 end

@@ -522,3 +522,41 @@ function QL.QuestDescription(id)
 	end
 	return nil
 end
+
+-- What a quest's state is called. A quest locked by a profession says which one ("Needs Skinning",
+-- or "Needs Skinning 20" when the character has it but not enough skill).
+function QL.StatusLabel(id, status, ctx)
+	if status == "locked" and QL.SkillGap then
+		local name, min, rank = QL.SkillGap(id, ctx or QL.Context())
+		if name then
+			if rank then return QL.L("Needs %s %d"):format(QL.L(name), min) end
+			return QL.L("Needs %s"):format(QL.L(name))
+		end
+	end
+	local s = QL.Theme and QL.Theme.STATUS[status]
+	return QL.L(s and s[4] or "Locked")
+end
+
+-- /ql skill [id]: the raw requirement fields of a quest and what the character has.
+function QL.SkillDebug(rest)
+	local id = tonumber(rest)
+	if not id and QL.ArrowQuest then id = QL.ArrowQuest() end
+	if not id then QL.Chat("/ql skill <quest id>"); return end
+	local function show(v)
+		if type(v) ~= "table" then return tostring(v) end
+		local out = {}
+		for k, x in pairs(v) do out[#out + 1] = tostring(k) .. "=" .. show(x) end
+		return "{" .. table.concat(out, ", ") .. "}"
+	end
+	QL.Chat(("quest %d: %s"):format(id, QL.QuestTitle(id)))
+	for _, field in ipairs({ "requiredSkill", "requiredMinRep", "requiredMaxRep", "requiredLevel", "specialFlags", "questFlags" }) do
+		QL.Chat(("  %s = %s"):format(field, show(QL.Q(id, field))))
+	end
+	local ctx = QL.Context()
+	local name, min, rank = QL.SkillGap(id, ctx)
+	local reqName, reqMin = QL.SkillRequirement(id)
+	QL.Chat(("  requirement: %s %s · missing: %s"):format(tostring(reqName), tostring(reqMin), name and ((rank and ("skill " .. rank) or "not learnt")) or "no"))
+	local ranks = QL.ProfessionRanks and QL.ProfessionRanks()
+	QL.Chat("  your skills: " .. (ranks and show(ranks) or "the client gives no skill list"))
+	QL.Chat("  status: " .. QL.NodeStatus(id, ctx))
+end

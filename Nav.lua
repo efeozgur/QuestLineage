@@ -243,16 +243,45 @@ function QL.QuestDistance(id, ctx)
 	return loc.dist
 end
 
+-- Length unit (setting distanceUnit: yd | m | km). The game measures in yards; 1 yd = 0.9144 m.
+--   QL.DistanceParts(yards) -> number text, unit text   (the arrow shows them apart)
+--   QL.FormatDistance(yards) -> "120 yd" | "110 m" | "1.4 km"
+local function decimal(v, places)
+	local s = ("%." .. places .. "f"):format(v)
+	if QL.UseTurkish and QL.UseTurkish() then s = s:gsub("%.", ",") end
+	return s
+end
+
+function QL.DistanceUnit()
+	local u = QL.DB().distanceUnit
+	if u == "m" or u == "km" then return u end
+	return "yd"
+end
+
+function QL.DistanceParts(y)
+	y = tonumber(y) or 0
+	local unit = QL.DistanceUnit()
+	if unit == "yd" then return tostring(math.floor(y + 0.5)), QL.L("yd") end
+	local m = y * 0.9144
+	if unit == "km" then
+		return decimal(m / 1000, m < 1000 and 2 or 1), QL.L("km")
+	end
+	if m >= 1000 then return decimal(m / 1000, 1), QL.L("km") end
+	return tostring(math.floor(m + 0.5)), QL.L("m")
+end
+
+function QL.FormatDistance(y)
+	y = tonumber(y) or 0
+	if QL.DistanceUnit() == "yd" and y >= 1000 then
+		return QL.L("%s k yd"):format(decimal(y / 1000, 1))
+	end
+	local n, u = QL.DistanceParts(y)
+	return n .. " " .. u
+end
+
 function QL.DistanceText(id, ctx)
 	local d, other = QL.QuestDistance(id, ctx)
-	if d then
-		if d >= 1000 then
-			local s = ("%.1f"):format(d / 1000)
-			if QL.UseTurkish() then s = s:gsub("%.", ",") end
-			return QL.L("%s k yd"):format(s)
-		end
-		return QL.L("%d yd"):format(math.floor(d + 0.5))
-	end
+	if d then return QL.FormatDistance(d) end
 	return other
 end
 
