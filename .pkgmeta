@@ -1,0 +1,12 @@
+package-as: QuestLineage
+
+ignore:
+  - tests
+  - tools
+  - dist
+  - CLAUDE.md
+  - oturumozeti.md
+  - logo.md
+  - logo.png
+  - .gitignore
+  - .pkgmeta

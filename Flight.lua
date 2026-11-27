@@ -7,9 +7,15 @@
 -- it. A flight that runs long shows 0:00 and waits for the landing; each landing refines the stored
 -- time (the old and the new averaged when they are close, else the new one).
 --
--- A route never flown has no stored time: the window then estimates one from the straight distance
--- between the two flight masters over your flying speed (marked "~" and "estimate"); if the client
--- gives neither, it counts up and says it is timing the route.
+-- A route never flown has no stored time: the window then estimates one from the length of the
+-- route's hops on the taxi map (GetNumRoutes / TaxiGetSrcX..DestY: a long flight goes through other
+-- flight points, never straight) over the fastest speed seen on this flight so far, re-estimated
+-- while it climbs (marked "~" and "estimate"). An estimate that runs out before the landing turns
+-- into counting up ("longer than the estimate") instead of waiting at 0:00. Without the client's
+-- numbers it counts up and says it is timing the route.
+--
+-- Where you took off must be known: a route with no origin is neither timed from nor stored (it
+-- would mix flights from different places to one destination).
 --
 -- The route comes from the taxi map: the node of type CURRENT when it opens is where you are, and a
 -- post-hook on TakeTaxiNode(slot) gives the destination (TaxiNodeName). Riding is read from
@@ -64,8 +70,8 @@ function QL.FlightFormat(sec)
 end
 
 function QL.FlightBegin(now, origin, dest)
-	local key = QL.FlightKey(origin, dest)
-	state = { key = key, origin = origin, dest = dest, start = now, expected = times()[key] }
+	local key = (origin and dest) and QL.FlightKey(origin, dest) or nil
+	state = { key = key, origin = origin, dest = dest, start = now, expected = key and times()[key] or nil }
 	lastDone = nil
 	return state
 end
@@ -76,7 +82,7 @@ function QL.FlightEnd(now)
 	local s = state
 	state = nil
 	local dur = now - s.start
-	if dur >= MIN_TRIP and s.dest and not s.demo then
+	if dur >= MIN_TRIP and s.key and not s.demo then
 		local t = times()
 		local old = t[s.key]
 		if old and math.abs(dur - old) <= old * 0.3 then
@@ -95,7 +101,10 @@ function QL.FlightStatus(now)
 	if not state then return nil end
 	local elapsed = math.max(0, now - state.start)
 	local out = { elapsed = elapsed, dest = state.dest, origin = state.origin }
-	if state.expected and state.expected > 0 then
+	if state.guessed and state.expected and elapsed > state.expected then
+		-- the estimate ran out but you are still in the air: count up rather than sit at 0:00
+		out.learning, out.longer = true, true
+	elseif state.expected and state.expected > 0 then
 		out.remaining = math.max(0, state.expected - elapsed)
 		out.fraction = math.min(1, elapsed / state.expected)
 		out.over = elapsed > state.expected
@@ -209,7 +218,7 @@ local function render(now, dt)
 			-- no time known yet: it counts up and says so, the line sweeps
 			frame.big:SetText(QL.FlightFormat(math.floor(st.elapsed)))
 			frame.big:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-			frame.sub:SetText(L("timing this route"))
+			frame.sub:SetText(st.longer and L("longer than the estimate") or L("timing this route"))
 			frame.bar:SetValue(0)
 			local w = barW * 0.28
 			local ph = (clock * 0.55) % 2
@@ -265,17 +274,35 @@ end
 
 local sincePoll = 0
 
--- An estimated flight time for a route without a stored one: the straight line between the origin
--- and destination flight masters (their taxi-map positions) over the speed you fly at now.
+-- The length of a route in yards: its hops on the taxi map ({ {sx, sy, dx, dy}, ... }, 0-1 units)
+-- times the map's size in yards.
+function QL.FlightPathYards(hops, size)
+	if type(hops) ~= "table" or #hops == 0 or type(size) ~= "table" then return nil end
+	local total = 0
+	for _, h in ipairs(hops) do
+		local dx, dy = (h[3] - h[1]) * size[1], (h[4] - h[2]) * size[2]
+		total = total + math.sqrt(dx * dx + dy * dy)
+	end
+	return total
+end
+
+-- Seconds for a route: the path a little longer (the flight curves between points), at the speed,
+-- plus take-off and landing.
+function QL.FlightGuess(yards, speed)
+	if type(yards) ~= "number" or yards < 50 or type(speed) ~= "number" or speed <= 0 then return nil end
+	return yards * 1.08 / speed + 4
+end
+
+-- An estimated flight time for a route without a stored one: the route's hops (or, without
+-- them, the straight line 1.35 times over) at the fastest speed seen on this flight.
 local function guessDuration(s)
-	local o, d = s.originPos, s.destPos
-	if not (o and d and s.mapSize) then return nil end
-	local speed = call(rawget(_G, "GetUnitSpeed"), "player")
-	if type(speed) ~= "number" or speed <= 0 or (issecretvalue and issecretvalue(speed)) then return nil end
-	local dx, dy = (d[1] - o[1]) * s.mapSize[1], (d[2] - o[2]) * s.mapSize[2]
-	local yards = math.sqrt(dx * dx + dy * dy)
-	if yards < 50 then return nil end
-	return yards * 1.15 / speed -- flight paths bend: a little extra
+	local yards = s.pathYards
+	if not yards and s.originPos and s.destPos and s.mapSize then
+		local o, d = s.originPos, s.destPos
+		local dx, dy = (d[1] - o[1]) * s.mapSize[1], (d[2] - o[2]) * s.mapSize[2]
+		yards = math.sqrt(dx * dx + dy * dy) * 1.35
+	end
+	return QL.FlightGuess(yards, s.topSpeed)
 end
 
 local function watch(dt)
@@ -291,7 +318,10 @@ local function watch(dt)
 				if pending and now - pending.at < 120 then o, d = pending.origin, pending.dest; pending0 = pending end
 				pending = nil
 				QL.FlightBegin(now, o, d)
-				if state and pending0 then state.originPos, state.destPos, state.mapSize = pending0.originPos, pending0.destPos, pending0.mapSize end
+				if state and pending0 then
+					state.originPos, state.destPos, state.mapSize = pending0.originPos, pending0.destPos, pending0.mapSize
+					state.pathYards = pending0.pathYards
+				end
 				if not frame then
 					local ok, err = pcall(build)
 					if not ok then QL.Debug("flight: " .. tostring(err)); frame = nil end
@@ -301,10 +331,18 @@ local function watch(dt)
 			end
 		end
 	end
-	if state and not state.expected and not state.guessTried and now - state.start > 1.5 then
-		state.guessTried = true
-		local g = guessDuration(state)
-		if g then state.expected, state.guessed = g, true end
+	-- no stored time: estimate, and refine while the speed still climbs (the first seconds of a
+	-- flight are a take-off); never once it has run out (then it counts up)
+	if state and not state.demo and (not state.expected or state.guessed) and now - state.start > 1 then
+		local sp = call(rawget(_G, "GetUnitSpeed"), "player")
+		if type(sp) == "number" and not (issecretvalue and issecretvalue(sp)) and sp > (state.topSpeed or 0) then
+			state.topSpeed = sp
+			local elapsed = now - state.start
+			if not state.expected or elapsed <= state.expected then
+				local g = guessDuration(state)
+				if g then state.expected, state.guessed = g, true end
+			end
+		end
 	end
 	if state and state.demo and now - state.start >= state.expected + 0.4 then QL.FlightEnd(now) end
 	render(now, dt)
@@ -342,6 +380,9 @@ QL.Event("TAXIMAP_OPENED", function()
 end)
 
 QL.Event("PLAYER_LOGIN", function()
+	for key in pairs(times()) do
+		if type(key) == "string" and key:sub(1, 2) == "?>" then times()[key] = nil end
+	end
 	if hooksecurefunc and rawget(_G, "TakeTaxiNode") then
 		pcall(hooksecurefunc, "TakeTaxiNode", function(slot)
 			pending = {
@@ -352,6 +393,20 @@ QL.Event("PLAYER_LOGIN", function()
 				destPos = (function()
 					local x, y = call2(rawget(_G, "TaxiNodePosition"), slot)
 					if type(x) == "number" and type(y) == "number" then return { x, y } end
+				end)(),
+				pathYards = (function()
+					local n = tonumber(call(rawget(_G, "GetNumRoutes"), slot)) or 0
+					if n < 1 or not mapSize then return nil end
+					local hops = {}
+					for i = 1, n do
+						local sx = call(rawget(_G, "TaxiGetSrcX"), slot, i)
+						local sy = call(rawget(_G, "TaxiGetSrcY"), slot, i)
+						local dx = call(rawget(_G, "TaxiGetDestX"), slot, i)
+						local dy = call(rawget(_G, "TaxiGetDestY"), slot, i)
+						if type(sx) ~= "number" or type(sy) ~= "number" or type(dx) ~= "number" or type(dy) ~= "number" then return nil end
+						hops[#hops + 1] = { sx, sy, dx, dy }
+					end
+					return QL.FlightPathYards(hops, mapSize)
 				end)(),
 			}
 		end)

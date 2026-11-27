@@ -223,6 +223,30 @@ local function build()
 	frame.foldHint = T.Text(frame, 10, C.dim)
 	frame.foldHint:SetPoint("TOPLEFT", 14, -74)
 	frame.foldHint:Hide()
+	-- getting there (Travel.lua): one line under the bar; its tip lists every step
+	frame.way = CreateFrame("Button", nil, frame)
+	frame.way:SetHeight(16)
+	frame.way:SetPoint("TOPLEFT", 14, -71)
+	frame.way:SetPoint("TOPRIGHT", -14, -71)
+	frame.way.text = T.Text(frame.way, 10, C.accent)
+	frame.way.text:SetPoint("LEFT"); frame.way.text:SetPoint("RIGHT")
+	frame.way:SetScript("OnEnter", function(self)
+		local trip = self.trip
+		if not trip then return end
+		local tip = QL.Tip()
+		tip:SetOwner(self, "ANCHOR_BOTTOM")
+		tip:AddLine(L("Getting there"), 1, 1, 1)
+		for i, s in ipairs(trip.steps) do
+			local text, sub = QL.TripStepText(s)
+			tip:AddLine(("%d. %s"):format(i, text), 0.85, 0.87, 0.92)
+			if sub then tip:AddLine("    " .. sub, 0.6, 0.62, 0.68) end
+		end
+		local total = QL.TravelText and QL.TravelText(trip.total)
+		if total then tip:AddLine(L("About %s in all, from where you stand."):format(total), 0.6, 0.62, 0.68) end
+		tip:Show()
+	end)
+	frame.way:SetScript("OnLeave", function() QL.Tip():Hide() end)
+	frame.way:Hide()
 	frame.bar = T.Bar(frame, 3)
 	frame.bar:SetPoint("TOPLEFT", 14, -64)
 	frame.bar:SetPoint("TOPRIGHT", -14, -64)
@@ -784,6 +808,7 @@ function QL.RefreshCurrent(flashes)
 		-- no current quest: the window shows the log alone (or nothing when the log is empty)
 		frame.questId = nil
 		for _, p in ipairs(currentParts) do p:Hide() end
+		frame.way:Hide(); frame.way.trip = nil
 		frame.sep:Hide()
 		for _, r in ipairs(frame.rows) do r:Hide() end
 		local y = drawLog(-10, ctx, nil)
@@ -840,7 +865,7 @@ function QL.RefreshCurrent(flashes)
 	frame.bar:SetPoint("TOPLEFT", 14, mini and -50 or -64)
 	frame.bar:SetPoint("TOPRIGHT", -14, mini and -50 or -64)
 	if mini then
-		for _, q in ipairs({ frame.stateDot, frame.state, frame.progress, frame.sep, frame.foldHint, frame.logHead, frame.logMore }) do q:Hide() end
+		for _, q in ipairs({ frame.stateDot, frame.state, frame.progress, frame.sep, frame.foldHint, frame.logHead, frame.logMore, frame.way }) do q:Hide() end
 		for _, r in ipairs(frame.rows) do r:Hide() end
 		for _, r in ipairs(frame.logRows) do r:Hide() end
 		for _, b in ipairs(frame.logChips) do b:Hide() end
@@ -858,9 +883,24 @@ function QL.RefreshCurrent(flashes)
 	local all = QL.ObjectiveRows(id, ctx)
 	local folded = QL.DB().currentCollapsed and #all > 0
 	local rows = folded and {} or all
+	-- getting there: a line when the quest is in another zone or on another continent
+	local trip = QL.TripFor and QL.TripFor(id, ctx)
+	local wayOff = 0
+	if trip then
+		frame.way.text:SetText(L("Way: ") .. (QL.TripSummary(trip) or ""))
+		frame.way.trip = trip
+		frame.way:Show()
+		wayOff = 18
+	else
+		frame.way:Hide(); frame.way.trip = nil
+	end
+	frame.sep:ClearAllPoints()
+	frame.sep:SetPoint("TOPLEFT", 14, -74 - wayOff); frame.sep:SetPoint("TOPRIGHT", -14, -74 - wayOff)
+	frame.foldHint:ClearAllPoints()
+	frame.foldHint:SetPoint("TOPLEFT", 14, -74 - wayOff)
 	frame.foldHint:SetShown(folded)
 	if folded then frame.foldHint:SetText(L("%d objectives hidden · right-click: show"):format(#all)) end
-	local y = -82
+	local y = -82 - wayOff
 	for i, o in ipairs(rows) do
 		local r = frame.rows[i]
 		if not r then r = newRow(); frame.rows[i] = r end

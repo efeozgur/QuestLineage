@@ -31,6 +31,7 @@ local function mock(kind, name)
 	end
 	function mt.SetGradient(self, dir, c1, c2) self.gradient = { dir, c1, c2 } end
 	function mt.SetRotation(self, r) self.rotation = r end
+	function mt.SetTexture(self, path) self.texture = path end
 	function mt.SetScale(self, v) self.scale = v end
 	function mt.IsForbidden() return false end
 	function mt.SetPoint(self, ...) self.point = { ... } end
@@ -143,7 +144,7 @@ Settings = { RegisterCanvasLayoutCategory = function() return { GetID = function
 -- Load ------------------------------------------------------------------------------
 QuestLineageDB = nil
 local QL = {}
-for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Tree.lua", "Inspector.lua", "ZoneMap.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Paths.lua", "Flight.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
+for _, file in ipairs({ "Core.lua", "Locale.lua", "Data.lua", "Zone.lua", "State.lua", "Chain.lua", "Details.lua", "Nav.lua", "Theme.lua", "Brand.lua", "Tree.lua", "Inspector.lua", "ZoneMap.lua", "Window.lua", "Arrow.lua", "Route.lua", "MapRoute.lua", "Services.lua", "Travel.lua", "QuickBar.lua", "Toast.lua", "Current.lua", "Plates.lua", "QuestAreas.lua", "Corpse.lua", "Paths.lua", "Flight.lua", "Nearby.lua", "QuestCard.lua", "MinimapButton.lua", "Hooks.lua", "Options.lua" }) do
 	assert(loadfile(file))("QuestLineage", QL)
 end
 for _, fn in ipairs(QL.events.PLAYER_LOGIN) do fn("PLAYER_LOGIN") end
@@ -164,6 +165,10 @@ end
 QL.ToggleWindow()
 local f = QuestLineageFrame
 Check(f and f.shown, "window shown")
+-- the author's mark: a badge in the header, the tag in the brand colour
+Check(f.brand and f.brand.icon, "header carries the OzgurX badge")
+Eq(f.brand.text.text, "by |cff8b7cf6OzgurX|r", "badge text")
+Eq(QL.Brand.Tag(), "|cff8b7cf6[OX]|r", "brand tag")
 runUpdates()
 Check(QL.IndexReady(), "index built by the slicer")
 QL.Open(3)
@@ -2170,6 +2175,68 @@ QL.Command("status")
 QL.Command("lang en")
 Eq(QL.DB().lang, "en", "lang command")
 QL.Command("help")
+-- Getting there: a quest on another continent (Travel.lua) ---------------------------------------
+do
+	-- the player's map (1411) on continent 1, every other map on continent 0
+	C_Map.GetWorldPosFromMapPos = function(map, v) return map == 1411 and 1 or 0, CreateVector2D(v.x * 10000, v.y * 10000) end
+	local realTarget = QL.QuestTarget
+	QL.QuestTarget = function(id, ctx)
+		if id == 3 then return { kind = "pickup", label = "Pick up: Far", questId = 3, points = { { map = 1420, x = 0.5, y = 0.5 } } } end
+		return realTarget(id, ctx)
+	end
+	QL.Fire("TRIP_CHANGED")
+	local plan = QL.TripFor(3, QL.Context())
+	Check(plan, "a plan to the other continent")
+	local ks = {}
+	for _, s in ipairs(plan and plan.steps or {}) do ks[#ks + 1] = s.kind end
+	Eq(table.concat(ks, ","), "ride,zeppelin,ride", "Horde: ride to the tower, zeppelin, ride on")
+	Eq(QL.TripSummary(plan), "Zeppelin → Undercity", "summary line")
+	-- the detail panel lists the way
+	f.inspector.shownId = nil
+	QL.Open(3)
+	local found = false
+	for _, h in ipairs(f.inspector.pools.heading or {}) do if h.shown and h.text.text == "Getting there" then found = true end end
+	Check(found, "the detail panel has a Getting there section")
+	local journey = f.inspector.pools.journey and f.inspector.pools.journey[1]
+	Check(journey and journey.shown, "the way is drawn as a timeline")
+	local stepText = {}
+	for _, p in ipairs(journey and journey.parts or {}) do if p.name.shown then stepText[#stepText + 1] = p.name.text end end
+	Eq(#stepText, 3, "three steps on the timeline")
+	Check(table.concat(stepText, "|"):find("Take the zeppelin to Undercity", 1, true), "the zeppelin step is on it")
+	Eq(journey.parts[1].ring.texture, "Interface\\AddOns\\QuestLineage\\Media\\ring", "the ring's file path is whole")
+	Eq(journey.parts[1].back.texture, "Interface\\AddOns\\QuestLineage\\Media\\disc", "the backing's file path is whole")
+	Check(type(journey.parts[2].icon.texture) == "string" and journey.parts[2].icon.texture:find("Icons", 1, true), "steps use the game's own icons")
+	-- a click on a step points the arrow at its place; the last one at the quest
+	local first = journey.parts[1].btn
+	first.scripts.OnClick(first)
+	Eq(QuestLineageArrow.title.text, "Go to the zeppelin tower outside Orgrimmar", "step click: the arrow names the step")
+	Eq(QL.ArrowQuest(), nil, "a place, not the quest")
+	first.scripts.OnEnter(first)
+	first.scripts.OnLeave(first)
+	local lastBtn = journey.parts[3].btn
+	lastBtn.scripts.OnClick(lastBtn)
+	Eq(QL.ArrowQuest(), 3, "the last step points the arrow at the quest")
+	QL.ClearArrow()
+	-- the arrow leads to the zeppelin tower first, the current quest window names the way
+	QL.SetArrowTarget(3, true)
+	QL.UpdateArrow()
+	Check(QuestLineageArrow.label.text:find("Way", 1, true), "the arrow says it leads along the way")
+	Check(QuestLineageArrow.label.text:find("zeppelin tower outside Orgrimmar", 1, true), "to the zeppelin tower")
+	QL.RefreshCurrent()
+	Eq(QuestLineageCurrent.way.shown, true, "the current quest window shows the way line")
+	Eq(QuestLineageCurrent.way.text.text, "Way: Zeppelin → Undercity", "its text")
+	-- the setting turns it all off
+	QL.Set("travelHints", false)
+	Eq(QL.TripFor(3), nil, "off: no plan")
+	QL.RefreshCurrent()
+	Eq(QuestLineageCurrent.way.shown, false, "off: no way line")
+	QL.Set("travelHints", true)
+	QL.ClearArrow()
+	QL.QuestTarget = realTarget
+	C_Map.GetWorldPosFromMapPos = nil
+	QL.Fire("TRIP_CHANGED")
+end
+
 Eq(#QL.errors, 0, "no captured errors: " .. table.concat(QL.errors, " | "))
 
 print("ui: ok")

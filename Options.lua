@@ -122,6 +122,12 @@ local ROWS = {
 		slider = { min = 1, max = 5, text = "Places listed in the tip: %d" }, note = "How many of the nearest ones the tip shows." },
 	{ key = "quickBarCycle", page = "where", group = "Tips and clicks", parent = "quickBar",
 		slider = { min = 3, max = 30, text = "Click again within %d s for the next nearest" }, note = "A second click on the same icon in this time points the arrow at the next nearest place." },
+	{ key = "travelHints", page = "tracking", group = "Getting there",
+		label = "Show the way to quests in other zones", note = "Flight paths, zeppelins, boats, the Deeprun Tram and riding: the quickest way, in the quest's details and the current quest window." },
+	{ key = "travelArrow", parent = "travelHints", page = "tracking", group = "Getting there",
+		label = "The arrow leads through the way", note = "It points at the flight master or the dock first and says what to take there." },
+	{ key = "travelHearth", parent = "travelHints", page = "tracking", group = "Getting there",
+		label = "Count the hearthstone", note = "When it is ready and the inn it is bound to is nearer to the quest. Bind it again once so the spot is known." },
 }
 
 local PAGES = {
@@ -482,6 +488,7 @@ local function refresh()
 	QL.SetFont(panel.title, 15)
 	panel.title:SetText(L("Quest Lineage"))
 	panel.version:SetText(QL.version or "")
+	if panel.brand then panel.brand:Refresh() end
 	for _, t in ipairs(texts) do
 		T.SetFont(t.fs, t.size, t.bold)
 		t.fs:SetText(L(t.en))
@@ -930,6 +937,10 @@ local function build()
 	panel.version = T.Text(nav, 10, C.dim)
 	panel.version:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -2)
 	for i, def in ipairs(PAGES) do navButton(i, def) end
+	if QL.Brand then
+		panel.brand = QL.Brand.Badge(nav)
+		panel.brand:SetPoint("BOTTOMLEFT", 12, 12)
+	end
 
 	-- the page area
 	local scroll = T.Scroll(panel)

@@ -1,8 +1,9 @@
 ## Interface: 16001
-## Title: QuestLineage
+## Title: |cff8b7cf6[OX]|r QuestLineage
 ## Notes: Quest chain trees for World of Warcraft: Forever, built on QuestieDB.
 ## Notes-trTR: World of Warcraft: Forever için görev zinciri ağaçları (QuestieDB verisiyle).
-## Author: Özgür
+## Author: OzgurX
+## X-Brand: OzgurX
 ## Version: 0.1.0
 ## IconTexture: Interface\AddOns\QuestLineage\Media\icon
 ## X-License: MIT
@@ -19,6 +20,7 @@ Chain.lua
 Details.lua
 Nav.lua
 Theme.lua
+Brand.lua
 Tree.lua
 Inspector.lua
 ZoneMap.lua
@@ -28,6 +30,7 @@ Route.lua
 MapRoute.lua
 Paths.lua
 Services.lua
+Travel.lua
 QuickBar.lua
 Toast.lua
 Current.lua

@@ -25,6 +25,7 @@ local editing, viewing = false, false
 local follow            -- { name, index }
 local steering = false  -- true while this file moves the arrow
 local locTargets = {}   -- one fixed target per followed stop (QL.Locate caches by table)
+local detourEdit = false -- true while a detour is being edited (QL.PathStops reads it, so it lives up here)
 
 -- Data ---------------------------------------------------------------------------------------------
 
@@ -292,7 +293,6 @@ end)
 -- you have walked through is deleted (the detour is for one trip); nothing is deleted while it is edited.
 
 local ADVANCE_VIA = 15 -- yards: close enough to a stop-over point to move on
-local detourEdit = false
 local det             -- { key, n, idx, targets } progress along the detour being followed
 
 local function detours()

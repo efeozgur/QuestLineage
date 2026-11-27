@@ -2,75 +2,72 @@
 
 # QuestLineage
 
-Quest chain trees for **World of Warcraft: Forever** (client 1.60.1, Interface 16001).
+*by OzgurX* · Quest chain trees, a quest arrow and travel help for **World of Warcraft: Forever**
+(client 1.60.1, Interface 16001).
 
-Pick any quest and QuestLineage draws its whole lineage as a family tree, unfolding from the first quests at the top down to the last: the quests that must come
-before it, the breadcrumbs that lead to it, the follow-ups it opens, and the quests that taking it
-closes for good. Each card shows the quest's state for your character.
+Pick any quest and QuestLineage draws its whole lineage as a family tree, from the first quests at
+the top down to the last: the quests that must come before it, the breadcrumbs that lead to it, the
+follow-ups it opens and the quests that taking it closes for good. Each card shows the quest's state
+for your character.
 
 ## Requirements
 
-- **QuestieDB** (required): QuestLineage reads all quest data through QuestieDB's public API
-  (`LibQuestieDB`, contract 4). QuestieDB's files are never changed.
-- **WoWTR** (optional): when loaded, a Turkish option appears. Quest titles and objectives then
-  come from WoWTR's translations, and the interface is in Turkish.
+- **QuestieDB** (required): all quest data is read through QuestieDB's public API. QuestieDB's
+  files are never changed.
+- **WoWTR** (optional): when it is loaded, a Turkish option appears; quest titles, objectives and
+  the interface are then in Turkish.
 
-## Where it shows up
+## Features
 
 | Place | What you get |
 |---|---|
-| `/ql` window | **This zone**: every quest chain with a quest in the zone you are in, the ones in progress first, with progress bars; it follows you from zone to zone. **Search**: any quest by name or id, as you type. Picking one opens its family tree in the middle and its details on the right: the quest giver in 3D, objective, story, tasks with creature portraits and item icons, who gives and takes it and where, rewards (XP, reputation, item icons), and the quests before and after it. Click a card to recentre on it, Shift-click to link it in chat. Mouse wheel scrolls, Shift+wheel scrolls sideways, drag the background to pan. |
-| Arrow | QuestLineage's own arrow: click a quest in the **Quests** list (or **Point the arrow** in its details) and it turns toward the giver, the nearest creature or object you still need, or where to hand it in, with the distance. Drag to move, right-click to stop. |
-| Route | Tick quests in the **Quests** list and press **Build route**: they are ordered nearest first from where you stand, and the arrow leads you stop by stop. When a quest moves on (taken, objectives done, handed in) the rest is planned again from where you are, so nearby pick-ups, kills and hand-ins mix. |
-| World map | The route (or the arrow's quest) on the world map: a glowing path from you through every stop with lights flowing along it, numbered stop badges (hover for the quest, click to open it) and a caption. |
-| "Where?" bar | A slim icon bar you can put anywhere (drag it): repair, innkeeper, flight master, your class trainer, your profession trainers, food, mailbox, and a "more" panel with every trainer, vendor and service. Click: the arrow turns to the nearest; click again: the next nearest; hover: the three nearest with distances. Shift-click the minimap button to show or hide it. |
-| Current quest | A small window with the quest you are doing: its stage, objectives with counters and bars (they flash when they go up), XP and distance; under it every other quest in your log (ready ones first). A setting hides the game's own quest tracker so this window can replace it. |
-| Way to your corpse | When you die, a glowing path with a tombstone leads to your corpse on the minimap and world map, and the arrow points at it; it goes back to your quest once you are alive. |
-| Quest card | When an NPC offers a quest, QuestLineage's own card opens beside the game's window (or in its place, a setting): the NPC in 3D, XP, objective, what to do, rewards, chain, warnings, Accept / Decline. Another setting opens the main window on the quest you accept. |
-| Nameplates | A quest badge and counter ("3/8") beside the nameplate of every creature an unfinished objective needs, including those that drop an item you collect. |
-| Quest log | A **Chain** button on the selected quest. |
-| NPC tooltips | For each chained quest the NPC gives: `Chain 2/5 · next: <quest>`. |
-| Quest offer window | A strip under the window: the chain position, a **Chain** button, and a warning when taking the quest closes other quests for good (exclusive quests), or when it is only a breadcrumb. |
-
-Card states: Done, In your log, Ready to turn in, Available, Level too low, Locked (prerequisites
-missing), Closed (an exclusive quest or the breadcrumb's target was taken), Not for your character.
-
-Line kinds: requires (all of these), one of (any one is enough), must be on (the parent quest must
-be in your log), breadcrumb (optional lead-in, dashed).
+| Main window (`/ql`) | Tabs on the left: **Quests** (what you can do now, most XP first), **Chains** (chains of your zone, in progress first), **Class** (your class quests), **Zones** (every zone with quests for you, by continent and level band, with the zone's map and quest pins) and **Search** (quests and creatures, as you type). Filters and XP · Level · Near sorting. Picking a quest opens its family tree and a detail panel: the quest giver in 3D, objective, **how to get there**, story, tasks with portraits and item icons, rewards and the quests before and after it. |
+| Getting there | When a quest is in another zone or on another continent, the quickest way as a timeline: ride, flight paths you know, zeppelins, boats, the Deeprun Tram (by faction) and your hearthstone. Click a step and the arrow points there. |
+| Arrow | Turns toward the quest giver, the nearest creature or object you still need, or where to hand the quest in, with the distance. On a long trip it leads you to the flight master or dock first. Colour, size and glow are settings. |
+| Routes | Tick quests and build a route: nearest first, re-planned as quests move on. Draw your own routes and detours on the world map (Shift+click). |
+| Maps | The route on the world map and minimap, objective areas of your quests, quest pins of a zone, the way back to your corpse. |
+| Current quest window | The quest you are doing with live objective counters and bars, the way there, and every other quest in your log with filters. Can replace the game's quest tracker. |
+| Quest card | QuestLineage's own window when an NPC offers or takes a quest: chain, warnings, objectives, rewards, voice-over (with WoWTR). |
+| Nameplates | A quest badge and counter beside every creature an unfinished objective needs (droppers included). |
+| "Where?" bar | Repair, inn, flight master, trainers, food, mail and more: one click points the arrow at the nearest. |
+| Flight timer | Times your flights and counts down on the next ride of the same route; estimates routes you have not flown yet. |
+| Hints | A note when another quest of yours is right here, and the next quest offered when you hand one in. |
 
 ## Commands
 
 ```
 /ql                 open or close the window   (also /lineage, /questlineage)
 /ql <id|name>       show the chain of a quest
-/ql status          QuestieDB, index and language status
+/ql find <name>     where a creature stands, on the map
+/ql arrow [id]      arrow status, or point it at a quest
+/ql travel [id]     how to get to a quest in another zone
+/ql flight          a sample flight to see the flight timer
 /ql lang en|tr      interface language (tr needs WoWTR)
 /ql options         settings
+/ql status          database and language status
 /ql errors          errors caught so far
 ```
 
-## Install (development)
+## Install
 
-The repository is linked into the game with a junction:
-
-```
-New-Item -ItemType Junction -Path "C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\QuestLineage" -Target "C:\Users\ahmet\Desktop\QuestLineage"
-```
-
-A new addon folder needs a full game restart; after that `/reload` picks up edits.
-
-## Tests
-
-Plain Lua 5.1, no game client: `python tests/run.py` (needs `pip install lupa`), or a single one
-with `python tests/run.py chain`.
+Put the `QuestLineage` folder in `World of Warcraft\_forever_\Interface\AddOns\` next to QuestieDB
+and restart the game.
 
 ## Türkçe
 
-QuestLineage, bir görevin tüm zincirini (ön koşullar, yönlendirme görevleri, takip görevleri ve
-alınca kalıcı olarak kapanan görevler) ağaç olarak gösterir. Arayüz İngilizcedir; **WoWTR** kuruluysa
-ayarlardan (`/ql options` veya `/ql lang tr`) Türkçe seçilebilir; görev adları ve hedefler WoWTR
-çevirisinden gelir.
+QuestLineage bir görevin tüm zincirini (ön koşullar, yönlendirme görevleri, takip görevleri ve
+alınca kalıcı olarak kapanan görevler) ağaç olarak gösterir; yön oku, rotalar, başka bölgedeki
+görevler için yol tarifi (uçuş, zeplin, gemi, tram, hearthstone), güncel görev penceresi ve uçuş
+sayacı içerir. Arayüz İngilizcedir; **WoWTR** kuruluysa ayarlardan (`/ql options` veya `/ql lang tr`)
+Türkçe seçilebilir.
+
+## Development
+
+No build step. Tests run in plain Lua 5.1 without the game: `python tests/run.py` (needs
+`pip install lupa`). `python tools/package.py` builds the release zip in `dist/`.
 
 ## License
 
-MIT (see `LICENSE`). The Inter font in `Media/Fonts` is by The Inter Project Authors under the SIL Open Font License 1.1 (`Media/Fonts/Inter-OFL.txt`). Quest data comes from the QuestieDB addon at run time and is not bundled.
+MIT (see `LICENSE`). The Inter font in `Media/Fonts` is by The Inter Project Authors under the SIL
+Open Font License 1.1 (`Media/Fonts/Inter-OFL.txt`). Quest data comes from the QuestieDB addon at
+run time and is not bundled.

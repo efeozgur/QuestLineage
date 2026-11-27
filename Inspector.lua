@@ -343,6 +343,203 @@ function Inspector:Row(o)
 	return r
 end
 
+-- The way to a quest as a vertical timeline: a circle per step joined by a teal -> violet line,
+-- the step to take now lit, the quest itself at the end; times on the right, the total under it.
+-- A click on a step points the arrow at that step's place; on the last one, at the quest.
+local JOURNEY_MEDIA = "Interface\\AddOns\\QuestLineage\\Media\\"
+local JOURNEY_DOT = 30
+function Inspector:Journey(trip, questId)
+	local T, C = QL.Theme, QL.Theme.C
+	local box = self:Take("journey", function()
+		local f = CreateFrame("Frame", nil, self.content)
+		f.bg = T.Fill(f, C.card)
+		T.Border(f, C.lineSoft)
+		f.parts = {}
+		f.foot = f:CreateTexture(nil, "BORDER")
+		f.foot:SetTexture(T.WHITE)
+		f.foot:SetHeight(1)
+		T.Color(f.foot, C.lineSoft)
+		f.total = T.Text(f, 10, C.muted)
+		f.hint = T.Text(f, 10, C.dim)
+		f.hint:SetJustifyH("RIGHT")
+		return f
+	end)
+	local w = self:Width() - PAD * 2
+	box:SetWidth(w)
+	box:SetPoint("TOPLEFT", self.content, "TOPLEFT", PAD, self.y)
+
+	-- one entry per step, the last one the quest itself
+	local entries = {}
+	for _, s in ipairs(trip.steps) do
+		local text, sub, icon = QL.TripStepText(s)
+		entries[#entries + 1] = { step = s, text = text, sub = sub, icon = icon, secs = s.secs, unsure = s.kind == "fly" and not s.known }
+	end
+	local last = entries[#entries]
+	if last and trip.steps[#trip.steps].to.goal then last.goal = true end
+
+	local textLeft = 12 + JOURNEY_DOT + 12
+	local textW = w - textLeft - 64
+	local y = -8
+	for i, e in ipairs(entries) do
+		local p = box.parts[i]
+		if not p then
+			p = {}
+			-- the whole step is a button: hover lights it, a click points the arrow at its place
+			p.btn = CreateFrame("Button", nil, box)
+			-- the hover light lives on the card, under the texts and icons: a texture of the button
+			-- itself would be drawn over them (the button is a frame above the card)
+			p.btn.hl = box:CreateTexture(nil, "BACKGROUND", nil, 1)
+			p.btn.hl:SetTexture(T.WHITE)
+			p.btn.hl:SetAllPoints(p.btn)
+			T.Color(p.btn.hl, C.cardHover)
+			p.btn.hl:Hide()
+			p.btn:SetScript("OnEnter", function(b)
+				b.hl:Show()
+				local tip = QL.Tip()
+				tip:SetOwner(b, "ANCHOR_LEFT")
+				tip:AddLine(b.title or "", 1, 1, 1)
+				if b.subText then tip:AddLine(b.subText, 0.7, 0.72, 0.78) end
+				tip:AddLine(b.how or "", 0.36, 0.84, 0.78)
+				tip:Show()
+			end)
+			p.btn:SetScript("OnLeave", function(b) b.hl:Hide(); QL.Tip():Hide() end)
+			p.btn:SetScript("OnClick", function(b) if b.click then b.click() end end)
+			-- a round icon: the game's coloured icon cut to a circle (mask where the client has
+			-- one), a dark backing, a coloured ring round it and a soft halo for the step to take now
+			p.line = box:CreateTexture(nil, "BORDER")
+			p.line:SetTexture(T.WHITE)
+			p.line:SetWidth(2)
+			p.halo = box:CreateTexture(nil, "BACKGROUND", nil, 2)
+			p.halo:SetTexture(JOURNEY_MEDIA .. "disc")
+			p.halo:SetSize(JOURNEY_DOT + 14, JOURNEY_DOT + 14)
+			p.back = box:CreateTexture(nil, "ARTWORK", nil, 1)
+			p.back:SetTexture(JOURNEY_MEDIA .. "disc")
+			p.back:SetSize(JOURNEY_DOT, JOURNEY_DOT)
+			p.back:SetVertexColor(0.04, 0.05, 0.07, 1)
+			p.icon = box:CreateTexture(nil, "ARTWORK", nil, 2)
+			p.icon:SetSize(JOURNEY_DOT - 4, JOURNEY_DOT - 4)
+			p.icon:SetPoint("CENTER", p.back, "CENTER")
+			if box.CreateMaskTexture and p.icon.AddMaskTexture then
+				local ok, mask = pcall(box.CreateMaskTexture, box)
+				if ok and mask then
+					pcall(mask.SetTexture, mask, JOURNEY_MEDIA .. "disc", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+					mask:SetAllPoints(p.icon)
+					pcall(p.icon.AddMaskTexture, p.icon, mask)
+					p.masked = true
+				end
+			end
+			if not p.masked then p.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+			p.ring = box:CreateTexture(nil, "OVERLAY")
+			p.ring:SetTexture(JOURNEY_MEDIA .. "ring")
+			p.ring:SetSize(JOURNEY_DOT + 2, JOURNEY_DOT + 2)
+			p.ring:SetPoint("CENTER", p.back, "CENTER")
+			p.halo:SetPoint("CENTER", p.back, "CENTER")
+			-- texts wrap: a long place name stays whole
+			p.name = T.Text(box, 12, C.text)
+			if p.name.SetWordWrap then p.name:SetWordWrap(true) end
+			p.sub = T.Text(box, 10, C.muted)
+			if p.sub.SetWordWrap then p.sub:SetWordWrap(true) end
+			p.time = T.Text(box, 10, C.muted)
+			p.time:SetJustifyH("RIGHT")
+			box.parts[i] = p
+		end
+		local now, goal = i == 1, e.goal
+		local col = (now and C.accent) or C.accent2
+
+		-- texts first: their height sets the step's height
+		T.SetFont(p.name, 12, now or goal)
+		p.name:ClearAllPoints()
+		p.name:SetPoint("TOPLEFT", box, "TOPLEFT", textLeft, y - 6)
+		p.name:SetWidth(textW)
+		p.name:SetText(e.text)
+		local nc = e.unsure and C.muted or C.text
+		p.name:SetTextColor(nc[1], nc[2], nc[3], 1)
+		local nameH = p.name.GetStringHeight and p.name:GetStringHeight() or 14
+		if type(nameH) ~= "number" or nameH < 12 then nameH = 14 end
+		p.sub:ClearAllPoints()
+		p.sub:SetPoint("TOPLEFT", p.name, "BOTTOMLEFT", 0, -3)
+		p.sub:SetWidth(textW)
+		p.sub:SetText(e.sub or "")
+		p.sub:SetShown(e.sub ~= nil)
+		local subH = 0
+		if e.sub then
+			subH = p.sub.GetStringHeight and p.sub:GetStringHeight() or 12
+			if type(subH) ~= "number" or subH < 10 then subH = 12 end
+			subH = subH + 3
+		end
+		local stepH = math.max(JOURNEY_DOT + 14, nameH + subH + 14)
+
+		p.btn:ClearAllPoints()
+		p.btn:SetPoint("TOPLEFT", box, "TOPLEFT", 4, y)
+		p.btn:SetPoint("RIGHT", box, "RIGHT", -4, 0)
+		p.btn:SetHeight(stepH)
+		p.btn:Show()
+		p.back:ClearAllPoints()
+		p.back:SetPoint("TOPLEFT", box, "TOPLEFT", 12, y - 6)
+		p.icon:SetTexture(e.icon)
+		-- a flight point you may not have: the icon greyed and faded
+		if p.icon.SetDesaturated then p.icon:SetDesaturated(e.unsure and true or false) end
+		p.icon:SetAlpha(e.unsure and 0.55 or 1)
+		p.ring:SetVertexColor(col[1], col[2], col[3], e.unsure and 0.4 or 1)
+		p.halo:SetVertexColor(col[1], col[2], col[3], 0.22)
+		p.halo:SetShown(now or goal)
+		p.time:ClearAllPoints()
+		p.time:SetPoint("TOPRIGHT", box, "TOPRIGHT", -12, y - 8)
+		p.time:SetText(QL.TravelText and QL.TravelText(e.secs) or "")
+
+		-- what a click does: the arrow to this step's place (where you go, or where it leaves from)
+		local s = e.step
+		local b = p.btn
+		b.title, b.subText = e.text, e.sub
+		if goal then
+			b.how = L("Click: the arrow points at the quest")
+			b.click = function() QL.SetArrowTarget(questId) end
+		elseif s.kind == "hearth" then
+			b.how = L("Use your hearthstone; then the next step")
+			b.click = function() QL.Print(L("Use your hearthstone") .. (e.sub and (" · " .. e.sub) or ""), "info") end
+		else
+			local pt = (s.kind == "ride" and s.to.point) or s.from.point
+			b.how = L("Click: the arrow points here")
+			b.click = pt and function()
+				QL.SetArrowPoint(pt.map, pt.x, pt.y, { title = e.text, label = QL.QuestTitle(questId) })
+			end or nil
+		end
+
+		-- the line down to the next circle
+		p.line:ClearAllPoints()
+		if entries[i + 1] then
+			p.line:SetPoint("TOP", p.back, "BOTTOM", 0, -3)
+			p.line:SetHeight(math.max(4, stepH - JOURNEY_DOT - 6))
+			T.Gradient(p.line, "VERTICAL", C.accent2, i == 1 and C.accent or C.accent2)
+			p.line:Show()
+		else
+			p.line:Hide()
+		end
+		for _, part in ipairs({ p.back, p.icon, p.ring, p.name, p.time }) do part:Show() end
+		y = y - stepH
+	end
+	for i = #entries + 1, #box.parts do
+		local p = box.parts[i]
+		for _, part in ipairs({ p.btn, p.btn.hl, p.line, p.halo, p.back, p.icon, p.ring, p.name, p.sub, p.time }) do part:Hide() end
+	end
+
+	-- footer: the total, and what a click does
+	y = y - 4
+	box.foot:ClearAllPoints()
+	box.foot:SetPoint("TOPLEFT", 12, y); box.foot:SetPoint("TOPRIGHT", -12, y)
+	local total = QL.TravelText and QL.TravelText(trip.total)
+	box.total:ClearAllPoints()
+	box.total:SetPoint("TOPLEFT", 12, y - 9)
+	box.total:SetText(total and L("Total %s · from where you stand"):format(total) or "")
+	box.hint:ClearAllPoints()
+	box.hint:SetPoint("TOPLEFT", 12, y - 25)
+	box.hint:SetJustifyH("LEFT")
+	box.hint:SetText(L("Click a step: the arrow points there"))
+	local h = -y + 44
+	box:SetHeight(h)
+	self.y = self.y - h - 14
+end
+
 function Inspector:Tiles(itemIds)
 	local T, C = QL.Theme, QL.Theme.C
 	local perRow = math.max(1, math.floor((self:Width() - PAD * 2 + 6) / (TILE + 6)))
@@ -549,6 +746,12 @@ function Inspector:Show(id, chain)
 	if objective then
 		self:Heading(L("Objective"))
 		self:Paragraph(objective)
+	end
+	-- getting there: the quest is in another zone or on another continent (Travel.lua)
+	local trip = QL.TripFor and QL.TripFor(id, ctx)
+	if trip then
+		self:Heading(L("Getting there"))
+		self:Journey(trip, id)
 	end
 	local story = QL.QuestDescription(id)
 	if story then

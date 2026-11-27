@@ -28,6 +28,8 @@ local arrowPx = ARROW_SIZE -- the arrow's size now (set by the style)
 local coreSize = ARROW_SIZE -- the visual size of the arrow with its plate (the text sits below it)
 
 local frame, target, questId
+local hopTarget -- the travel step the arrow leads to (Travel.lua), kept so its projection is cached
+local HOP_AT = 25
 local elapsedSince = 0
 
 local function L(s) return QL.L(s) end
@@ -388,6 +390,32 @@ function QL.UpdateArrow()
 		fitBand(frame.titleBand, frame.title)
 		fitBand(frame.labelBand, frame.label)
 	end
+	-- getting there (Travel.lua): the quest is in another zone or on another continent and a
+	-- flight, a boat, a zeppelin or the hearthstone is quicker; the arrow leads to that step first
+	local hopped = false
+	if QL.TripNext and questId and not target.corpse and not (QL.RouteActive and QL.RouteActive()) then
+		local ok, hop = pcall(QL.TripNext, questId)
+		if ok and hop then
+			local A = QL.Theme.HUD.accent
+			frame.label:SetText(QL.Theme.Hex(A) .. L("Way") .. "|r  ·  " .. hop.text)
+			local hl
+			if hop.kind ~= "hearth" and hop.point then
+				if not hopTarget or hopTarget.points[1] ~= hop.point then hopTarget = { points = { hop.point } } end
+				hl = QL.Locate(hopTarget)
+			end
+			if hop.kind == "hearth" or (hl and not hl.otherMap and hl.dist < HOP_AT) then
+				-- here: what to do (use the hearthstone, talk to the flight master, board)
+				mode, nearness, arrivedAt = "idle", 0, nil
+				setRotation(0)
+				paint(A[1], A[2], A[3], 0.9)
+				frame.glow:SetAlpha(0)
+				setDistance(hop.text)
+				bands()
+				return
+			end
+			if hl and not hl.otherMap then loc, hopped = hl, true end
+		end
+	end
 	if not loc then
 		mode, nearness, arrivedAt = "idle", 0, nil
 		setRotation(0)
@@ -408,8 +436,8 @@ function QL.UpdateArrow()
 	end
 	local C = QL.Theme.HUD
 	-- a detour drawn on the map (Paths.lua): the arrow leads through its points before the target
-	local via = false
-	if QL.DetourNext then
+	local via = hopped
+	if QL.DetourNext and not hopped then
 		local ok, vl, vi, vn = pcall(QL.DetourNext, loc)
 		if ok and vl then
 			via, loc = true, vl

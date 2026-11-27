@@ -51,6 +51,9 @@ QL.defaults = {
 	cardScale = 100,      -- the quest card's size in percent (60-160)
 	currentZoneTab = true, -- the zone and its level band on a tab above the current quest window
 	nextQuestOffer = true, -- a card offering the next quest when the current one is handed in
+	travelHints = true,  -- "Getting there": the way to a quest in another zone or on another continent
+	travelHearth = true, -- the hearthstone counts as a way when it is ready
+	travelArrow = true,  -- the arrow leads through the way's steps (flight master, dock) first
 	flightTimer = true,   -- the flight timer window while you ride a flight path
 	currentQuest = true,  -- the current quest window
 	currentMinimized = false, -- the whole window folded down to its title and progress line
@@ -224,6 +227,8 @@ function QL.Command(msg)
 		if QL.PlateDebug then QL.PlateDebug() end
 	elseif cmd == "flight" or cmd == "ucus" then
 		if QL.FlightDemo then QL.FlightDemo() else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
+	elseif cmd == "travel" or cmd == "yol" then
+		if QL.TripDebug then QL.TripDebug(rest) else QL.Chat(L("The arrow is not loaded: quit the game fully and start it again (new files need a restart).")) end
 	elseif cmd == "help" then
 		QL.Chat("/ql  " .. L("open or close the chain window"))
 		QL.Chat("/ql <id|name>  " .. L("show the chain of a quest"))
@@ -237,6 +242,7 @@ function QL.Command(msg)
 		QL.Chat("/ql skill [id]  " .. L("what profession a quest needs, and what you have"))
 		QL.Chat("/ql map [area]  " .. L("what the client gives for a zone's map picture"))
 		QL.Chat("/ql flight  " .. L("a sample flight to see the flight timer"))
+		QL.Chat("/ql travel [id]  " .. L("how to get to a quest in another zone or on another continent"))
 		QL.Chat("/ql options  " .. L("settings"))
 	else
 		if QL.Open then QL.Open(msg) end

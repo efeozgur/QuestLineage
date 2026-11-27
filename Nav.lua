@@ -178,6 +178,19 @@ function QL.ProjectToMap(fromMap, x, y, toMap)
 	return px, py
 end
 
+-- A map spot in world yards: instance (continent) id, x, y. Points on different continents
+-- have different instances; distances only make sense within one.
+function QL.WorldPoint(map, x, y)
+	if not (C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return nil end
+	if type(map) ~= "number" or type(x) ~= "number" or type(y) ~= "number" then return nil end
+	local ok, inst, pos = pcall(C_Map.GetWorldPosFromMapPos, map, CreateVector2D(x, y))
+	inst = ok and plain(inst) or nil
+	if inst == nil or not pos then return nil end
+	local wx, wy = xyOf(pos)
+	if type(wx) ~= "number" or type(wy) ~= "number" then return nil end
+	return inst, wx, wy
+end
+
 local function mapSize(map)
 	if not (C_Map and C_Map.GetMapWorldSize) then return nil end
 	local ok, w, h = pcall(C_Map.GetMapWorldSize, map)

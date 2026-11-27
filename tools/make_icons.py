@@ -11,6 +11,7 @@ Needs Pillow. White on transparent, 64x64; the game tints them (muted, or the ac
   area_*.tga       the map's objective areas: soft fill, thin ring, dotted ring
   lock.tga         a closed padlock (the current quest window pinned in place)
   lock_open.tga    an open padlock (the window can be dragged)
+  ozgurx.tga       the author's mark (in colour): "OX" on a dark disc with a teal -> violet rim
 """
 import os
 from PIL import Image, ImageDraw
@@ -348,9 +349,33 @@ def lock(opened):
     save(img, "lock_open.tga" if opened else "lock.tga")
 
 
+def ozgurx():
+    """The author's mark shared by every OzgurX addon (Brand.lua): in colour, not tinted.
+    A dark disc, a teal -> violet rim, and "OX" drawn as a ring and two strokes in violet."""
+    big = SIZE * SS
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse((s(1), s(1), s(63), s(63)), fill=(16, 19, 26, 255))
+    grad = Image.new("RGBA", (big, big))
+    gd = ImageDraw.Draw(grad)
+    a, b = (61, 214, 198), (139, 124, 246)
+    for x in range(big):
+        t = x / (big - 1)
+        gd.line((x, 0, x, big), fill=tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3)) + (255,))
+    mask = Image.new("L", (big, big), 0)
+    m = ImageDraw.Draw(mask)
+    m.ellipse((s(1), s(1), s(63), s(63)), outline=255, width=s(4))
+    m.ellipse((s(10), s(21), s(32), s(43)), outline=255, width=s(5))  # O
+    m.line((s(36), s(22), s(54), s(42)), fill=255, width=s(5))        # X
+    m.line((s(54), s(22), s(36), s(42)), fill=255, width=s(5))
+    img.paste(grad, (0, 0), mask)
+    save(img, "ozgurx.tga")
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     logo()
+    ozgurx()
     quest_mark()
     corpse()
     area_textures()
